@@ -1,7 +1,7 @@
 // Setup screen. First-time users get a 3-step guided flow; returning users get the full editable page.
 // Every change autosaves (debounced) and ends example mode for the profile.
 import {
-  num, summary, lengthFromDates, dayDiff, addDays, periodRange, shiftsPerPeriod,
+  num, summary, lengthFromDates, dayDiff, parseISO, addDays, periodRange, shiftsPerPeriod,
   PAY_PRESETS, DEDUCTION_PRESETS, findPayPreset, findDeductionPreset, applyPayPreset, applyDeductionPreset, fillFica,
 } from '../math.js';
 import { el, clear, field, moneyInput, select, numOf, money, pct, exampleBanner, toast, save, debounce, bus, getState, applyTheme } from './common.js';
@@ -70,18 +70,18 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
   const fGross = field('Gross pay', gross, { hint: 'The top-line gross pay figure, before any deductions. Not “taxable wages.”' });
 
   const validate = () => {
-    fStart.setError(start.value ? '' : 'Pick the day your pay period started.');
+    fStart.setError(Number.isFinite(parseISO(start.value)) ? '' : 'Pick the day your pay period started.');
     let e = '';
     if (end.value && start.value) {
       const len = dayDiff(start.value, end.value) + 1;
-      if (len < 1) e = 'The end date has to be on or after the start date.';
+      if (!(len >= 1)) e = 'The end date has to be on or after the start date.';
       else if (len > 62) e = 'Pay periods are 62 days or shorter. Check the end date.';
     }
     fEnd.setError(e);
     let de = '';
     if (delay.value && p.periodStart) {
       const d = dayDiff(periodEndOf(), delay.value);
-      if (d < 0) de = 'Payday can’t be before the pay period ends.';
+      if (!(d >= 0)) de = 'Payday can’t be before the pay period ends.';
       else if (d > 21) de = 'Payday is more than 21 days after the pay period ends. Check the date.';
     }
     fDelay.setError(de);
@@ -93,8 +93,8 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
     freqNote.textContent = len ? 'Your dates make the pay period ' + len + ' days long, so TipNet uses that.' : '';
   };
   ctx.live.push(validate);
-  start.addEventListener('input', () => { if (start.value) p.periodStart = start.value; delay.value = paydayValue(); ctx.touch(false); });
-  end.addEventListener('input', () => { p.periodEnd = end.value; delay.value = paydayValue(); ctx.touch(false); });
+  start.addEventListener('input', () => { if (Number.isFinite(parseISO(start.value))) p.periodStart = start.value; delay.value = paydayValue(); ctx.touch(false); });
+  end.addEventListener('input', () => { p.periodEnd = Number.isFinite(parseISO(end.value)) ? end.value : ''; delay.value = paydayValue(); ctx.touch(false); });
   shifts.addEventListener('input', () => { p.shifts = Math.max(0, Math.round(numOf(shifts.value))); ctx.touch(false); });
   freq.addEventListener('change', () => {
     p.freq = num(freq.value);
@@ -121,7 +121,7 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
     el('p', { class: 'hint' }, 'Fill in the end date, the shift count, or both. The end date keeps each night on the right paycheck. The shift count splits your fixed deductions evenly per shift. Both together give the closest estimate. Picking how often you get paid moves the end date to match.'),
     fDelay,
     fGross);
-  card.validate = () => { validate(); return !!(start.value && numOf(gross.value) > 0 && !fEnd.hasAttribute('data-invalid')); };
+  card.validate = () => { validate(); return !!(Number.isFinite(parseISO(start.value)) && numOf(gross.value) > 0 && !fEnd.hasAttribute('data-invalid')); };
   card.firstInvalid = () => [start, end, shifts, gross].find((i) => i.getAttribute('aria-invalid') === 'true');
   return card;
 }
@@ -148,7 +148,7 @@ function dedCard(ctx) {
   };
   const lines = new Map();
   const drawLines = () => p.deductions.forEach((d) => { const n = lines.get(d.id); if (n) n.textContent = lineText(d); });
-  ctx.live.push(drawSummary, drawLines);
+  ctx.live.push(drawSummary, drawLines, () => { if (num(p.gross) > 0) ficaErr.hidden = true; }); // clear the "enter gross first" note once gross is entered
 
   const drawRows = () => {
     clear(rowsHost); lines.clear();
@@ -221,7 +221,7 @@ function payCard(ctx) {
       const preset = findPayPreset(t.k);
       const sel = presetSelect(PAY_PRESETS, t.k, 'pk-' + t.id);
       const nm = el('input', { type: 'text', value: t.name || '', placeholder: 'What your stub calls it', autocomplete: 'off', id: 'pn-' + t.id });
-      const unit = select([['hr', 'Per hour'], ['shift', 'Per shift'], ['amt', 'Flat amount']], t.unit, { id: 'pu-' + t.id });
+      const unit = select([['hr', 'Per hour'], ['shift', 'Per shift']].concat(i === 0 ? [] : [['amt', 'Flat amount']]), t.unit, { id: 'pu-' + t.id });
       const kids = [
         el('div', { style: 'grid-column:1/-1' }, field(i === 0 ? 'Main pay type' : 'Pay type', sel)),
         el('div', { style: 'grid-column:1/-1' }, field('Name', nm)),
@@ -252,7 +252,7 @@ function payCard(ctx) {
         ctx.touch(false); draw(); const f = document.getElementById('pk-' + t.id); if (f) f.focus();
       });
       nm.addEventListener('input', () => { t.name = nm.value; ctx.touch(false); });
-      unit.addEventListener('change', () => { t.unit = unit.value; if (t.unit === 'amt') { t.rate = 0; t.usual = 0; } ctx.touch(false); draw(); });
+      unit.addEventListener('change', () => { t.unit = unit.value; if (t.unit === 'amt') { t.rate = 0; t.usual = 0; } ctx.touch(false); draw(); const f = document.getElementById('pu-' + t.id); if (f) f.focus(); });
       host.append(el('div', { class: 'repeat-row', style: 'grid-template-columns:minmax(0,1fr)' }, kids));
     });
   };

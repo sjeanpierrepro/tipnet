@@ -4,7 +4,7 @@ import { todayISO, periodIndex, periodRange, toCents } from '../math.js';
 import { safeToSpend, hasPayDelay, billsDue, categoryStatus, goalProgress, exampleBudget, migrateBudget } from '../budget.js';
 import { BILLING } from '../billing-config.js';
 import { isUnlocked, activateKey, revalidate, deactivate, displayEntitlement, checkoutUrl, devEntitlement, isDevHost, getProvider } from '../billing.js';
-import { el, clear, field, exampleBanner, moneyInput, select, numOf, money, money0, fmtDate, fmtShort, toast, arm, save, bus, getState } from './common.js';
+import { el, clear, field, exampleBanner, moneyInput, select, numOf, clean, money, money0, fmtDate, fmtShort, toast, arm, save, bus, getState } from './common.js';
 
 const MANAGE_URL = 'https://app.lemonsqueezy.com/my-orders';
 
@@ -14,8 +14,9 @@ let editing = null;     // {kind, id} of the row being edited
 let keyMsg = '';        // license key error
 let keyText = '';       // what was pasted, kept so a failed try does not wipe it (never saved)
 let busy = false;
+let billsOpen = false; // keeps the "Edit or remove bills" list open after a save or cancel
 
-export function reset() { cashText = ''; editing = null; keyMsg = ''; keyText = ''; busy = false; }
+export function reset() { cashText = ''; editing = null; keyMsg = ''; keyText = ''; busy = false; billsOpen = false; }
 
 const newId = (p) => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
 const ent = () => getState().settings.entitlement || null;
@@ -181,7 +182,7 @@ function heroCard(S) {
   const host = el('section', { class: 'result stack' });
   const cashIn = moneyInput({ placeholder: 'Blank = cash tips so far', value: cashText });
   const draw = () => {
-    const r = safeToSpend(S.budget, S.profile, S.nights, todayISO(), { cashOnHand: cashText });
+    const r = safeToSpend(S.budget, S.profile, S.nights, todayISO(), { cashOnHand: clean(cashText) });
     const neg = r.safe < 0;
     clear(host).append(...[
       el('div', { class: 'hero-label' }, 'Safe to spend until payday (' + fmtDate(r.payday) + ')'),
@@ -221,7 +222,7 @@ function breakdown(S, r) {
 
 /* ---------- (b) next paycheck ---------- */
 function nextCheckCard(S) {
-  const a = safeToSpend(S.budget, S.profile, S.nights, todayISO(), { cashOnHand: cashText }).after;
+  const a = safeToSpend(S.budget, S.profile, S.nights, todayISO(), { cashOnHand: clean(cashText) }).after;
   const known = a.projectedCheck != null;
   return el('section', { class: 'card stack-sm' },
     el('div', { class: 'card-title' }, 'Next paycheck, ' + fmtShort(a.periodStart) + ' to ' + fmtShort(a.periodEnd)),
@@ -263,7 +264,7 @@ function billsCard(S) {
     el('h2', null, 'Bills'),
     rows.length ? el('ul', { class: 'list' }, rows) : el('p', { class: 'hint' }, B.bills.length ? 'No bills due this pay period or the next.' : 'No bills yet. Add the ones that repeat every month.'),
     rows.length ? el('p', { class: 'hint' }, 'Tick a bill when you have paid it. It stops counting against safe to spend.') : null,
-    manage.length ? el('details', { open: !!(editing && editing.kind === 'bill') }, el('summary', { class: 'btn-link' }, 'Edit or remove bills'), el('ul', { class: 'list', style: 'margin-top:var(--s-2)' }, manage)) : null,
+    manage.length ? el('details', { open: billsOpen || !!(editing && editing.kind === 'bill'), ontoggle: (e) => { billsOpen = e.target.open; } }, el('summary', { class: 'btn-link' }, 'Edit or remove bills'), el('ul', { class: 'list', style: 'margin-top:var(--s-2)' }, manage)) : null,
     addBox('bill', 'Add a bill'));
 }
 
@@ -333,6 +334,7 @@ function goalsCard(S) {
       if (!(n > 0)) { add.focus(); toast('Enter an amount to add.'); return; }
       g.saved = (toCents(g.saved) + toCents(n)) / 100; save(); bus.rerender();
     });
+    add.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addBtn.click(); } });
     const togo = pr.remaining === 0 ? 'Goal reached.' : pr.paychecksToGo == null ? 'Set an amount per paycheck to see a timeline.' : 'About ' + plural(pr.paychecksToGo, 'paycheck') + ' to go (estimated).';
     return el('li', { class: 'list-row wrap' },
       el('div', { class: 'main stack-sm' },
