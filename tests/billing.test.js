@@ -110,3 +110,20 @@ test('isDevHost', () => {
   assert.equal(isDevHost({ hostname: 'tipnet.github.io' }), false);
   assert.equal(isDevHost(undefined), false);
 });
+
+test('revalidate: valid:false locks even when the key status is still active', async () => {
+  const stale = ent({ validatedAt: new Date(NOW - 2 * DAY).toISOString() });
+  // this device's instance was removed: the key is active but the answer is valid:false
+  const noInstance = lemonSqueezyProvider({ fetch: async () => ({ status: 404, json: async () => ({ valid: false, error: 'license_key instance not found.', license_key: { status: 'active' } }) }) });
+  const r = await revalidate(stale, { provider: noInstance, now: NOW, online: true });
+  assert.equal(r.status, 'invalid');
+  assert.equal(isUnlocked(r, NOW), false);
+  const plain = lemonSqueezyProvider({ fetch: json({ valid: false, license_key: { status: 'on_trial' } }) });
+  assert.equal(isUnlocked(await revalidate(stale, { provider: plain, now: NOW, online: true }), NOW), false);
+  assert.equal(isUnlocked({ ...ent(), status: 'invalid' }, NOW), false);
+  // a good answer still keeps it unlocked
+  const good = lemonSqueezyProvider({ fetch: json({ valid: true, license_key: { status: 'active' } }) });
+  const g = await revalidate(stale, { provider: good, now: NOW, online: true });
+  assert.equal(g.status, 'active');
+  assert.equal(isUnlocked(g, NOW), true);
+});

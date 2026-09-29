@@ -163,7 +163,10 @@ export async function revalidate(ent, { provider = getProvider(), now = Date.now
   if (!provider || !needsRevalidate(ent, now, online)) return null;
   const r = await provider.validate(ent.key, ent.instanceId);
   if (r.status === 'network') return null;
-  return { ...ent, status: r.status, validatedAt: new Date(now).toISOString(), expiresAt: r.expiresAt || ent.expiresAt || null };
+  // A definite "no" (valid:false) locks even if the key itself is still active, e.g. this device's instance was
+  // removed. 'invalid' is not an unlocking status, so isUnlocked treats it as locked.
+  const status = r.ok ? r.status : (ACTIVE.has(r.status) ? 'invalid' : r.status);
+  return { ...ent, status, validatedAt: new Date(now).toISOString(), expiresAt: r.expiresAt || ent.expiresAt || null };
 }
 
 /** Frees this device's seat; the caller then deletes settings.entitlement. Best effort, never throws. */
