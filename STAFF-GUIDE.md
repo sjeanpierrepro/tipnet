@@ -1,86 +1,73 @@
-# TipNet: Staff Setup Guide
+# TipNet: Staff Guide
 
-One-page printable guide for bartenders.
-
----
-
-## Step 1: Open TipNet
-
-Click the link your bar gives you (or type it in your browser). Bookmark it.
+Short guide for bartenders. Works on a phone.
 
 ---
 
-## Step 2: Install to your home screen
+## 1. Open TipNet
 
-**iPhone**: Tap the share icon (box with arrow). Select **Add to Home Screen**. Name it "TipNet" and tap **Add**. Next time, open it from your home screen.
+Tap the link your bar gives you. Bookmark it.
 
-**Android**: Open Chrome menu (three dots, top right). Tap **Install app**. Confirm.
+## 2. Add it to your home screen
 
-**Windows/Mac**: Chrome or Edge will show an install icon in the address bar. Click it and confirm.
+- **iPhone (Safari):** Share button > **Add to Home Screen** > **Add**.
+- **Android (Chrome):** Menu (three dots) > **Install app** (or **Add to Home screen**).
+- **Computer (Chrome or Edge):** click the install icon in the address bar.
 
-Always open TipNet the same way—from your home screen or app menu. On iPhone, Safari and the home-screen app keep separate data; mixing them confuses things.
+Always open TipNet the same way. On iPhone, Safari and the home-screen app keep separate data.
 
----
+## 3. Set up from one paystub (one time)
 
-## Step 3: Set up your paystub (one-time)
+Grab your latest paystub and go to **Setup**.
 
-TipNet asks for three things:
+**Step 1: Pay period and gross pay**
+- **Pay period started** and **Pay period ended** (the dates on the stub)
+- **Shifts you worked** that period (optional, but helps)
+- **You get paid** (every week, every two weeks, twice a month, once a month)
+- **Gross pay** (top-line gross, before anything comes out)
 
-1. **Your pay period** (weekly, every two weeks, twice a month, monthly)
-2. **Gross pay** (the top line on your paystub, before anything comes out)
-3. **What comes out** (taxes, health insurance, etc.)
+**Step 2: Deductions**
+- Add each line that comes out: federal tax, Social Security, Medicare, state tax, health insurance, and so on.
+- Choose **Changes with my pay** for taxes and **Same every check** for things like insurance.
 
-Use your most recent paystub.
+**Step 3: Pay and tip-out**
+- **Main pay type:** your **hourly rate** (Rate) and your **usual hours** per night (Usual per night).
+- **Barback tip-out:** check **My bar has barback tip-outs** if you tip out, then pick a % of tips or $ per shift, and whether it comes from your cash or payroll.
+
+Tap **Finish setup**.
 
 ### Example paystub
 
 ```
-EARNINGS                     DEDUCTIONS
-Gross Pay:      $2,000       Federal Tax:      $180
-Hourly Rate:      $12/hr     Social Security:  $124
-Hours:            10 shifts  Medicare:          $29
-                             Health Ins.:       $60
+Pay period:  Sep 1 - Sep 14      Federal tax:     $180
+Shifts worked: 10                Social Security: $124
+Hourly rate:   $12               Medicare:         $29
+Gross pay:   $2,000              Health ins.:      $60
 ```
 
-From this stub, TipNet learns: Federal gets $180 out of every $2,000 (about 9%). Medicare gets $29. Etc. Future checks will be estimated using these rates. You'll enter the actual check later to fine-tune.
+Enter: start Sep 1, end Sep 14, shifts 10, every two weeks, gross $2,000, the four deductions, rate $12, usual hours per night (for example 8).
 
-### What to enter
+Something changed (raise, new insurance)? Update it in **Setup**.
 
-- **Gross pay**: $2,000 (use the top-line number, not "taxable wages")
-- **Deductions**: Federal $180, Social Security $124, Medicare $29, Health $60
-- **Pay period**: Every two weeks (or whatever yours is)
+## 4. Every night
 
-If something changes (new insurance, raise, different deductions), update it in Setup.
+- **What you made tonight:** cash tips + card tips + hourly pay, before anything comes out.
+- **Hours:** leave blank to use your usual hours, or type tonight's.
+- **Cash in hand:** the cash you are taking home.
+- Tap **Save night**.
 
----
+You see your estimated take-home, cash in hand, and what should land on your check.
 
-## Step 4: Every night, enter your shift
+## 5. After payday (optional)
 
-At the end of the night, tap the big number and type what you made (cash tips, card tips, hourly pay—everything, before anything comes out).
+**Pay periods** > **Check my accuracy**. Pick the pay period and enter the **take-home amount on your check** (the amount actually deposited, not gross). Tap **Compare and adjust**.
 
-Enter how much cash you're taking home. Hit Save.
-
-**TipNet shows**:
-- Estimated take-home tonight
-- Cash in hand right now
-- How much will hit your check
+The estimate usually gets closer after a check or two.
 
 ---
 
-## Step 5: After payday (optional but helpful)
+## Good to know
 
-When your paycheck hits, go to **Pay periods** tab → **Check my accuracy**. Pick the pay period, enter the gross amount on your check, and let TipNet learn. After two or three paychecks, it gets very accurate.
-
----
-
-## Key facts
-
-**Everything stays on your phone.** Your bar cannot see what you enter.
-
-**It's an estimate.** TipNet gives you a close guess based on your paystub. Every paycheck is slightly different based on how much you actually made and when you took days off. Taxes are complicated; TipNet is honest about it.
-
-**Questions about taxes?** Ask your payroll department or a tax person. This app helps you understand your own numbers, not tax advice.
-
----
-
-Enjoy. Questions? Ask your manager.
+- **Your data stays on your phone.** Your bar cannot see it.
+- **It is an estimate,** not an exact paycheck.
+- **Tax questions?** Ask payroll or a tax professional. TipNet is not tax advice.
