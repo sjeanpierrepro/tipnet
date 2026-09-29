@@ -64,6 +64,9 @@ export function parseLemonSqueezy(body, productIds = []) {
   const out = { ok: false, status: status || 'invalid' };
   if (lk.expires_at) out.expiresAt = lk.expires_at;
   if (b.instance && b.instance.id) out.instanceId = String(b.instance.id);
+  const vn = String((b.meta && b.meta.variant_name) || '').toLowerCase();
+  if (vn.includes('year') || vn.includes('annual')) out.plan = 'yearly';
+  else if (vn.includes('month')) out.plan = 'monthly';
   const good = b.activated === true || b.valid === true;
   if (productIds && productIds.length) {
     const pid = b.meta && b.meta.product_id;
@@ -108,6 +111,10 @@ export function lemonSqueezyProvider(deps = {}) {
     } catch (e) {
       return { ok: false, status: 'network', error: 'Could not reach the payment service. Check your connection.' };
     }
+    // A server error or rate limit is not an answer about the key: treat it like being offline.
+    if (res && (res.status >= 500 || res.status === 429)) {
+      return { ok: false, status: 'network', error: 'The payment service is busy. Try again in a few minutes.' };
+    }
     let body = null;
     try { body = await res.json(); } catch (e) { /* not JSON */ }
     if (!body) return { ok: false, status: 'network', error: 'The payment service sent an unexpected reply. Try again later.' };
@@ -143,7 +150,7 @@ export async function activateKey(key, { provider = getProvider(), plan = null, 
   if (!r.ok) return { ok: false, error: r.error || 'That key did not work.' };
   return {
     ok: true,
-    entitlement: { plan, key: k, instanceId: r.instanceId || null, status: r.status, validatedAt: new Date(now).toISOString(), expiresAt: r.expiresAt || null },
+    entitlement: { plan: plan || r.plan || null, key: k, instanceId: r.instanceId || null, status: r.status, validatedAt: new Date(now).toISOString(), expiresAt: r.expiresAt || null },
   };
 }
 
@@ -175,10 +182,14 @@ export function displayEntitlement(ent) {
  */
 export function devEntitlement(loc = globalThis.location) {
   if (!loc) return null;
-  const host = loc.hostname;
-  if (host !== 'localhost' && host !== '127.0.0.1') return null;
+  if (!isDevHost(loc)) return null;
   if (new URLSearchParams(loc.search || '').get('unlock') !== 'dev') return null;
   return { plan: 'dev', key: '', instanceId: null, status: 'active', validatedAt: new Date().toISOString(), expiresAt: null };
+}
+
+/** True on localhost / 127.0.0.1 only. A stored dev entitlement is dropped anywhere else. */
+export function isDevHost(loc = globalThis.location) {
+  return !!loc && (loc.hostname === 'localhost' || loc.hostname === '127.0.0.1');
 }
 
 /** Checkout link for a plan ('monthly'|'yearly'), or '' if not set up yet. */

@@ -31,12 +31,12 @@ Lemon Squeezy has a Test mode switch at the top of the dashboard. Turn it on, an
 ## How customers get their key
 - Right after paying, Lemon Squeezy emails a receipt that includes the license key.
 - They can also log in any time at app.lemonsqueezy.com/my-orders with the same email to see their orders and key.
-- In TipNet they open the budgeting add-on, paste the key, and tap Activate. This needs a connection once. After that it works offline, and the app quietly rechecks about once a day when online. If a phone is offline for more than 14 days the add-on locks until it is online again. The free app is never locked.
+- In TipNet they open the budgeting add-on, paste the key, and tap "Unlock with key". This needs a connection once. After that it works offline, and the app quietly rechecks about once a day when online. If a phone is offline for more than 14 days the add-on locks until it is online again. The free app is never locked.
 
 ## Refunds and cancellations
 - Refund: Lemon Squeezy dashboard > Orders > open the order > Refund. The key is turned off and the add-on locks on that customer's device the next time it rechecks.
 - Cancel: customers cancel themselves from the link in their receipt email or My Orders page. They keep access until the end of the period they paid for. You can also cancel a subscription for them under Subscriptions.
-- If a customer is stuck at the device limit, you can remove a device under Licenses > open the key > Instances, or they can tap "Remove this device" in TipNet on the old device.
+- If a customer is stuck at the device limit, you can remove a device under Licenses > open the key > Instances, or they can tap "Remove from this device" (bottom of the Budget tab) in TipNet on the old device.
 
 ## Privacy note
 TipNet sends only the license key and a random device name to Lemon Squeezy, and only when someone activates or once a day to recheck. No budget, pay or night data ever leaves the phone. Mention this in your privacy notice.

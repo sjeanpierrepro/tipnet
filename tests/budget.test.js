@@ -41,10 +41,26 @@ test('expected income', () => {
   assert.equal(inc.projectedCheck, M.round2(t.chk * 2.5));
   assert.equal(inc.avgTakeHomePerPeriod, null);
   const none = B.expectedIncome(P(), [], TODAY);
-  assert.deepEqual(none, { cashSoFar: 0, checkSoFar: 0, projectedCheck: 0, avgTakeHomePerPeriod: null });
-  // a finished period gives an average take-home
+  assert.deepEqual(none, { cashSoFar: 0, checkSoFar: 0, projectedCheck: null, avgCheckPerPeriod: null, avgTakeHomePerPeriod: null });
+  // a finished period gives an average take-home, and an average check when every night has cash entered
   const later = B.expectedIncome(P(), M.exampleNights(), '2026-10-10');
-  assert.equal(later.avgTakeHomePerPeriod, M.periodTotals(P(), M.exampleNights(), 0, '2026-10-10').net);
+  const done = M.periodTotals(P(), M.exampleNights(), 0, '2026-10-10');
+  assert.equal(later.avgTakeHomePerPeriod, done.net);
+  assert.equal(later.avgCheckPerPeriod, done.allCash ? done.chk : null);
+  assert.equal(later.projectedCheck, later.avgCheckPerPeriod); // nothing logged in the new period yet
+});
+
+test('expected income: the check projection uses only nights with cash entered', () => {
+  const n = (date, cash) => ({ ...M.exampleNights()[0], id: date, date, cash });
+  const withCash = [n('2026-09-22', 150), n('2026-09-23', 150)];
+  const mixed = [...withCash, n('2026-09-24', ''), n('2026-09-25', '')];
+  const a = B.expectedIncome(P(), withCash, TODAY), b = B.expectedIncome(P(), mixed, TODAY);
+  // two nights of check money spread over the same expected shifts give the same projection
+  assert.equal(b.checkSoFar, a.checkSoFar);
+  assert.equal(b.projectedCheck, a.projectedCheck);
+  // no cash entered at all and no history: unknown, not zero
+  assert.equal(B.expectedIncome(P(), [n('2026-09-22', '')], TODAY).projectedCheck, null);
+  assert.equal(B.safeToSpend(B.emptyBudget(), P(), [], TODAY).after.left, null);
 });
 
 const budgetWithSpends = () => {
@@ -141,4 +157,17 @@ test('migrateBudget handles garbage', () => {
   assert.deepEqual(m.spends, [{ id: 's1', date: '2026-09-01', amount: 12.5, categoryId: '7', note: 'tacos' }]);
   assert.deepEqual(m.paidBills, { '0:b1': true });
   assert.deepEqual(B.migrateBudget(B.exampleBudget()), B.exampleBudget());
+});
+
+test('without an entered balance, spending logged this period comes out of the cash tips', () => {
+  const nights = M.exampleNights();
+  const cash = M.periodTotals(P(), nights, 0, TODAY).cash;
+  const b = { ...B.emptyBudget(), categories: [{ id: 'c', name: 'Fun', monthly: 100 }], spends: [] };
+  const before = B.safeToSpend(b, P(), nights, TODAY);
+  b.spends = [{ id: 's', date: '2026-09-25', amount: 30, categoryId: 'c' }, { id: 'old', date: '2026-09-01', amount: 99, categoryId: 'x' }];
+  const after = B.safeToSpend(b, P(), nights, TODAY);
+  assert.equal(after.income.cash, cash);
+  assert.equal(after.income.spent, 30); // the 09-01 spend was before this period
+  assert.equal(after.income.amount, M.round2(cash - 30));
+  assert.equal(after.safe, before.safe); // logging spending never makes safe to spend go up
 });

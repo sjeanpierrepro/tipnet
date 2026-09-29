@@ -105,27 +105,31 @@ export function billsDue(budget, fromDate, toDate) {
 }
 
 /* ---------- income ---------- */
+const hasCash = (n) => n.cash !== '' && n.cash != null && Number.isFinite(parseFloat(n.cash));
 /**
  * What TipNet expects you to bring in for the current pay period. All estimates.
- * {cashSoFar: cash in hand this period, checkSoFar: on-check estimate so far,
- *  projectedCheck: estimated check if you work your expected shifts (falls back to your
- *  average take-home when nothing is logged yet), avgTakeHomePerPeriod: from finished periods or null}
+ * {cashSoFar: cash in hand this period, checkSoFar: on-check estimate so far (nights with cash entered),
+ *  projectedCheck: estimated check if you work your expected shifts, or null when TipNet cannot tell yet,
+ *  avgCheckPerPeriod: average check from finished periods where every night has cash entered, or null,
+ *  avgTakeHomePerPeriod: from finished periods or null}
+ * The check can only be worked out for nights with cash entered (check = take-home - cash in hand), so the
+ * projection scales from those nights only. With none this period it falls back to the average past check.
  */
 export function expectedIncome(profile, nights, today = todayISO()) {
   const idx = periodIndex(profile, today);
   const t = periodTotals(profile, nights, idx, today);
   const expected = shiftsPerPeriod(profile, nights, today).n;
   const done = [...new Set(nights.map((n) => periodIndex(profile, n.date)))].filter((i) => isFinal(profile, i, today));
-  let avg = null;
-  if (done.length) {
-    const sum = done.reduce((s, i) => s + toCents(periodTotals(profile, nights, i, today).net), 0);
-    avg = fromCents(Math.round(sum / done.length));
-  }
-  const logged = t.ns.length;
+  const past = done.map((i) => periodTotals(profile, nights, i, today));
+  const mean = (list, f) => (list.length ? fromCents(Math.round(list.reduce((s, x) => s + toCents(f(x)), 0) / list.length)) : null);
+  const avg = mean(past, (x) => x.net);
+  const avgChk = mean(past.filter((x) => x.allCash), (x) => x.chk);
+  const withCash = t.ns.filter(hasCash).length;
   let projected;
-  if (logged > 0) projected = round2(t.chk * Math.max(1, expected / logged)); // never scale down what is already earned
-  else projected = avg == null ? 0 : avg;
-  return { cashSoFar: t.cash, checkSoFar: t.chk, projectedCheck: projected, avgTakeHomePerPeriod: avg };
+  // never scale down what is already earned
+  if (withCash > 0) projected = round2(t.chk * Math.max(1, Math.max(expected, t.ns.length) / withCash));
+  else projected = avgChk;
+  return { cashSoFar: t.cash, checkSoFar: t.chk, projectedCheck: projected, avgCheckPerPeriod: avgChk, avgTakeHomePerPeriod: avg };
 }
 
 /* ---------- categories and goals ---------- */
@@ -166,10 +170,10 @@ function goalPieces(budget) {
  * Money from the check is NOT counted until payday. Category money left is pro-rated:
  * (left in category) x (days until payday / days left in the month, capped at 1).
  * Bills are matched to the pay period their due date lands in, so paidBills keys are "<periodIndex>:<billId>".
- * Returns {payday, daysAway, income:{source:'entered'|'cash', amount}, bills:[...], billsTotal,
+ * Returns {payday, daysAway, income:{source:'entered'|'cash', amount, cash, spent (logged this period, 'cash' only)}, bills:[...], billsTotal,
  *  goals:[{id,name,amount}], goalsTotal, categories:[{id,name,remaining,reserved}], categoriesTotal,
  *  safe (can be negative), perDay,
- *  after:{projectedCheck, bills, billsTotal, goalsTotal, left, periodStart, periodEnd}}
+ *  after:{projectedCheck (null if unknown), bills, billsTotal, goalsTotal, left, periodStart, periodEnd}}
  */
 export function safeToSpend(budget, profile, nights, today = todayISO(), options = {}) {
   const idx = periodIndex(profile, today);
@@ -178,7 +182,11 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
   const inc = expectedIncome(profile, nights, today);
   const co = options.cashOnHand;
   const entered = co !== undefined && co !== null && co !== '' && Number.isFinite(parseFloat(co));
-  const incomeC = entered ? toCents(num(co)) : toCents(inc.cashSoFar);
+  // Without an entered balance: cash tips this period, minus what you logged spending this period
+  // (that money is gone, and it already counts against its category below).
+  const spentC = entered ? 0 : sumC((budget.spends || []).filter((s) => s.date >= range.start && s.date <= today), (s) => toCents(num(s.amount)));
+  const cashC = entered ? toCents(num(co)) : toCents(inc.cashSoFar);
+  const incomeC = cashC - spentC;
 
   // Unpaid bills in a date range. Earlier unpaid bills in this period still count: you still owe them.
   const paid = budget.paidBills || {};
@@ -205,11 +213,11 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
   const next = periodRange(profile, idx + 1);
   const nextBills = unpaid(next.start, next.end);
   const nextBillsC = sumC(nextBills, (b) => toCents(num(b.amount)));
-  const projC = toCents(inc.projectedCheck);
+  const projC = inc.projectedCheck == null ? null : toCents(inc.projectedCheck);
 
   return {
     payday, daysAway,
-    income: { source: entered ? 'entered' : 'cash', amount: fromCents(incomeC) },
+    income: { source: entered ? 'entered' : 'cash', amount: fromCents(incomeC), cash: fromCents(cashC), spent: fromCents(spentC) },
     bills, billsTotal: fromCents(billsC),
     goals: goals.map((g) => ({ id: g.id, name: g.name, amount: fromCents(g.amountC) })), goalsTotal: fromCents(goalsC),
     categories: cats.map((c) => ({ id: c.id, name: c.name, remaining: c.remaining, reserved: fromCents(c.reservedC) })),
@@ -217,8 +225,8 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
     safe: fromCents(safeC),
     perDay: fromCents(Math.round(safeC / Math.max(1, daysAway))),
     after: {
-      projectedCheck: fromCents(projC), bills: nextBills, billsTotal: fromCents(nextBillsC), goalsTotal: fromCents(goalsC),
-      left: fromCents(projC - nextBillsC - goalsC), periodStart: next.start, periodEnd: next.end,
+      projectedCheck: projC == null ? null : fromCents(projC), bills: nextBills, billsTotal: fromCents(nextBillsC), goalsTotal: fromCents(goalsC),
+      left: projC == null ? null : fromCents(projC - nextBillsC - goalsC), periodStart: next.start, periodEnd: next.end,
     },
   };
 }

@@ -3,8 +3,8 @@
 import { todayISO, periodIndex, periodRange, toCents } from '../math.js';
 import { safeToSpend, billsDue, categoryStatus, goalProgress, exampleBudget, migrateBudget } from '../budget.js';
 import { BILLING } from '../billing-config.js';
-import { isUnlocked, activateKey, revalidate, deactivate, displayEntitlement, checkoutUrl, devEntitlement, getProvider } from '../billing.js';
-import { el, clear, field, moneyInput, select, numOf, money, money0, fmtDate, fmtShort, toast, arm, save, bus, getState } from './common.js';
+import { isUnlocked, activateKey, revalidate, deactivate, displayEntitlement, checkoutUrl, devEntitlement, isDevHost, getProvider } from '../billing.js';
+import { el, clear, field, exampleBanner, moneyInput, select, numOf, money, money0, fmtDate, fmtShort, toast, arm, save, bus, getState } from './common.js';
 
 const MANAGE_URL = 'https://app.lemonsqueezy.com/my-orders';
 
@@ -12,9 +12,10 @@ const MANAGE_URL = 'https://app.lemonsqueezy.com/my-orders';
 let cashText = '';      // "money you have right now", this visit only
 let editing = null;     // {kind, id} of the row being edited
 let keyMsg = '';        // license key error
+let keyText = '';       // what was pasted, kept so a failed try does not wipe it (never saved)
 let busy = false;
 
-export function reset() { cashText = ''; editing = null; keyMsg = ''; busy = false; }
+export function reset() { cashText = ''; editing = null; keyMsg = ''; keyText = ''; busy = false; }
 
 const newId = (p) => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
 const ent = () => getState().settings.entitlement || null;
@@ -22,19 +23,27 @@ const unlocked = () => isUnlocked(ent());
 const isOnline = () => (typeof navigator === 'undefined' ? true : navigator.onLine !== false);
 
 /* ---------- billing boot: dev unlock, silent recheck ---------- */
+let checking = false;
 async function recheck() {
+  if (checking) return; // boot and the "online" event can fire together: one request is enough
+  checking = true;
   const S = getState();
   const before = unlocked();
+  const asked = S.settings.entitlement;
   try {
-    const next = await revalidate(S.settings.entitlement, { online: isOnline() });
-    if (next) { S.settings.entitlement = next; save(); }
+    const next = await revalidate(asked, { online: isOnline() });
+    // Only store the answer if the key was not removed or replaced while we waited.
+    if (next && getState().settings.entitlement === asked) { getState().settings.entitlement = next; save(); }
   } catch (e) { /* a failed recheck never locks anyone; the 14 day grace covers it */ }
+  checking = false;
   if (unlocked() !== before) bus.rerender();
 }
 /** Called once from app.js after load. Never throws, never blocks the first paint. */
 export function bootBilling() {
   try {
     const S = getState();
+    // A dev unlock only ever counts on localhost; drop one that arrived anywhere else.
+    if (S.settings.entitlement && S.settings.entitlement.plan === 'dev' && !isDevHost(location)) { delete S.settings.entitlement; save(); }
     const dev = devEntitlement(location);
     if (dev && !(S.settings.entitlement && S.settings.entitlement.plan === 'dev')) { S.settings.entitlement = dev; save(); }
     recheck();
@@ -70,7 +79,8 @@ function upgradeCard(S) {
   const buy = (plan, text) => (ready
     ? el('a', { class: plan === 'yearly' ? 'btn btn-block' : 'btn btn-secondary btn-block', href: checkoutUrl(plan), target: '_blank', rel: 'noopener noreferrer' }, text)
     : el('button', { type: 'button', class: plan === 'yearly' ? 'btn btn-block' : 'btn btn-secondary btn-block', disabled: true }, text));
-  const keyIn = el('input', { type: 'text', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', placeholder: 'Paste your license key' });
+  const keyIn = el('input', { type: 'text', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', placeholder: 'Paste your license key', value: keyText });
+  keyIn.addEventListener('input', () => { keyText = keyIn.value; });
   const kf = field('I have a license key', keyIn, { hint: 'After you pay, the payment service emails you a key. Paste it here to unlock Budget on this device.' });
   kf.setError(keyMsg);
   const go = el('button', { type: 'submit', class: 'btn btn-secondary', disabled: busy }, busy ? 'Checking…' : 'Unlock with key');
@@ -78,11 +88,12 @@ function upgradeCard(S) {
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (busy) return;
-    busy = true; keyMsg = ''; go.disabled = true; go.textContent = 'Checking…';
+    busy = true; keyMsg = ''; keyText = keyIn.value; go.disabled = true; go.textContent = 'Checking…';
     const r = await activateKey(keyIn.value, {});
     busy = false;
     if (!r.ok) { keyMsg = r.error; bus.rerender(); return; }
-    S.settings.entitlement = r.entitlement; save();
+    keyText = '';
+    getState().settings.entitlement = r.entitlement; save();
     toast('Budget is unlocked on this device.');
     bus.rerender();
   });
@@ -168,7 +179,7 @@ const isEditing = (kind, id) => editing && editing.kind === kind && editing.id =
 /* ---------- (a) safe to spend ---------- */
 function heroCard(S) {
   const host = el('section', { class: 'result stack' });
-  const cashIn = moneyInput({ placeholder: 'Leave blank to use tips so far', value: cashText });
+  const cashIn = moneyInput({ placeholder: 'Blank = cash tips so far', value: cashText });
   const draw = () => {
     const r = safeToSpend(S.budget, S.profile, S.nights, todayISO(), { cashOnHand: cashText });
     const neg = r.safe < 0;
@@ -176,15 +187,16 @@ function heroCard(S) {
       el('div', { class: 'hero-label' }, 'Safe to spend until payday (' + fmtDate(r.payday) + ')'),
       el('div', { class: 'hero num', 'aria-live': 'polite' }, money(r.safe)),
       el('div', { class: 'hint' }, neg ? 'estimated, ' + plural(r.daysAway, 'day') + ' to payday' : 'about ' + money(r.perDay) + ' a day for ' + plural(r.daysAway, 'day') + ' (estimated)'),
+      r.income.source === 'cash' ? el('p', { class: 'hint' }, 'This counts only your cash tips from this pay period. Enter what you have in the bank and in cash above for a truer number.') : null,
       neg ? el('p', { class: 'note' }, 'What you have now is less than what is coming out before payday. That is common between checks. Your next paycheck is not counted here, so this usually evens out on payday. If you want it to be positive sooner, you could pay a bill after payday, or lower a spending amount.') : null,
       breakdown(S, r)].filter(Boolean));
   };
   const box = el('div', { class: 'card stack-sm' },
     field('Money you have right now (bank + cash)', cashIn, { optional: true,
-      hint: 'If you leave this blank, TipNet uses the cash tips from this pay period so far.' }));
+      hint: 'Not saved: enter it fresh each time. If you leave it blank, TipNet uses your cash tips from this pay period, minus spending you logged.' }));
   cashIn.addEventListener('input', () => { cashText = cashIn.value; draw(); });
   draw();
-  return el('div', { class: 'stack' }, host, box);
+  return el('div', { class: 'stack' }, box, host); // the input comes first so the number below always reflects it
 }
 
 function breakdown(S, r) {
@@ -192,7 +204,9 @@ function breakdown(S, r) {
   return el('details', null,
     el('summary', { class: 'btn-link' }, 'How this is worked out'),
     el('dl', { class: 'breakdown', style: 'padding-top:var(--s-2)' },
-      row(r.income.source === 'entered' ? 'Money you entered' : 'Cash tips this pay period', money(r.income.amount)),
+      ...(r.income.source === 'entered' ? [row('Money you entered', money(r.income.amount))]
+        : [row('Cash tips this pay period', money(r.income.cash)),
+          r.income.spent > 0 ? row('Spending you logged this pay period', '−' + money(r.income.spent)) : null].filter(Boolean)),
       row('Bills due before payday (' + r.bills.length + ' unpaid)', '−' + money(r.billsTotal)),
       ...r.bills.map((b) => row('   ' + b.name + ', ' + fmtShort(b.date), '−' + money(b.amount), 'hint')),
       row('Savings goals this paycheck', '−' + money(r.goalsTotal)),
@@ -200,20 +214,23 @@ function breakdown(S, r) {
       row('Set aside for spending', '−' + money(r.categoriesTotal)),
       ...r.categories.filter((c) => c.reserved > 0).map((c) => row('   ' + (catName.get(c.id) || c.name), '−' + money(c.reserved), 'hint')),
       row('Safe to spend', money(r.safe), 'total')),
-    el('p', { class: 'hint', style: 'padding-top:var(--s-2)' }, 'Set aside for spending is what is left in each category this month, scaled to the days until payday. Money from your next check is not counted until you are paid. All figures are estimates.'));
+    el('p', { class: 'hint', style: 'padding-top:var(--s-2)' }, 'Set aside for spending is what is left in each category this month, scaled to the days until payday. Money from your next check is not counted until you are paid. TipNet takes payday to be the day after your pay period ends; if your check comes later, keep a little extra aside. All figures are estimates.'));
 }
 
 /* ---------- (b) next paycheck ---------- */
 function nextCheckCard(S) {
   const a = safeToSpend(S.budget, S.profile, S.nights, todayISO(), { cashOnHand: cashText }).after;
+  const known = a.projectedCheck != null;
   return el('section', { class: 'card stack-sm' },
     el('div', { class: 'card-title' }, 'Next paycheck, ' + fmtShort(a.periodStart) + ' to ' + fmtShort(a.periodEnd)),
     el('dl', { class: 'breakdown' },
-      row('Projected check (estimated)', money(a.projectedCheck)),
+      row('Projected check (estimated)', known ? money(a.projectedCheck) : 'Not known yet'),
       row('Bills due that period (' + a.bills.length + ')', '−' + money(a.billsTotal)),
       row('Savings goals', '−' + money(a.goalsTotal)),
-      row('What is left', money(a.left), 'total')),
-    el('p', { class: 'hint' }, 'The projected check comes from the nights you have logged this pay period, or your average past check if you have none yet.'));
+      row('What is left', known ? money(a.left) : '–', 'total')),
+    el('p', { class: 'hint' }, known
+      ? 'The projected check comes from the nights you have logged this pay period with cash entered, or your average past check if you have none yet.'
+      : 'Log a night with its cash in hand and TipNet can estimate your check. The check is what is left after the cash you already took home.'));
 }
 
 /* ---------- (c) bills ---------- */
@@ -371,6 +388,7 @@ function unlockedView(S) {
   const empty = !B.bills.length && !B.categories.length && !B.goals.length && !B.spends.length;
   const start = el('button', { type: 'button', class: 'btn', onclick: () => { S.budget = migrateBudget(exampleBudget()); save(); bus.rerender(); } }, 'Start with example budget');
   return el('div', { class: 'stack' },
+    exampleBanner(),
     empty ? el('div', { class: 'banner' }, el('p', null, 'Your budget is empty. Add your bills, spending categories and goals below, or start from an example and change it.'), start) : null,
     heroCard(S), nextCheckCard(S), billsCard(S), spendingCard(S), goalsCard(S), subscriptionCard());
 }

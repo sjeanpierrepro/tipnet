@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isUnlocked, needsRevalidate, maskKey, parseLemonSqueezy, lemonSqueezyProvider, activateKey, revalidate, devEntitlement, getProvider, GRACE_MS } from '../app/js/billing.js';
+import { isUnlocked, needsRevalidate, maskKey, parseLemonSqueezy, lemonSqueezyProvider, activateKey, revalidate, devEntitlement, isDevHost, getProvider, GRACE_MS } from '../app/js/billing.js';
 
 const NOW = Date.parse('2026-10-01T12:00:00Z');
 const DAY = 24 * 3600 * 1000;
@@ -84,4 +84,29 @@ test('devEntitlement only on localhost with ?unlock=dev', () => {
 test('getProvider is null until configured', () => {
   assert.equal(getProvider({ provider: null }), null);
   assert.equal(getProvider({ provider: 'lemonsqueezy' }).id, 'lemonsqueezy');
+});
+
+test('a server error or rate limit never locks anyone', async () => {
+  const stale = ent({ validatedAt: new Date(NOW - 2 * DAY).toISOString() });
+  for (const status of [500, 503, 429]) {
+    const p = lemonSqueezyProvider({ fetch: async () => ({ status, json: async () => ({ error: 'Server Error' }) }) });
+    assert.equal((await p.validate('K', 'i')).status, 'network');
+    assert.equal(await revalidate(stale, { provider: p, now: NOW, online: true }), null);
+  }
+  // a definite "not found" (404 with JSON) does lock
+  const gone = lemonSqueezyProvider({ fetch: async () => ({ status: 404, json: async () => ({ valid: false, error: 'license_key not found.', license_key: null }) }) });
+  assert.equal(isUnlocked(await revalidate(stale, { provider: gone, now: NOW, online: true }), NOW), false);
+});
+
+test('plan comes from the variant name when the caller does not give one', async () => {
+  const body = (v) => ({ activated: true, license_key: { status: 'active' }, instance: { id: 'i' }, meta: { variant_name: v } });
+  assert.equal((await activateKey('K', { provider: lemonSqueezyProvider({ fetch: json(body('Yearly')) }) })).entitlement.plan, 'yearly');
+  assert.equal((await activateKey('K', { provider: lemonSqueezyProvider({ fetch: json(body('Monthly')) }) })).entitlement.plan, 'monthly');
+  assert.equal((await activateKey('K', { provider: lemonSqueezyProvider({ fetch: json(body('Default')) }) })).entitlement.plan, null);
+});
+
+test('isDevHost', () => {
+  assert.equal(isDevHost({ hostname: 'localhost' }), true);
+  assert.equal(isDevHost({ hostname: 'tipnet.github.io' }), false);
+  assert.equal(isDevHost(undefined), false);
 });
