@@ -3,10 +3,16 @@ import { computeNight, periodTotals, periodIndex, shiftsPerPeriod, weeklyHours, 
 import { el, clear, field, moneyInput, clean, numOf, money, money0, minus, pct, fmtDate, periodLabel, exampleBanner, save, getState, uid } from './common.js';
 
 let draft = null; // survives tab switches so half-typed entries are not lost
+let draftIsExample = false; // draft was pre-filled with the example night
+
+const exampleMode = (S) => !!(S.profileExample && S.nightsExample);
+
+/** Drop the in-progress entry (e.g. after Erase everything or Restore). */
+export function resetDraft() { draft = null; draftIsExample = false; }
 
 export function blankDraft(S) {
   const d = { total: '', cash: '', pay: {}, barback: true, date: todayISO() };
-  if (S.nightsExample) { // the example night from the spec: $585, 8 hours, $210 cash
+  if (exampleMode(S)) { // the example night from the spec: $585, 8 hours, $210 cash. Blank otherwise: main hours fall back to "usual".
     d.total = '585'; d.cash = '210';
     const main = S.profile.payTypes[0];
     if (main) d.pay[main.id] = '8';
@@ -140,7 +146,9 @@ function stripCard(S) {
 
 export function render(root) {
   const S = getState(), p = S.profile;
-  if (!draft) draft = blankDraft(S);
+  // Example mode ended (Finish setup, Clear example nights, first save): drop the example pre-fill.
+  if (draft && draftIsExample && !exampleMode(S)) draft = null;
+  if (!draft) { draft = blankDraft(S); draftIsExample = exampleMode(S); }
   const d = draft;
   const banner = exampleBanner();
   const resultHost = el('div', { 'aria-live': 'polite' });
@@ -172,7 +180,7 @@ export function render(root) {
     S.nights.push(night);
     save();
     const net = computeNight(night, p, shiftsPerPeriod(p, S.nights).n).net;
-    draft = blankDraft(S);
+    draft = blankDraft(S); draftIsExample = exampleMode(S);
     render(clear(root));
     const m = root.querySelector('[role=status].hint');
     if (m) m.textContent = 'Saved. ' + money(net) + ' take-home for ' + fmtDate(night.date) + '.';
