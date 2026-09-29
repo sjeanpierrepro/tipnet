@@ -76,3 +76,6 @@ When you change any file in `app/`, also change the `VERSION` line at the top of
 ## Legal
 
 TipNet gives estimates, not tax advice. Your numbers stay on your device. It does not collect your name, Social Security number, or any personal information beyond what you voluntarily type into it.
+
+## Budget (optional paid add-on)
+The Budget tab helps plan money between paychecks: "safe to spend until payday", next paycheck, bills, spending categories and savings goals. It costs $1.99 a month or $20 a year; everything else in TipNet stays free. Budget data stays on the device like everything else. After paying, the customer receives a license key and pastes it into the Budget tab. Payments are switched on in `app/js/billing-config.js`; click-by-click steps are in `PAYMENTS.md`. To try it locally, open the app on localhost with `?unlock=dev` on the end of the address.

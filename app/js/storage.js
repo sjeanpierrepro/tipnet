@@ -1,6 +1,7 @@
 // TipNet persistence: state shape, migration, backup codes, IndexedDB + localStorage.
 // The pure helpers (seedState, migrate, encodeBackup, decodeBackup) work in Node with no browser APIs.
 import { exampleProfile, exampleNights, num } from './math.js';
+import { emptyBudget, migrateBudget } from './budget.js';
 
 export const SCHEMA_VERSION = 2;
 export const LEGACY_KEY = 'tipnet.v1';
@@ -10,7 +11,7 @@ const STORE = 'kv';
 const STATE_KEY = 'state';
 
 /* ---------- state shape ---------- */
-/** settings: {theme:'auto'|'light'|'dark', lastTab, csvMapping, setupDone} */
+/** settings: {theme:'auto'|'light'|'dark', lastTab, csvMapping, setupDone, entitlement?}. budget: see budget.js */
 export function seedState() {
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -19,6 +20,7 @@ export function seedState() {
     profile: exampleProfile(),
     nights: exampleNights(),
     calib: [],
+    budget: emptyBudget(),
     settings: { theme: 'auto', lastTab: 'tonight', csvMapping: null },
   };
 }
@@ -67,6 +69,7 @@ export function migrate(input) {
   if (!p.tipout) p.tipout = { on: false, mode: 'pct', value: 0, basis: 'before', from: 'cash' };
   if (p.freq === undefined) p.freq = 14;
   if (p.shifts === undefined) p.shifts = 0;
+  S.budget = migrateBudget(S.budget); // old states and old backup codes have none: they get an empty budget
   S.profileExample = !!S.profileExample;
   S.nightsExample = !!S.nightsExample;
   S.settings = { theme: 'auto', lastTab: 'tonight', csvMapping: null, ...(S.settings || {}) };
@@ -88,7 +91,10 @@ function fromB64(b64) {
   return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
 }
 export function encodeBackup(state) {
-  return toB64(JSON.stringify(state));
+  // The license key stays on this device: a backup code is pasted into notes and chats.
+  const copy = { ...state, settings: { ...(state.settings || {}) } };
+  delete copy.settings.entitlement;
+  return toB64(JSON.stringify(copy));
 }
 /** Returns a migrated v2 state. Throws Error('bad-backup') if the code is not a TipNet backup. Accepts prototype codes. */
 export function decodeBackup(code) {

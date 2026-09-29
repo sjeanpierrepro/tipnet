@@ -71,3 +71,6 @@ The estimate usually gets closer after a check or two.
 - **Your data stays on your phone.** Your bar cannot see it.
 - **It is an estimate,** not an exact paycheck.
 - **Tax questions?** Ask payroll or a tax professional. TipNet is not tax advice.
+
+## 6. Budget (optional, paid)
+The Budget tab shows how much you can spend before your next payday, after bills and savings. Add your bills (name, amount, day of the month), spending categories (like groceries) and goals. Tick "Paid" when a bill is paid, and use "Log spending" when you buy something. Everything is an estimate. Budget is not part of the free app.

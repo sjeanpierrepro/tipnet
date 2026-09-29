@@ -38,3 +38,14 @@
 - Entitlement lives in state.settings.entitlement {plan, key (full; masked for display with maskKey), instanceId, status, validatedAt, expiresAt}. Unlocked = active/on_trial and validated within 14 days (offline grace). A network failure never locks anyone; only a definite provider answer (expired, disabled, not found) does.
 - Dev unlock: ?unlock=dev works only on localhost/127.0.0.1 and gives {plan:'dev'}.
 - The service worker handles only same-origin requests, so provider responses are never cached.
+
+## Budget tab (paid add-on UI)
+- Budget is the 4th tab (Tonight, Pay periods, Budget, Setup). Locked users see a plain-words explanation, a blurred sample labelled "Example" (made-up numbers from exampleBudget), the two prices, and a license-key field. If payments are not configured the buy buttons are disabled with "Payments aren't switched on yet." Nothing about Budget appears on the free tabs except one quiet line in Setup > Backup for people who already have a subscription.
+- state.budget is normalized by migrateBudget inside storage migrate(), so old saves and old backup codes get an empty budget. Backup codes include budget.
+- Backup codes deliberately exclude settings.entitlement (the license key): codes get pasted into notes and chats, and a key in a code would let it be shared. Restore and Erase everything keep this device's own entitlement.
+- "Money you have right now" is not saved (this visit only) so a stale balance is never used later. Blank means cash tips this pay period, as safeToSpend does.
+- Negative safe-to-spend is shown as a plain number with a calm explanation, no red.
+- Bills tick "Paid" per pay period (key periodIndex:billId). Past-due unpaid bills in the current period keep counting, as in budget.js. Deleting a bill also removes its paid marks; deleting a category keeps its logged spending (shown as "Other").
+- Silent revalidate runs at boot and on the browser "online" event; the screen re-renders only if the locked state changed, so typing is never interrupted. Dev unlock (?unlock=dev on localhost) stores a plan "dev" entitlement.
+- The sample card uses $2,400 as the example cash so the example is positive.
+- sw.js VERSION bumped to tipnet-v6.

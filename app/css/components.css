@@ -145,3 +145,11 @@ h1{margin-bottom:0}
 .field input[type=date]{padding-left:8px;padding-right:6px;font-size:15px}
 @media (max-width:400px){.grid-2{gap:var(--s-2)}}
 @media (max-width:380px){.grid-2{grid-template-columns:minmax(0,1fr)}}
+
+/* ---------- budget ---------- */
+.bar{height:8px;border-radius:var(--r-pill);background:var(--sunk);border:1px solid var(--border);overflow:hidden}
+.bar > span{display:block;height:100%;background:var(--accent);border-radius:var(--r-pill)}
+.sample{filter:blur(3.5px);opacity:.65;pointer-events:none;user-select:none}
+.breakdown dt{white-space:pre-wrap;min-width:0}
+details > summary.btn-link{display:flex;align-items:center;text-decoration:underline}
+.check small{display:block}

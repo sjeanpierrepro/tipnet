@@ -114,3 +114,39 @@ test('load() works in Node with no IndexedDB or localStorage (falls back to seed
   assert.equal(s.nightsExample, true);
   assert.equal(getState(), s);
 });
+
+/* ---------- budget in state and backups ---------- */
+import { exampleBudget } from '../app/js/budget.js';
+
+test('budget: seed and erased states start empty; migrate adds it to old states', () => {
+  assert.deepEqual(seedState().budget, { bills: [], categories: [], goals: [], spends: [], paidBills: {} });
+  assert.deepEqual(erasedState().budget.bills, []);
+  assert.deepEqual(migrate(MIDDLE()).budget, { bills: [], categories: [], goals: [], spends: [], paidBills: {} });
+  assert.deepEqual(migrate(OLDEST()).budget.spends, []);
+});
+
+test('budget: garbage budget is repaired, valid budget is kept', () => {
+  const s = MIDDLE(); s.budget = 'nope';
+  assert.deepEqual(migrate(s).budget.bills, []);
+  const t = MIDDLE(); t.budget = exampleBudget();
+  assert.equal(migrate(t).budget.bills.length, 3);
+});
+
+test('budget: backup round-trip keeps budget; old codes without budget still restore', () => {
+  const s = migrate(MIDDLE());
+  s.budget = exampleBudget();
+  s.budget.paidBills['3:b1'] = true;
+  const back = decodeBackup(encodeBackup(s));
+  assert.deepEqual(back.budget, s.budget);
+  const old = decodeBackup(protoEncode(MIDDLE()));
+  assert.deepEqual(old.budget.goals, []);
+  assert.equal(old.nights.length, 1);
+});
+
+test('backup code never carries the license key', () => {
+  const s = migrate(MIDDLE());
+  s.settings.entitlement = { plan: 'monthly', key: 'SECRET-KEY-1234', instanceId: 'i', status: 'active', validatedAt: new Date().toISOString() };
+  const code = encodeBackup(s);
+  assert.ok(!Buffer.from(code, 'base64').toString().includes('SECRET-KEY'));
+  assert.equal(decodeBackup(code).settings.entitlement, undefined);
+});

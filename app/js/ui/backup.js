@@ -1,5 +1,6 @@
 // Backup (copy / restore code, erase) and the "put TipNet on your home screen" section.
 import { encodeBackup, decodeBackup, setState, erasedState, flush } from '../storage.js';
+import { subscriptionLine } from './budget.js';
 import { el, toast, arm, save, bus, getState, applyTheme, install } from './common.js';
 
 export function renderInstall(host) {
@@ -49,6 +50,8 @@ export function renderBackup(host) {
   const doRestore = () => {
     try {
       const next = decodeBackup(box.value);
+      const ent = getState().settings.entitlement; // a backup never carries the license key; keep this device's
+      if (ent) next.settings.entitlement = ent;
       setState(next);
       const s = getState();
       applyTheme(s.settings.theme);
@@ -65,7 +68,10 @@ export function renderBackup(host) {
   arm(erase, {
     label: 'Erase everything', armedLabel: 'Tap again to erase all nights and settings',
     onConfirm: () => {
-      setState(erasedState());
+      const ent = getState().settings.entitlement; // erasing your data does not cancel or lose your subscription
+      const fresh = erasedState();
+      if (ent) fresh.settings.entitlement = ent;
+      setState(fresh);
       applyTheme('auto');
       flush();
       toast('Erased. Example paystub numbers are loaded until you enter yours.');
@@ -79,5 +85,6 @@ export function renderBackup(host) {
     el('div', { class: 'cluster' }, copy, restore),
     el('div', { class: 'field' }, el('label', { for: 'bk-code' }, 'Backup code'), box),
     msg,
+    subscriptionLine(),
     el('div', null, erase)));
 }
