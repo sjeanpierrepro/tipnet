@@ -43,22 +43,65 @@ export const fixedTotal = (p) => sumDed(p, (d) => d.mode === 'fixed');
 export const suppRate = (p) => Math.max(0, rate(p) - fedRate(p)) + 0.22;
 
 /* ---------- pay period (6.3) ---------- */
-/** Length in days: from start/end dates if valid (1-62), else the frequency. */
-export function periodLength(p) {
+// Weekly (7) and every-two-weeks (14) are fixed lengths. "Twice a month" (15) and "Once a month" (30) follow the
+// calendar, anchored on the start date's day of month (clamped to short months), so halves/months are not fixed-length.
+const daysInMonthUTC = (y, m0) => new Date(Date.UTC(y, m0 + 1, 0)).getUTCDate();
+const mkISO = (y, m0, d) => formatISO(Date.UTC(y, m0, Math.min(d, daysInMonthUTC(y, m0))));
+/** 'semimonthly' | 'monthly' | null: calendar mode applies when freq is 15/30 and the start date is valid. */
+export function calendarMode(p) {
+  if (!p || !Number.isFinite(parseISO(p.periodStart))) return null;
+  const f = num(p.freq);
+  return f === 15 ? 'semimonthly' : f === 30 ? 'monthly' : null;
+}
+/** First day of calendar period idx (any integer, negative before periodStart). */
+function calStart(p, idx, mode) {
+  const y0 = +p.periodStart.slice(0, 4), m0 = +p.periodStart.slice(5, 7) - 1;
+  const A = +p.periodStart.slice(8, 10);
+  let mi, day;
+  if (mode === 'monthly') { mi = y0 * 12 + m0 + idx; day = A; }
+  else {
+    // anchors: A and B = A+15 (A <= 15) or A-15 (A > 15)
+    const B = A <= 15 ? A + 15 : A - 15;
+    mi = y0 * 12 + m0 + (A <= 15 ? Math.floor(idx / 2) : Math.floor((idx + 1) / 2));
+    day = idx % 2 === 0 ? A : B;
+  }
+  return mkISO(Math.floor(mi / 12), ((mi % 12) + 12) % 12, day);
+}
+function calIndex(p, dateISO, mode) {
+  const d = parseISO(dateISO);
+  if (!Number.isFinite(d)) return NaN;
+  const dt = new Date(d);
+  const md = (dt.getUTCFullYear() - +p.periodStart.slice(0, 4)) * 12 + dt.getUTCMonth() - (+p.periodStart.slice(5, 7) - 1);
+  let i = mode === 'monthly' ? md : md * 2;
+  while (calStart(p, i, mode) > dateISO) i--;
+  while (calStart(p, i + 1, mode) <= dateISO) i++;
+  return i;
+}
+/** Length in days of period idx (default: the first). Calendar frequencies vary by period; others use dates/frequency. */
+export function periodLength(p, idx = 0) {
+  const mode = calendarMode(p);
+  if (mode) return dayDiff(calStart(p, idx, mode), calStart(p, idx + 1, mode));
   if (p.periodEnd && p.periodStart) {
     const d = dayDiff(p.periodStart, p.periodEnd) + 1;
     if (d > 0 && d <= 62) return d;
   }
   return num(p.freq) || 14;
 }
-/** True when the end date is what drives the period length (frequency dropdown disabled). */
+/** True when the end date is what drives the period length (frequency dropdown disabled). Never for calendar frequencies. */
 export function lengthFromDates(p) {
+  if (calendarMode(p)) return false;
   if (!(p.periodEnd && p.periodStart)) return false;
   const d = dayDiff(p.periodStart, p.periodEnd) + 1;
   return d > 0 && d <= 62;
 }
-export const periodIndex = (p, dateISO) => Math.floor(dayDiff(p.periodStart, dateISO) / periodLength(p));
+export function periodIndex(p, dateISO) {
+  const mode = calendarMode(p);
+  if (mode) return calIndex(p, dateISO, mode);
+  return Math.floor(dayDiff(p.periodStart, dateISO) / periodLength(p));
+}
 export function periodRange(p, idx) {
+  const mode = calendarMode(p);
+  if (mode) return { start: calStart(p, idx, mode), end: addDays(calStart(p, idx + 1, mode), -1) };
   const start = addDays(p.periodStart, idx * periodLength(p));
   return { start, end: addDays(start, periodLength(p) - 1) };
 }
@@ -69,14 +112,15 @@ export const nightsInPeriod = (p, nights, idx) =>
 
 /* ---------- shifts per period (6.2) ---------- */
 /** Returns {n, source: 'entered'|'history'|'default'}. */
-export function shiftsPerPeriod(p, nights = [], today = todayISO()) {
+export function shiftsPerPeriod(p, nights = [], today = todayISO(), idx) {
   if (num(p.shifts) > 0) return { n: num(p.shifts), source: 'entered' };
   const done = [...new Set(nights.map((n) => periodIndex(p, n.date)))].filter((i) => isFinal(p, i, today));
   if (done.length) {
     const avg = done.reduce((s, i) => s + nightsInPeriod(p, nights, i).length, 0) / done.length;
     return { n: Math.max(1, avg), source: 'history' };
   }
-  return { n: Math.max(1, Math.round((periodLength(p) * 4) / 7)), source: 'default' };
+  const at = idx !== undefined ? idx : (Number.isFinite(parseISO(p.periodStart)) ? periodIndex(p, today) : 0);
+  return { n: Math.max(1, Math.round((periodLength(p, at) * 4) / 7)), source: 'default' };
 }
 export const SHIFT_SOURCE_TEXT = {
   entered: 'the shift count you entered',
@@ -159,7 +203,7 @@ export function computeNight(night, p, shifts) {
  */
 export function periodTotals(p, nights, idx, today = todayISO(), shifts) {
   const ns = nightsInPeriod(p, nights, idx);
-  const n = shifts > 0 ? shifts : shiftsPerPeriod(p, nights, today).n;
+  const n = shifts > 0 ? shifts : shiftsPerPeriod(p, nights, today, idx).n;
   let net = 0, hrs = 0, chk = 0, kept = 0, cash = 0, fixedShares = 0, allCash = ns.length > 0;
   ns.forEach((night) => {
     const c = computeNight(night, p, n);
@@ -187,11 +231,11 @@ export function calibrate(p, nights, idx, actual, today = todayISO(), shifts) {
   const A = num(actual);
   if (!ns.length) return { ok: false, reason: 'nonights', missingCash: 0 };
   if (!(A > 0)) return { ok: false, reason: 'noactual', missingCash: 0 };
-  const n0 = shifts > 0 ? shifts : shiftsPerPeriod(p, nights, today).n;
+  const n0 = shifts > 0 ? shifts : shiftsPerPeriod(p, nights, today, idx).n;
   // same test computeNight uses, so junk like "abc" counts as missing instead of silently being $0
   const missing = ns.filter((night) => computeNight(night, p, n0).cashInHand == null).length;
   if (missing) return { ok: false, reason: 'missingCash', missingCash: missing };
-  const n = shifts > 0 ? shifts : shiftsPerPeriod(p, nights, today).n;
+  const n = n0;
   let T = 0, C = 0, predC = 0;
   ns.forEach((night) => {
     const c = computeNight(night, p, n);
@@ -225,8 +269,8 @@ export function summary(p, nights = [], today = todayISO()) {
   return {
     r, taxPer100: round2(100 * r), keepPer100: round2(100 * (1 - r)),
     fixed, fixedPerShift: round2(fixed / si.n), shifts: si.n, shiftSource: si.source,
-    shiftSourceText: SHIFT_SOURCE_TEXT[si.source], periodLength: periodLength(p),
-    fromDates: lengthFromDates(p), adjusted: p.rateOverride != null,
+    shiftSourceText: SHIFT_SOURCE_TEXT[si.source], periodLength: periodLength(p, Number.isFinite(parseISO(p.periodStart)) ? periodIndex(p, today) : 0),
+    calendar: calendarMode(p), fromDates: lengthFromDates(p), adjusted: p.rateOverride != null,
   };
 }
 

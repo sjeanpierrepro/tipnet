@@ -228,3 +228,28 @@ test('payDelay 0: check arrives on the last day of the period', () => {
   assert.deepEqual(dates(r.bills), ['b1@2026-10-01']); // due before 10-04
   assert.equal(r.after.periodStart, '2026-10-04');
 });
+
+test('semimonthly paydays use payDelay, short months and pre-start dates', () => {
+  const p = { freq: 15, periodStart: '2027-02-01', payDelay: 3 };
+  // 1st-15th pays Feb 18; 16th-28th (13 days) pays Mar 3
+  assert.deepEqual(B.nextPayday(p, '2027-02-10'), { date: '2027-02-18', daysAway: 8 });
+  assert.deepEqual(B.nextPayday(p, '2027-02-18'), { date: '2027-03-03', daysAway: 13 });
+  const info = B.paydayInfo(p, '2027-02-16');
+  assert.equal(info.periodStart, '2027-02-01');
+  assert.equal(info.periodEnd, '2027-02-15');
+  // before the start date (negative periods)
+  assert.deepEqual(B.nextPayday(p, '2027-01-10'), { date: '2027-01-18', daysAway: 8 });
+  // default delay of 1 day, anchor 16
+  const q = { freq: 15, periodStart: '2026-09-16' };
+  assert.deepEqual(B.nextPayday(q, '2026-09-20'), { date: '2026-10-01', daysAway: 11 });
+  assert.deepEqual(B.nextPayday(q, '2026-10-01'), { date: '2026-10-16', daysAway: 15 });
+});
+
+test('safeToSpend on semimonthly counts bills up to payday and in the following half', () => {
+  const b = B.migrateBudget({ bills: [{ id: 'b1', name: 'Rent', amount: 100, dueDay: 12 }, { id: 'b2', name: 'Phone', amount: 40, dueDay: 20 }] });
+  const p = { freq: 15, periodStart: '2026-09-01', shifts: 6, payTypes: [], deductions: [] };
+  const r = B.safeToSpend(b, p, [], '2026-09-10');
+  assert.equal(r.payday, '2026-09-16');
+  assert.deepEqual(r.bills.map((x) => x.id + '@' + x.date), ['b1@2026-09-12']);
+  assert.deepEqual(r.after.bills.map((x) => x.id + '@' + x.date), ['b2@2026-09-20']);
+});

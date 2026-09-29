@@ -1,7 +1,7 @@
 // Setup screen. First-time users get a 3-step guided flow; returning users get the full editable page.
 // Every change autosaves (debounced) and ends example mode for the profile.
 import {
-  num, summary, lengthFromDates, dayDiff, parseISO, addDays, periodRange, shiftsPerPeriod,
+  num, summary, lengthFromDates, calendarMode, dayDiff, parseISO, addDays, periodRange, shiftsPerPeriod,
   PAY_PRESETS, DEDUCTION_PRESETS, findPayPreset, findDeductionPreset, applyPayPreset, applyDeductionPreset, fillFica,
 } from '../math.js';
 import { el, clear, field, moneyInput, select, numOf, money, pct, exampleBanner, toast, save, debounce, bus, getState, applyTheme } from './common.js';
@@ -89,17 +89,25 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
     fGross.setError(numOf(gross.value) > 0 ? '' : 'Gross pay is needed to work out your tax rate.');
     // The end date sets the period length when present; say so if it doesn't match the schedule picked.
     const len = lengthFromDates(p) ? dayDiff(p.periodStart, p.periodEnd) + 1 : 0;
-    freqNote.hidden = !len || len === num(p.freq);
-    freqNote.textContent = len ? 'Your dates make the pay period ' + len + ' days long, so TipNet uses that.' : '';
+    const cal = calendarMode(p);
+    freqNote.hidden = cal ? false : (!len || len === num(p.freq));
+    freqNote.textContent = cal
+      ? (cal === 'semimonthly' ? 'Twice a month follows the calendar (for example the 1st–15th and 16th–end), so the end date is set for you.' : 'Once a month follows the calendar, so the end date is set for you.')
+      : (len ? 'Your dates make the pay period ' + len + ' days long, so TipNet uses that.' : '');
   };
   ctx.live.push(validate);
-  start.addEventListener('input', () => { if (Number.isFinite(parseISO(start.value))) p.periodStart = start.value; delay.value = paydayValue(); ctx.touch(false); });
+  start.addEventListener('input', () => { if (Number.isFinite(parseISO(start.value))) p.periodStart = start.value; if (calendarMode(p) && p.periodEnd) { p.periodEnd = periodRange(p, 0).end; end.value = p.periodEnd; } delay.value = paydayValue(); ctx.touch(false); });
   end.addEventListener('input', () => { p.periodEnd = Number.isFinite(parseISO(end.value)) ? end.value : ''; delay.value = paydayValue(); ctx.touch(false); });
+  // Twice a month / once a month follow the calendar: when the user finishes editing, snap the end date to the derived one.
+  end.addEventListener('change', () => {
+    if (calendarMode(p) && end.value) { p.periodEnd = periodRange(p, 0).end; end.value = p.periodEnd; delay.value = paydayValue(); ctx.touch(false); }
+  });
   shifts.addEventListener('input', () => { p.shifts = Math.max(0, Math.round(numOf(shifts.value))); ctx.touch(false); });
   freq.addEventListener('change', () => {
     p.freq = num(freq.value);
     // Keep the end date in step with the schedule so the choice takes effect.
-    if (p.periodStart && p.periodEnd) { p.periodEnd = addDays(p.periodStart, p.freq - 1); end.value = p.periodEnd; }
+    if (calendarMode(p)) { p.periodEnd = periodRange(p, 0).end; end.value = p.periodEnd; } // calendar halves/months win
+    else if (p.periodStart && p.periodEnd) { p.periodEnd = addDays(p.periodStart, p.freq - 1); end.value = p.periodEnd; }
     delay.value = paydayValue();
     ctx.touch(false);
   });
@@ -143,7 +151,7 @@ function dedCard(ctx) {
       'Out of every ', el('b', null, '$100'), ' you make, about ', el('b', null, money(s.taxPer100)), ' goes to taxes and you keep ', el('b', null, money(s.keepPer100)), '. ',
       'Deductions that stay the same total ', el('b', null, money(s.fixed)), ' a check, or ', el('b', null, money(s.fixedPerShift)), ' per shift, based on ', s.shiftSourceText,
       s.shiftSource === 'entered' ? '' : ' (' + s.shifts.toFixed(1).replace(/\.0$/, '') + ' shifts)', '. ',
-      'Pay periods run ', el('b', null, s.periodLength + ' days'), s.fromDates ? ' from your dates' : '', '.',
+      'Pay periods run ', el('b', null, s.calendar === 'semimonthly' ? 'twice a month (e.g. the 1st–15th and 16th–end)' : s.calendar === 'monthly' ? 'once a month, on the calendar' : s.periodLength + ' days'), s.fromDates ? ' from your dates' : '', '.',
       s.adjusted ? el('span', { class: 'hint' }, ' Your tax rate is adjusted from your real paychecks (' + pct(s.r) + ').') : '');
   };
   const lines = new Map();

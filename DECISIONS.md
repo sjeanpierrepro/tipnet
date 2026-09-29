@@ -66,3 +66,10 @@
 - If billing-config.js proxyUrl is ever set, its origin MUST be added to connect-src or license checks will be blocked.
 - Verified in Chrome on localhost: zero violations across all tabs, setup, CSV import, backup, theme toggle, Budget; SW registers and the app loads offline; fetch/Image to example.com are blocked, a fetch to api.lemonsqueezy.com/v1/licenses/validate is allowed (404 JSON for a fake key).
 - Tonight live preview treats a negative or non-numeric total as empty (shows the usual "Enter tonight's total" note). Deleting a bill now offers the 5-second Undo toast (restores the bill and its paid marks). sw.js VERSION bumped to tipnet-v10.
+
+## Calendar pay periods (twice a month, once a month)
+- Frequency 15 ("Twice a month") and 30 ("Once a month") follow the calendar instead of a fixed 15/30 days, which drifted from real pay periods. Weekly (7) and every-two-weeks (14) stay fixed lengths.
+- Twice a month: anchors are day A = day of periodStart and B = A+15 (A <= 15) or A-15 (A > 15), so 1 -> 1/16, 5 -> 5/20, 16 -> 16/1. A period runs from one anchor to the day before the next; an anchor past the end of a short month is clamped to its last day. Once a month: the anchor is A each month, clamped the same way.
+- Rule: when freq is 15 or 30 the calendar wins. periodEnd is ignored by the math (lengthFromDates is false) and Setup auto-sets the end date to the derived end of the first period (choosing the frequency, editing the start, or finishing an end-date edit). No "Your dates make the pay period N days long" note in this mode; a calendar note is shown instead. Existing profiles with a stale start+14 end date keep working: the stored end is simply not used.
+- periodLength(p, idx) is now per period (idx defaults to 0); periodIndex/periodRange work for negative indexes. shiftsPerPeriod, periodTotals and calibrate take/derive the index so the 4-shifts-a-week default uses that period's length (e.g. 13-day Feb half = 7 shifts). Summary shows "twice a month (e.g. the 1st-15th and 16th-end)" instead of "N days". No storage schema change.
+- sw.js VERSION bumped to tipnet-v11.
