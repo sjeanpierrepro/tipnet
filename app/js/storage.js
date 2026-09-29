@@ -69,6 +69,9 @@ export function migrate(input) {
   if (!p.tipout) p.tipout = { on: false, mode: 'pct', value: 0, basis: 'before', from: 'cash' };
   if (p.freq === undefined) p.freq = 14;
   if (p.shifts === undefined) p.shifts = 0;
+  // payDelay: whole days after the period end that the check arrives (0-21). Absent/blank stays absent (treated as 1).
+  if (p.payDelay === undefined || p.payDelay === null || p.payDelay === '' || !Number.isFinite(Number(p.payDelay))) delete p.payDelay;
+  else p.payDelay = Math.min(21, Math.max(0, Math.round(Number(p.payDelay))));
   S.budget = migrateBudget(S.budget); // old states and old backup codes have none: they get an empty budget
   S.profileExample = !!S.profileExample;
   S.nightsExample = !!S.nightsExample;

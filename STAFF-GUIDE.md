@@ -24,6 +24,7 @@ Grab your latest paystub and go to **Setup**.
 - **Pay period started** and **Pay period ended** (the dates on the stub)
 - **Shifts you worked** that period (optional, but helps)
 - **You get paid** (every week, every two weeks, twice a month, once a month)
+- **Payday for this pay period** (optional): the pay date on your stub. Budget uses it to work out how long until you are paid. Leave it blank if you are not sure.
 - **Gross pay** (top-line gross, before anything comes out)
 
 **Step 2: Deductions**

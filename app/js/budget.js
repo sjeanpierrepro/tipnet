@@ -72,11 +72,33 @@ export function migrateBudget(x) {
 }
 
 /* ---------- paydays and bills ---------- */
-/** Payday is the day after the current pay period ends. Returns {date, daysAway}. */
-export function nextPayday(profile, today = todayISO()) {
+/** Days after a pay period ends that the check arrives: whole number 0-21. Unset/blank/garbage = 1 (day after). */
+export function payDelayOf(profile) {
+  const v = profile && profile.payDelay;
+  if (v === undefined || v === null || v === '' || !Number.isFinite(Number(v))) return 1;
+  return Math.min(21, Math.max(0, Math.round(Number(v))));
+}
+/** True when the profile has a payDelay the user actually set. */
+export const hasPayDelay = (profile) => !!profile && profile.payDelay !== undefined && profile.payDelay !== null && profile.payDelay !== '' && Number.isFinite(Number(profile.payDelay));
+
+/**
+ * The next payday is the first pay date after today. A period's check arrives payDelay days after it ends,
+ * so between a period's end and its payday the next payday belongs to that finished period.
+ * paydayInfo returns {date, daysAway, periodIndex (the period this check pays for), periodStart, periodEnd}.
+ */
+export function paydayInfo(profile, today = todayISO()) {
+  const delay = payDelayOf(profile);
   const idx = periodIndex(profile, today);
-  const date = addDays(periodRange(profile, idx).end, 1);
-  return { date, daysAway: dayDiff(today, date) };
+  for (let k = idx - 4; ; k++) {
+    const r = periodRange(profile, k);
+    const date = addDays(r.end, delay);
+    if (date > today) return { date, daysAway: dayDiff(today, date), periodIndex: k, periodStart: r.start, periodEnd: r.end };
+  }
+}
+/** {date, daysAway} of the next payday. */
+export function nextPayday(profile, today = todayISO()) {
+  const { date, daysAway } = paydayInfo(profile, today);
+  return { date, daysAway };
 }
 
 /**
@@ -173,12 +195,15 @@ function goalPieces(budget) {
  * Returns {payday, daysAway, income:{source:'entered'|'cash', amount, cash, spent (logged this period, 'cash' only)}, bills:[...], billsTotal,
  *  goals:[{id,name,amount}], goalsTotal, categories:[{id,name,remaining,reserved}], categoriesTotal,
  *  safe (can be negative), perDay,
+ *  (payday = first pay date after today; bills counted are unpaid ones due up to the day before it)
  *  after:{projectedCheck (null if unknown), bills, billsTotal, goalsTotal, left, periodStart, periodEnd}}
  */
 export function safeToSpend(budget, profile, nights, today = todayISO(), options = {}) {
   const idx = periodIndex(profile, today);
   const range = periodRange(profile, idx);
-  const { date: payday, daysAway } = nextPayday(profile, today);
+  const np = paydayInfo(profile, today);
+  const { date: payday, daysAway } = np;
+  const delay = payDelayOf(profile);
   const inc = expectedIncome(profile, nights, today);
   const co = options.cashOnHand;
   const entered = co !== undefined && co !== null && co !== '' && Number.isFinite(parseFloat(co));
@@ -191,7 +216,7 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
   // Unpaid bills in a date range. Earlier unpaid bills in this period still count: you still owe them.
   const paid = budget.paidBills || {};
   const unpaid = (from, to) => billsDue(budget, from, to).filter((b) => !paid[periodIndex(profile, b.date) + ':' + b.id]);
-  const bills = unpaid(range.start, range.end);
+  const bills = unpaid(range.start, addDays(payday, -1));
   const billsC = sumC(bills, (b) => toCents(num(b.amount)));
 
   const goals = goalPieces(budget);
@@ -209,11 +234,18 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
 
   const safeC = incomeC - billsC - goalsC - catsC;
 
-  // After payday: the next period's bills and goals come out of the projected check.
-  const next = periodRange(profile, idx + 1);
-  const nextBills = unpaid(next.start, next.end);
+  // After payday: bills from payday until the following payday come out of the check that arrives on payday.
+  // That check pays for period np.periodIndex: the current one, or (between its end and payday) the finished one.
+  const nextR = periodRange(profile, np.periodIndex + 1);
+  const afterStart = payday, afterEnd = addDays(nextR.end, delay - 1);
+  const nextBills = unpaid(afterStart, afterEnd);
   const nextBillsC = sumC(nextBills, (b) => toCents(num(b.amount)));
-  const projC = inc.projectedCheck == null ? null : toCents(inc.projectedCheck);
+  let projC;
+  if (np.periodIndex === idx) projC = inc.projectedCheck == null ? null : toCents(inc.projectedCheck);
+  else {
+    const t = periodTotals(profile, nights, np.periodIndex, today);
+    projC = t.ns.length > 0 ? toCents(t.chk) : (inc.avgCheckPerPeriod == null ? null : toCents(inc.avgCheckPerPeriod));
+  }
 
   return {
     payday, daysAway,
@@ -226,7 +258,7 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
     perDay: fromCents(Math.round(safeC / Math.max(1, daysAway))),
     after: {
       projectedCheck: projC == null ? null : fromCents(projC), bills: nextBills, billsTotal: fromCents(nextBillsC), goalsTotal: fromCents(goalsC),
-      left: projC == null ? null : fromCents(projC - nextBillsC - goalsC), periodStart: next.start, periodEnd: next.end,
+      left: projC == null ? null : fromCents(projC - nextBillsC - goalsC), periodStart: afterStart, periodEnd: afterEnd,
     },
   };
 }

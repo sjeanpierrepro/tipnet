@@ -52,3 +52,9 @@
 - Silent revalidate runs at boot and on the browser "online" event; the screen re-renders only if the locked state changed, so typing is never interrupted. Dev unlock (?unlock=dev on localhost) stores a plan "dev" entitlement.
 - The sample card uses $2,400 as the example cash so the example is positive.
 - sw.js VERSION bumped to tipnet-v7.
+
+## Pay delay (payday date)
+- profile.payDelay = whole days after the pay period END that the check arrives, 0-21. Absent/blank/garbage = 1 (day after end, the old behaviour). storage migrate clamps it and leaves it absent when unset; budget.js payDelayOf() is the single reader.
+- Setup asks for a date ("Payday for this pay period", optional, in the pay period card on both the guided step 1 and the returning-user page) and stores the day count relative to the period end, so the date moves with the period dates. Dates before the period end or more than 21 days after show an inline error and are not saved.
+- nextPayday is the first pay date strictly after today. Between a period's end and its payday it belongs to the PREVIOUS (finished) period. safeToSpend then counts unpaid bills due up to the day before that payday, and "after" covers payday until the day before the following payday. Its projected check is that finished period's check (periodTotals chk, else the average past check, else unknown), not the current period's projection.
+- Budget shows one calm line under the hero, with a link to Setup, while payDelay is unset. sw.js VERSION bumped to tipnet-v8.

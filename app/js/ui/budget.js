@@ -1,7 +1,7 @@
 // Budget tab (paid add-on): safe to spend, next paycheck, bills, spending, goals, subscription.
 // Locked users see an honest preview and can buy or paste a license key. The free app is unchanged.
 import { todayISO, periodIndex, periodRange, toCents } from '../math.js';
-import { safeToSpend, billsDue, categoryStatus, goalProgress, exampleBudget, migrateBudget } from '../budget.js';
+import { safeToSpend, hasPayDelay, billsDue, categoryStatus, goalProgress, exampleBudget, migrateBudget } from '../budget.js';
 import { BILLING } from '../billing-config.js';
 import { isUnlocked, activateKey, revalidate, deactivate, displayEntitlement, checkoutUrl, devEntitlement, isDevHost, getProvider } from '../billing.js';
 import { el, clear, field, exampleBanner, moneyInput, select, numOf, money, money0, fmtDate, fmtShort, toast, arm, save, bus, getState } from './common.js';
@@ -187,6 +187,8 @@ function heroCard(S) {
       el('div', { class: 'hero-label' }, 'Safe to spend until payday (' + fmtDate(r.payday) + ')'),
       el('div', { class: 'hero num', 'aria-live': 'polite' }, money(r.safe)),
       el('div', { class: 'hint' }, neg ? 'estimated, ' + plural(r.daysAway, 'day') + ' to payday' : 'about ' + money(r.perDay) + ' a day for ' + plural(r.daysAway, 'day') + ' (estimated)'),
+      hasPayDelay(S.profile) ? null : el('p', { class: 'hint' }, 'Assumes you’re paid the day after the pay period ends. ',
+        el('button', { type: 'button', class: 'btn-link', onclick: () => bus.go('setup') }, 'Add your payday in Setup.')),
       r.income.source === 'cash' ? el('p', { class: 'hint' }, 'This counts only your cash tips from this pay period. Enter what you have in the bank and in cash above for a truer number.') : null,
       neg ? el('p', { class: 'note' }, 'What you have now is less than what is coming out before payday. That is common between checks. Your next paycheck is not counted here, so this usually evens out on payday. If you want it to be positive sooner, you could pay a bill after payday, or lower a spending amount.') : null,
       breakdown(S, r)].filter(Boolean));
@@ -214,7 +216,7 @@ function breakdown(S, r) {
       row('Set aside for spending', '−' + money(r.categoriesTotal)),
       ...r.categories.filter((c) => c.reserved > 0).map((c) => row('   ' + (catName.get(c.id) || c.name), '−' + money(c.reserved), 'hint')),
       row('Safe to spend', money(r.safe), 'total')),
-    el('p', { class: 'hint', style: 'padding-top:var(--s-2)' }, 'Set aside for spending is what is left in each category this month, scaled to the days until payday. Money from your next check is not counted until you are paid. TipNet takes payday to be the day after your pay period ends; if your check comes later, keep a little extra aside. All figures are estimates.'));
+    el('p', { class: 'hint', style: 'padding-top:var(--s-2)' }, 'Set aside for spending is what is left in each category this month, scaled to the days until payday. Money from your next check is not counted until you are paid. Payday is the day your check arrives: set it in Setup, or TipNet assumes the day after your pay period ends. All figures are estimates.'));
 }
 
 /* ---------- (b) next paycheck ---------- */

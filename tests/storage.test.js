@@ -150,3 +150,16 @@ test('backup code never carries the license key', () => {
   assert.ok(!Buffer.from(code, 'base64').toString().includes('SECRET-KEY'));
   assert.equal(decodeBackup(code).settings.entitlement, undefined);
 });
+
+test('migrate: payDelay stays absent when unset, is clamped and rounded when set', () => {
+  const mk = (v) => { const s = MIDDLE(); if (v !== 'absent') s.profile.payDelay = v; return migrate(s).profile; };
+  assert.equal('payDelay' in mk('absent'), false);
+  assert.equal('payDelay' in mk(''), false);
+  assert.equal('payDelay' in mk(null), false);
+  assert.equal('payDelay' in mk('abc'), false);
+  assert.equal(mk(0).payDelay, 0);
+  assert.equal(mk('4').payDelay, 4);
+  assert.equal(mk(3.6).payDelay, 4);
+  assert.equal(mk(40).payDelay, 21);
+  assert.equal(mk(-2).payDelay, 0);
+});

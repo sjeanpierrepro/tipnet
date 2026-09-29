@@ -171,3 +171,60 @@ test('without an entered balance, spending logged this period comes out of the c
   assert.equal(after.income.amount, M.round2(cash - 30));
   assert.equal(after.safe, before.safe); // logging spending never makes safe to spend go up
 });
+
+test('payDelay: default is 1 and clamps to 0-21', () => {
+  assert.equal(B.payDelayOf({}), 1);
+  assert.equal(B.payDelayOf({ payDelay: '' }), 1);
+  assert.equal(B.payDelayOf({ payDelay: null }), 1);
+  assert.equal(B.payDelayOf({ payDelay: 0 }), 0);
+  assert.equal(B.payDelayOf({ payDelay: 99 }), 21);
+  assert.equal(B.payDelayOf({ payDelay: -3 }), 0);
+  assert.equal(B.hasPayDelay({}), false);
+  assert.equal(B.hasPayDelay({ payDelay: 0 }), true);
+  assert.deepEqual(B.nextPayday({ ...P(), payDelay: 1 }, TODAY), B.nextPayday(P(), TODAY));
+});
+
+test('payDelay 4: payday is end + 4, same period while inside it', () => {
+  const p = { ...P(), payDelay: 4 }; // period 09-21..10-04
+  const np = B.paydayInfo(p, TODAY);
+  assert.equal(np.date, '2026-10-08');
+  assert.equal(np.daysAway, 10);
+  assert.equal(np.periodIndex, 0);
+});
+
+test('payDelay 4: between period end and payday, next payday is for the previous period', () => {
+  const p = { ...P(), payDelay: 4 };
+  const today = '2026-10-06'; // period 10-05..10-18 has begun; check for 09-21..10-04 arrives 10-08
+  const np = B.paydayInfo(p, today);
+  assert.equal(np.date, '2026-10-08');
+  assert.equal(np.daysAway, 2);
+  assert.equal(np.periodIndex, 0);
+  assert.equal(B.nextPayday(p, '2026-10-08').date, '2026-10-22'); // on payday itself the next one is the following
+  const b = { ...B.emptyBudget(), bills: [
+    { id: 'a', name: 'A', amount: 100, dueDay: 7 },   // 10-07: before payday, counts now
+    { id: 'c', name: 'C', amount: 50, dueDay: 10 },   // 10-10: after payday
+    { id: 'd', name: 'D', amount: 25, dueDay: 8 },    // 10-08: on payday, comes out of that check
+  ] };
+  const nights = M.exampleNights();
+  const r = B.safeToSpend(b, p, nights, today, { cashOnHand: 500 });
+  assert.equal(r.payday, '2026-10-08');
+  assert.deepEqual(dates(r.bills), ['a@2026-10-07']);
+  assert.equal(r.billsTotal, 100);
+  assert.equal(r.safe, 400);
+  assert.equal(r.after.periodStart, '2026-10-08');
+  assert.equal(r.after.periodEnd, '2026-10-21'); // following payday is 10-22
+  assert.deepEqual(dates(r.after.bills), ['d@2026-10-08', 'c@2026-10-10']);
+  // Projected check is the finished period's check estimate, not the current period's.
+  assert.equal(r.after.projectedCheck, M.periodTotals(p, nights, 0, today).chk);
+  assert.equal(r.after.left, M.round2(r.after.projectedCheck - 75));
+});
+
+test('payDelay 0: check arrives on the last day of the period', () => {
+  const p = { ...P(), payDelay: 0 };
+  assert.deepEqual(B.nextPayday(p, TODAY), { date: '2026-10-04', daysAway: 6 });
+  assert.equal(B.nextPayday(p, '2026-10-04').date, '2026-10-18'); // payday today counts as paid
+  assert.equal(B.nextPayday(p, '2026-10-05').date, '2026-10-18');
+  const r = B.safeToSpend(B.exampleBudget(), p, M.exampleNights(), TODAY, { cashOnHand: 2000 });
+  assert.deepEqual(dates(r.bills), ['b1@2026-10-01']); // due before 10-04
+  assert.equal(r.after.periodStart, '2026-10-04');
+});
