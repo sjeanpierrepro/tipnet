@@ -29,3 +29,4 @@
 - applyPayPreset: only Overtime autofills its rate (1.5x the main rate), matching the prototype. Every other preset leaves the rate for the user to type (covered by a regression test).
 - CSV import "overwrite" updates the existing night: keeps its id and barback choice, keeps its cash when the import has no cash, and keeps pay types the import does not mention.
 - gh CLI is not installed/authenticated here, so no GitHub repo was created and nothing was deployed; see DEPLOY.md.
+- "You get paid" is always usable: choosing a schedule moves the end date to match (start + length - 1); if the dates disagree with the schedule, a note says the dates win. Replaces disabling the dropdown, which read as broken.

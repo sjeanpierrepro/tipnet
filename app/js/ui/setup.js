@@ -1,7 +1,7 @@
 // Setup screen. First-time users get a 3-step guided flow; returning users get the full editable page.
 // Every change autosaves (debounced) and ends example mode for the profile.
 import {
-  num, summary, lengthFromDates, dayDiff, shiftsPerPeriod,
+  num, summary, lengthFromDates, dayDiff, addDays, shiftsPerPeriod,
   PAY_PRESETS, DEDUCTION_PRESETS, findPayPreset, findDeductionPreset, applyPayPreset, applyDeductionPreset, fillFica,
 } from '../math.js';
 import { el, clear, field, moneyInput, select, numOf, money, pct, exampleBanner, toast, save, debounce, bus, getState, applyTheme } from './common.js';
@@ -59,6 +59,8 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
   const fEnd = field('Pay period ended', end, { optional: true });
   const fShifts = field('Shifts you worked', shifts, { optional: true });
   const fFreq = field('You get paid', freq);
+  const freqNote = el('p', { class: 'hint', hidden: true });
+  fFreq.append(freqNote);
   const fGross = field('Gross pay', gross, { hint: 'The top-line gross pay figure, before any deductions. Not “taxable wages.”' });
 
   const validate = () => {
@@ -72,13 +74,21 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
     fEnd.setError(e);
     fShifts.setError(numOf(shifts.value) < 0 ? 'Shifts can’t be negative.' : '');
     fGross.setError(numOf(gross.value) > 0 ? '' : 'Gross pay is needed to work out your tax rate.');
-    freq.disabled = lengthFromDates(p);
+    // The end date sets the period length when present; say so if it doesn't match the schedule picked.
+    const len = lengthFromDates(p) ? dayDiff(p.periodStart, p.periodEnd) + 1 : 0;
+    freqNote.hidden = !len || len === num(p.freq);
+    freqNote.textContent = len ? 'Your dates make the pay period ' + len + ' days long, so TipNet uses that.' : '';
   };
   ctx.live.push(validate);
   start.addEventListener('input', () => { if (start.value) p.periodStart = start.value; ctx.touch(false); });
   end.addEventListener('input', () => { p.periodEnd = end.value; ctx.touch(false); });
   shifts.addEventListener('input', () => { p.shifts = Math.max(0, Math.round(numOf(shifts.value))); ctx.touch(false); });
-  freq.addEventListener('change', () => { p.freq = num(freq.value); ctx.touch(false); });
+  freq.addEventListener('change', () => {
+    p.freq = num(freq.value);
+    // Keep the end date in step with the schedule so the choice takes effect.
+    if (p.periodStart && p.periodEnd) { p.periodEnd = addDays(p.periodStart, p.freq - 1); end.value = p.periodEnd; }
+    ctx.touch(false);
+  });
   gross.addEventListener('input', () => { p.gross = numOf(gross.value); ctx.touch(true); });
   validate();
   const card = el('section', { class: 'card stack' },
@@ -86,7 +96,7 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
     el('p', { class: 'note' }, 'Use one recent paystub. Enter the numbers for that pay period, not year-to-date. Your numbers stay on this device.'),
     el('div', { class: 'grid-2' }, fStart, fEnd),
     el('div', { class: 'grid-2' }, fShifts, fFreq),
-    el('p', { class: 'hint' }, 'Fill in the end date, the shift count, or both. The end date keeps each night on the right paycheck. The shift count splits your fixed deductions evenly per shift. Both together give the closest estimate. If you enter an end date, the pay schedule above is worked out from your dates.'),
+    el('p', { class: 'hint' }, 'Fill in the end date, the shift count, or both. The end date keeps each night on the right paycheck. The shift count splits your fixed deductions evenly per shift. Both together give the closest estimate. Picking how often you get paid moves the end date to match.'),
     fGross);
   card.validate = () => { validate(); return !!(start.value && numOf(gross.value) > 0 && !fEnd.hasAttribute('data-invalid')); };
   card.firstInvalid = () => [start, end, shifts, gross].find((i) => i.getAttribute('aria-invalid') === 'true');
