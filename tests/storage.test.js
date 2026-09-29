@@ -163,3 +163,23 @@ test('migrate: payDelay stays absent when unset, is clamped and rounded when set
   assert.equal(mk(40).payDelay, 21);
   assert.equal(mk(-2).payDelay, 0);
 });
+
+test('migrate: freq accepts 7/14/15/30 and the calendar strings, rejects garbage', () => {
+  const f = (freq) => migrate({ ...MIDDLE(), profile: { ...MIDDLE().profile, freq } }).profile.freq;
+  for (const ok of [7, 14, 15, 30, 'semimonthly', 'monthly']) assert.equal(f(ok), ok);
+  assert.equal(f('15'), 15);
+  for (const bad of ['weekly', 'x', 99, null, {}, NaN, -1]) assert.equal(f(bad), 14);
+  assert.equal(migrate({ ...MIDDLE(), profile: (({ freq, ...r }) => r)(MIDDLE().profile) }).profile.freq, 14);
+});
+
+test('a prototype backup code with freq 15/30 restores as fixed lengths', () => {
+  for (const fr of [15, 30]) {
+    const mid = MIDDLE();
+    mid.profile.freq = fr;
+    mid.profile.periodStart = '2026-09-16';
+    const s = decodeBackup(protoEncode(mid));
+    assert.equal(s.profile.freq, fr);
+    assert.equal(M.calendarMode(s.profile), null);
+    assert.equal(M.periodLength(s.profile), fr);
+  }
+});

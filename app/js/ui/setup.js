@@ -48,12 +48,22 @@ function makeCtx() {
 }
 
 /* ============ 1. pay period + gross ============ */
+const ord = (n) => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
+/** Dropdown label for the calendar "twice a month" option, using the real anchors from the start date. */
+function semiLabel(startISO) {
+  const A = Number.isFinite(parseISO(startISO)) ? +startISO.slice(8, 10) : 1;
+  const B = A <= 15 ? A + 15 : A - 15;
+  const [lo, hi] = A <= B ? [A, B] : [B, A];
+  const to = (y) => (y === 1 ? 'end' : ord(y - 1));
+  return 'Twice a month (' + ord(lo) + '–' + to(hi) + ' and ' + ord(hi) + '–' + to(lo) + ')';
+}
 function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
   const { p } = ctx;
   const start = el('input', { type: 'date', value: p.periodStart || '' });
   const end = el('input', { type: 'date', value: p.periodEnd || '' });
   const shifts = el('input', { type: 'text', inputmode: 'numeric', autocomplete: 'off', placeholder: '—', value: p.shifts ? String(p.shifts) : '' });
-  const freq = select([[7, 'Every week'], [14, 'Every two weeks'], [15, 'Twice a month'], [30, 'Once a month']], p.freq);
+  const freq = select([[7, 'Every week'], [14, 'Every two weeks'], ['semimonthly', semiLabel(p.periodStart)], [15, 'Every 15 days'], ['monthly', 'Once a month (same day each month)'], [30, 'Every 30 days']], p.freq);
+  const refreshSemiLabel = () => { freq.querySelector('option[value="semimonthly"]').textContent = semiLabel(p.periodStart); };
   const gross = moneyInput({ value: p.gross ? String(p.gross) : '' });
   // payDelay (days after the period end) is what is stored; the field shows and edits it as a date.
   const periodEndOf = () => (p.periodStart ? periodRange(p, 0).end : '');
@@ -92,11 +102,11 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
     const cal = calendarMode(p);
     freqNote.hidden = cal ? false : (!len || len === num(p.freq));
     freqNote.textContent = cal
-      ? (cal === 'semimonthly' ? 'Twice a month follows the calendar (for example the 1st–15th and 16th–end), so the end date is set for you.' : 'Once a month follows the calendar, so the end date is set for you.')
+      ? (cal === 'semimonthly' ? 'Twice a month follows the calendar, so the end date is set for you.' : 'Once a month follows the calendar, so the end date is set for you.')
       : (len ? 'Your dates make the pay period ' + len + ' days long, so TipNet uses that.' : '');
   };
   ctx.live.push(validate);
-  start.addEventListener('input', () => { if (Number.isFinite(parseISO(start.value))) p.periodStart = start.value; if (calendarMode(p) && p.periodEnd) { p.periodEnd = periodRange(p, 0).end; end.value = p.periodEnd; } delay.value = paydayValue(); ctx.touch(false); });
+  start.addEventListener('input', () => { if (Number.isFinite(parseISO(start.value))) p.periodStart = start.value; refreshSemiLabel(); if (calendarMode(p) && p.periodEnd) { p.periodEnd = periodRange(p, 0).end; end.value = p.periodEnd; } delay.value = paydayValue(); ctx.touch(false); });
   end.addEventListener('input', () => { p.periodEnd = Number.isFinite(parseISO(end.value)) ? end.value : ''; delay.value = paydayValue(); ctx.touch(false); });
   // Twice a month / once a month follow the calendar: when the user finishes editing, snap the end date to the derived one.
   end.addEventListener('change', () => {
@@ -104,7 +114,7 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
   });
   shifts.addEventListener('input', () => { p.shifts = Math.max(0, Math.round(numOf(shifts.value))); ctx.touch(false); });
   freq.addEventListener('change', () => {
-    p.freq = num(freq.value);
+    p.freq = /^[0-9]+$/.test(freq.value) ? Number(freq.value) : freq.value; // 7/14/15/30 fixed days, or 'semimonthly'/'monthly'
     // Keep the end date in step with the schedule so the choice takes effect.
     if (calendarMode(p)) { p.periodEnd = periodRange(p, 0).end; end.value = p.periodEnd; } // calendar halves/months win
     else if (p.periodStart && p.periodEnd) { p.periodEnd = addDays(p.periodStart, p.freq - 1); end.value = p.periodEnd; }

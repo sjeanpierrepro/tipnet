@@ -348,12 +348,12 @@ test('regression: calibration counts non-numeric cash as missing (not silently $
 const range = (p, i) => { const r = M.periodRange(p, i); return r.start + '..' + r.end; };
 
 test('semimonthly 1/16 across Jan, Feb, Mar, incl. leap-year Feb 2028', () => {
-  const p = { freq: 15, periodStart: '2028-01-01', periodEnd: '2028-01-15' };
+  const p = { freq: 'semimonthly', periodStart: '2028-01-01', periodEnd: '2028-01-15' };
   assert.deepEqual([0, 1, 2, 3, 4, 5].map((i) => range(p, i)), [
     '2028-01-01..2028-01-15', '2028-01-16..2028-01-31', '2028-02-01..2028-02-15',
     '2028-02-16..2028-02-29', '2028-03-01..2028-03-15', '2028-03-16..2028-03-31']);
   assert.deepEqual([1, 3].map((i) => M.periodLength(p, i)), [16, 14]);
-  const q = { freq: 15, periodStart: '2027-02-01' }; // non-leap: second half is 13 days
+  const q = { freq: 'semimonthly', periodStart: '2027-02-01' }; // non-leap: second half is 13 days
   assert.equal(range(q, 1), '2027-02-16..2027-02-28');
   assert.equal(M.periodLength(q, 1), 13);
   assert.equal(M.periodIndex(p, '2028-02-29'), 3);
@@ -363,13 +363,13 @@ test('semimonthly 1/16 across Jan, Feb, Mar, incl. leap-year Feb 2028', () => {
 });
 
 test('semimonthly anchors 5/20, 16 and a clamped 31', () => {
-  const a = { freq: 15, periodStart: '2026-09-05' };
+  const a = { freq: 'semimonthly', periodStart: '2026-09-05' };
   assert.deepEqual([0, 1, 2].map((i) => range(a, i)), ['2026-09-05..2026-09-19', '2026-09-20..2026-10-04', '2026-10-05..2026-10-19']);
-  const b = { freq: 15, periodStart: '2026-09-16', periodEnd: '2026-09-20' }; // typed end date is ignored
+  const b = { freq: 'semimonthly', periodStart: '2026-09-16', periodEnd: '2026-09-20' }; // typed end date is ignored
   assert.deepEqual([0, 1, 2].map((i) => range(b, i)), ['2026-09-16..2026-09-30', '2026-10-01..2026-10-15', '2026-10-16..2026-10-31']);
   assert.equal(M.lengthFromDates(b), false);
   assert.equal(M.periodIndex(b, '2026-10-15'), 1);
-  const c = { freq: 15, periodStart: '2026-01-31' }; // 31 / 16, clamped in short months
+  const c = { freq: 'semimonthly', periodStart: '2026-01-31' }; // 31 / 16, clamped in short months
   assert.deepEqual([0, 1, 2, 3, 4].map((i) => range(c, i)), [
     '2026-01-31..2026-02-15', '2026-02-16..2026-02-27', '2026-02-28..2026-03-15', '2026-03-16..2026-03-30', '2026-03-31..2026-04-15']);
   assert.equal(M.periodIndex(c, '2026-02-28'), 2);
@@ -377,12 +377,12 @@ test('semimonthly anchors 5/20, 16 and a clamped 31', () => {
 });
 
 test('calendar periods work for dates before the start (negative indexes)', () => {
-  const p = { freq: 15, periodStart: '2026-09-16' };
+  const p = { freq: 'semimonthly', periodStart: '2026-09-16' };
   assert.equal(range(p, -1), '2026-09-01..2026-09-15');
   assert.equal(range(p, -2), '2026-08-16..2026-08-31');
   assert.equal(M.periodIndex(p, '2026-09-15'), -1);
   assert.equal(M.periodIndex(p, '2026-08-31'), -2);
-  const q = { freq: 15, periodStart: '2026-03-01' };
+  const q = { freq: 'semimonthly', periodStart: '2026-03-01' };
   assert.equal(range(q, -1), '2026-02-16..2026-02-28');
   assert.equal(range(q, -2), '2026-02-01..2026-02-15');
   for (let i = -30; i <= 30; i++) { // indexes and ranges round-trip and tile with no gaps
@@ -394,12 +394,12 @@ test('calendar periods work for dates before the start (negative indexes)', () =
 });
 
 test('monthly (30) follows the calendar, anchor 31 clamps', () => {
-  const p = { freq: 30, periodStart: '2026-01-31', periodEnd: '2026-02-01' };
+  const p = { freq: 'monthly', periodStart: '2026-01-31', periodEnd: '2026-02-01' };
   assert.deepEqual([0, 1, 2, 3].map((i) => range(p, i)), [
     '2026-01-31..2026-02-27', '2026-02-28..2026-03-30', '2026-03-31..2026-04-29', '2026-04-30..2026-05-30']);
   assert.equal(M.periodIndex(p, '2026-02-28'), 1);
   assert.equal(range(p, -1), '2025-12-31..2026-01-30');
-  const q = { freq: 30, periodStart: '2026-09-01' };
+  const q = { freq: 'monthly', periodStart: '2026-09-01' };
   assert.deepEqual([0, 1].map((i) => M.periodLength(q, i)), [30, 31]);
   assert.equal(range(q, -1), '2026-08-01..2026-08-31');
 });
@@ -415,7 +415,7 @@ test('weekly and biweekly stay fixed, including across DST', () => {
 });
 
 test('final-period fixed adjustment with unequal half lengths', () => {
-  const p = { freq: 15, periodStart: '2027-02-01', shifts: 7, gross: 1000,
+  const p = { freq: 'semimonthly', periodStart: '2027-02-01', shifts: 7, gross: 1000,
     payTypes: [{ id: 'p1', k: 'hourly', name: 'Bar', rate: 10, unit: 'hr', usual: 1 }],
     deductions: [{ id: 'd1', k: 'health', name: 'Health', amount: 50, mode: 'fixed' }] };
   const nights = ['2027-02-17', '2027-02-20', '2027-02-25'].map((date, i) => ({ id: i, date, total: 100, cash: 50, pay: { p1: 1 } }));
@@ -429,7 +429,7 @@ test('final-period fixed adjustment with unequal half lengths', () => {
 });
 
 test('shifts default follows the length of that half', () => {
-  const p = { freq: 15, periodStart: '2027-02-01', shifts: 0 };
+  const p = { freq: 'semimonthly', periodStart: '2027-02-01', shifts: 0 };
   assert.equal(M.shiftsPerPeriod(p, [], '2027-02-05').n, 9);   // 15 days -> 8.57
   assert.equal(M.shiftsPerPeriod(p, [], '2027-02-20').n, 7);   // 13 days -> 7.43
   assert.equal(M.shiftsPerPeriod(p, [], '2027-02-20', 0).n, 9); // explicit index wins
@@ -438,10 +438,25 @@ test('shifts default follows the length of that half', () => {
 });
 
 test('isFinal and nightsInPeriod use the calendar halves', () => {
-  const p = { freq: 15, periodStart: '2026-09-01' };
+  const p = { freq: 'semimonthly', periodStart: '2026-09-01' };
   assert.equal(M.isFinal(p, 0, '2026-09-16'), true);
   assert.equal(M.isFinal(p, 0, '2026-09-15'), false);
   const ns = [{ date: '2026-09-15' }, { date: '2026-09-16' }, { date: '2026-08-31' }];
   assert.deepEqual(M.nightsInPeriod(p, ns, 0).map((n) => n.date), ['2026-09-15']);
   assert.deepEqual(M.nightsInPeriod(p, ns, -1).map((n) => n.date), ['2026-08-31']);
+});
+
+test('fixed 15 and 30 stay fixed-length; num(freq) is never used for the string modes', () => {
+  const a = { freq: 15, periodStart: '2027-02-01' };
+  assert.equal(M.calendarMode(a), null);
+  assert.equal(range(a, 0), '2027-02-01..2027-02-15');
+  assert.equal(range(a, 1), '2027-02-16..2027-03-02');
+  assert.equal(M.periodLength(a, 1), 15);
+  const b = { freq: 30, periodStart: '2026-09-16' };
+  assert.equal(M.calendarMode(b), null);
+  assert.equal(range(b, 0), '2026-09-16..2026-10-15');
+  assert.equal(M.lengthFromDates({ ...b, periodEnd: '2026-10-15' }), true);
+  assert.equal(M.calendarMode({ freq: 'semimonthly', periodStart: '2026-09-16' }), 'semimonthly');
+  assert.equal(M.calendarMode({ freq: 'monthly', periodStart: '2026-09-16' }), 'monthly');
+  assert.equal(M.periodLength({ freq: 'monthly', periodStart: '' }), 30); // invalid start: fixed fallback
 });

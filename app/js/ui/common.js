@@ -67,7 +67,7 @@ export function field(label, input, { hint, optional } = {}) {
 export const moneyInput = (props = {}) => el('input', { type: 'text', inputmode: 'decimal', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', ...props });
 export const select = (options, value, props = {}) => {
   const s = el('select', props, options.map(([v, t]) => el('option', { value: v }, t)));
-  s.value = String(value);
+  s.value = String(value); // option values are strings, so numbers and string modes both work
   return s;
 };
 

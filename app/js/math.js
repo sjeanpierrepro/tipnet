@@ -43,15 +43,14 @@ export const fixedTotal = (p) => sumDed(p, (d) => d.mode === 'fixed');
 export const suppRate = (p) => Math.max(0, rate(p) - fedRate(p)) + 0.22;
 
 /* ---------- pay period (6.3) ---------- */
-// Weekly (7) and every-two-weeks (14) are fixed lengths. "Twice a month" (15) and "Once a month" (30) follow the
-// calendar, anchored on the start date's day of month (clamped to short months), so halves/months are not fixed-length.
+// Fixed lengths: 7, 14, 15, 30 (days). Calendar modes are the strings 'semimonthly' and 'monthly', anchored on the start date's day of month
+// (clamped to short months). Lengths for string modes never come from num(p.freq).
 const daysInMonthUTC = (y, m0) => new Date(Date.UTC(y, m0 + 1, 0)).getUTCDate();
 const mkISO = (y, m0, d) => formatISO(Date.UTC(y, m0, Math.min(d, daysInMonthUTC(y, m0))));
-/** 'semimonthly' | 'monthly' | null: calendar mode applies when freq is 15/30 and the start date is valid. */
+/** 'semimonthly' | 'monthly' | null: calendar mode when freq is that string and the start date is valid. */
 export function calendarMode(p) {
   if (!p || !Number.isFinite(parseISO(p.periodStart))) return null;
-  const f = num(p.freq);
-  return f === 15 ? 'semimonthly' : f === 30 ? 'monthly' : null;
+  return p.freq === 'semimonthly' || p.freq === 'monthly' ? p.freq : null;
 }
 /** First day of calendar period idx (any integer, negative before periodStart). */
 function calStart(p, idx, mode) {
@@ -85,7 +84,7 @@ export function periodLength(p, idx = 0) {
     const d = dayDiff(p.periodStart, p.periodEnd) + 1;
     if (d > 0 && d <= 62) return d;
   }
-  return num(p.freq) || 14;
+  return p.freq === 'semimonthly' ? 15 : p.freq === 'monthly' ? 30 : num(p.freq) || 14; // string modes only reach here with an invalid start date
 }
 /** True when the end date is what drives the period length (frequency dropdown disabled). Never for calendar frequencies. */
 export function lengthFromDates(p) {

@@ -67,7 +67,9 @@ export function migrate(input) {
   S.nights.forEach((n) => { if (!n.pay) n.pay = {}; if (n.barback === undefined) n.barback = true; });
   if (p.rateOverride === undefined) p.rateOverride = null;
   if (!p.tipout) p.tipout = { on: false, mode: 'pct', value: 0, basis: 'before', from: 'cash' };
-  if (p.freq === undefined) p.freq = 14;
+  // freq: fixed day counts 7/14/15/30 or the calendar modes 'semimonthly'/'monthly'; anything else falls back to 14.
+  if (typeof p.freq === 'string' && /^[0-9]+$/.test(p.freq)) p.freq = Number(p.freq);
+  if (![7, 14, 15, 30, 'semimonthly', 'monthly'].includes(p.freq)) p.freq = 14;
   if (p.shifts === undefined) p.shifts = 0;
   // payDelay: whole days after the period end that the check arrives (0-21). Absent/blank stays absent (treated as 1).
   if (p.payDelay === undefined || p.payDelay === null || p.payDelay === '' || !Number.isFinite(Number(p.payDelay))) delete p.payDelay;
