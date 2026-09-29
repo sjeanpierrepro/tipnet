@@ -46,8 +46,8 @@ export function parseMoney(v) {
 export function parseHours(v) {
   const s = String(v == null ? '' : v).trim();
   let x;
-  if ((x = /^(d+):(d{1,2})(?::d{1,2})?$/.exec(s))) return +x[1] + +x[2] / 60;
-  if ((x = /^(d+(?:.d+)?)s*h(?:ours?|rs?)?s*(?:(d+)s*m(?:in(?:ute)?s?)?)?$/i.exec(s))) return +x[1] + (x[2] ? +x[2] / 60 : 0);
+  if ((x = /^(\d+):(\d{1,2})(?::\d{1,2})?$/.exec(s))) return +x[1] + +x[2] / 60;
+  if ((x = /^(\d+(?:\.\d+)?)\s*h(?:ours?|rs?)?\s*(?:(\d+)\s*m(?:in(?:ute)?s?)?)?$/i.exec(s))) return +x[1] + (x[2] ? +x[2] / 60 : 0);
   const n = parseFloat(s.replace(/[^0-9.]/g, ''));
   return Number.isFinite(n) ? n : 0;
 }
