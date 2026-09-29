@@ -116,3 +116,14 @@ test('csvSource returns nights in range; toastSource throws', async () => {
   await assert.rejects(() => toastSource.fetchNights({}), /not available yet/);
   assert.equal(toastSource.id, 'toast');
 });
+
+test('regression: hours in H:MM or "7h 30m" form are not read as 730', async () => {
+  const { parseHours } = await import('../app/js/csv.js');
+  assert.equal(parseHours('7.5'), 7.5);
+  assert.equal(parseHours('7:30'), 7.5);
+  assert.equal(parseHours('7h 30m'), 7.5);
+  assert.equal(parseHours('8 hrs'), 8);
+  assert.equal(parseHours(''), 0);
+  const { nights } = buildNights([['9/26/2026', '100', '7:30']], { date: 0, cash: 1, hours: 2 }, { payId: 'p1' });
+  assert.deepEqual(nights[0].pay, { p1: 7.5 });
+});

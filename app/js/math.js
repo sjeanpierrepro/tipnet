@@ -187,7 +187,9 @@ export function calibrate(p, nights, idx, actual, today = todayISO(), shifts) {
   const A = num(actual);
   if (!ns.length) return { ok: false, reason: 'nonights', missingCash: 0 };
   if (!(A > 0)) return { ok: false, reason: 'noactual', missingCash: 0 };
-  const missing = ns.filter((n) => n.cash == null || n.cash === '').length;
+  const n0 = shifts > 0 ? shifts : shiftsPerPeriod(p, nights, today).n;
+  // same test computeNight uses, so junk like "abc" counts as missing instead of silently being $0
+  const missing = ns.filter((night) => computeNight(night, p, n0).cashInHand == null).length;
   if (missing) return { ok: false, reason: 'missingCash', missingCash: missing };
   const n = shifts > 0 ? shifts : shiftsPerPeriod(p, nights, today).n;
   let T = 0, C = 0, predC = 0;

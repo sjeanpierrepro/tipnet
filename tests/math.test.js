@@ -323,3 +323,12 @@ test('cents helpers', () => {
   assert.equal(M.toCents(-2.675), -268);
   assert.equal(M.round2(73.35), 73.35);
 });
+
+test('regression: calibration counts non-numeric cash as missing (not silently $0)', () => {
+  const nights = N();
+  nights[1].cash = 'abc';
+  const c = M.calibrate(P(), nights, 0, 800, TODAY);
+  assert.equal(c.ok, false);
+  assert.equal(c.reason, 'missingCash');
+  assert.equal(c.missingCash, 1);
+});
