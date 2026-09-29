@@ -1,5 +1,5 @@
-// TipNet billing settings. This is the ONLY file the owner edits to turn payments on.
-// Full click-by-click steps are in PAYMENTS.md at the top of the project.
+// TipNet billing settings. The owner edits this file to turn payments on, then adds 1 to VERSION
+// in app/sw.js so installed apps pick up the change. Full click-by-click steps are in PAYMENTS.md.
 //
 // While `provider` is null, the budgeting add-on stays locked and the app never
 // contacts any payment service. The free app is never affected either way.

@@ -2,9 +2,9 @@
 ## Shell, styling, PWA (scaffold worker)
 - Fonts: WOFF2 latin subset from fonts.gstatic. Big Shoulders Display and Figtree are variable fonts (one file each, weight ranges 700-800 / 400-700); IBM Plex Mono only the 500 weight. Total ~70 KB.
 - Light theme brass is darker (#8C6718 accent, #7A5810 hero) so it passes AA on light backgrounds; dark uses #C9A45C / #D6B46E.
-- Theme: html[data-theme] set by an inline script in index.html from localStorage key "tipnet-theme" (avoids a flash). Setup UI should write that key too.
+- Theme: html[data-theme] set before first paint by js/theme-boot.js (a small synchronous external script, since the CSP blocks inline scripts) from localStorage key "tipnet-theme". Setup UI writes that key too.
 - Icons: T monogram in brass on #121417; PNGs generated with System.Drawing via app/icons/make-icons.ps1 (no node on this machine). Maskable uses 0.8 scale for the safe zone. Manifest uses relative start_url/scope for GitHub Pages subpaths.
-- Service worker: cache-first, precaches each file individually (a missing file does not fail install). Accepts 'SKIP_WAITING' string or {type:'SKIP_WAITING'}. Bump VERSION each release.
+- Service worker: cache-first (except js/billing-config.js, network-first with a 4 s / offline cache fallback so turning payments on reaches installed apps), precaches each file individually (a missing file does not fail install). Accepts 'SKIP_WAITING' string or {type:'SKIP_WAITING'}. Bump VERSION each release.
 - Deploy workflow runs `npm test` and needs a package.json with a test script (`node --test`) at repo root.
 - Logic layer: money is rounded to whole cents per night (tax, tip-out, fixed share are each rounded), so period sums are exact cent sums; results can differ from unrounded prototype math by a cent.
 - Logic layer: package.json test script is `node --test` (no `tests/` arg) because Node 22 treats a directory argument as a module path; it still discovers tests/*.test.js.
@@ -73,3 +73,10 @@
 - Rule: when freq is 'semimonthly' or 'monthly' the calendar wins. periodEnd is ignored by the math (lengthFromDates is false) and Setup auto-sets the end date (calendar modes: the derived end; fixed modes: start+length-1, and the end-date-wins note applies as before) of the first period (choosing the frequency, editing the start, or finishing an end-date edit). No "Your dates make the pay period N days long" note in this mode; a calendar note is shown instead. Existing profiles with a stale start+14 end date keep working: the stored end is simply not used.
 - periodLength(p, idx) is now per period (idx defaults to 0); periodIndex/periodRange work for negative indexes. shiftsPerPeriod, periodTotals and calibrate take/derive the index so the 4-shifts-a-week default uses that period's length (e.g. 13-day Feb half = 7 shifts). Summary shows "twice a month (e.g. the 1st-15th and 16th-end)" instead of "N days". No storage schema change.
 - sw.js VERSION bumped to tipnet-v11, then tipnet-v12 when both fixed and calendar options were offered.
+
+## Final review fixes
+- Between a period's end and its payday, the projected check uses the finished period's check only when every night has cash; otherwise it scales from nights with cash (sum of onCheck + fixed share, times N / nights with cash, minus fixed deductions), then the average past check, else "Not known yet". safeToSpend().after.checkFrom tells the UI which it used.
+- paydayInfo steps back from the current period until the previous check has already arrived, so short periods with long pay delays are right in every frequency mode.
+- revalidate stores 'invalid' (locked) when the provider answers valid:false but the key status is still active (for example an instance removed on the dashboard).
+- The Bills card lists bills through the end of the Next paycheck window, so it never omits a bill that card counts.
+- sw.js VERSION bumped to tipnet-v13.

@@ -2,7 +2,7 @@
 
 TipNet is a free app that helps bartenders see their estimated take-home pay at the end of a shift. You enter one number—everything you made that night—and it shows how much cash you're taking home and how much will appear on your paycheck after taxes and deductions.
 
-All the numbers stay on your phone or computer. Your bar cannot see them. No accounts to create, no data sent anywhere.
+All the numbers stay on your phone or computer. Your bar cannot see them. No accounts to create. Your pay and budget data never leave your device; the only thing TipNet ever sends is a license key check to Lemon Squeezy, and only if you use the paid Budget add-on.
 
 ## What you can do with TipNet
 

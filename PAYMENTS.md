@@ -23,10 +23,11 @@ TipNet stays free. The budgeting add-on costs $1.99 a month or $20 a year. Custo
     - Paste the Yearly link on the `yearly: '',` line.
     - Optional but recommended: in Lemon Squeezy, open the product; the number in its web address is the product id. Type it inside the brackets on the `productIds: [],` line, for example `productIds: [123456],`. This stops keys from any other store working.
     - Change `provider: null,` to `provider: 'lemonsqueezy',`.
-12. Commit the change. The site rebuilds in a minute or two. Customers get the update the next time they open the app and tap Refresh.
+12. Open the file `app/sw.js` the same way. Near the top is a line like `const VERSION = 'tipnet-v13';`. Add 1 to the number (for example `tipnet-v14`). Do not skip this: the app keeps its files on each phone, and a new number is what tells installed apps to fetch your changes.
+13. Commit both changes. The site rebuilds in a minute or two. Customers get the update the next time they open the app and tap Refresh.
 
 ## Test first (recommended)
-Lemon Squeezy has a Test mode switch at the top of the dashboard. Turn it on, and repeat steps 4 to 10 there (test mode has its own products and links). Use the test checkout link in `billing-config.js`, and pay with card number 4242 4242 4242 4242, any future expiry date and any 3 digit code. You will get a test license key by email. Paste it into TipNet to see the add-on unlock. When you are happy, turn Test mode off, create the real products, and swap in the real links and product id.
+Lemon Squeezy has a Test mode switch at the top of the dashboard. Turn it on, and repeat steps 4 to 10 there (test mode has its own products and links). Use the test checkout links in `billing-config.js` and bump `VERSION` in `app/sw.js` as in steps 11 to 13, and pay with card number 4242 4242 4242 4242, any future expiry date and any 3 digit code. You will get a test license key by email. Paste it into TipNet to see the add-on unlock. When you are happy, turn Test mode off, create the real products, swap in the real links and product id, and bump `VERSION` in `app/sw.js` again.
 
 ## How customers get their key
 - Right after paying, Lemon Squeezy emails a receipt that includes the license key.
