@@ -1,7 +1,7 @@
 /* TipNet service worker. Bump VERSION on every release so clients fetch a fresh shell.
    It does NOT skipWaiting on its own: the page shows "Update available: Refresh" and
    posts {type:'SKIP_WAITING'} (or the string 'SKIP_WAITING') when the user agrees. */
-const VERSION = 'tipnet-v1';
+const VERSION = 'tipnet-v2';
 
 const SHELL = [
   './',
@@ -36,7 +36,7 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(VERSION).then((cache) =>
       // Add one by one so a single missing file cannot block installation.
-      Promise.all(SHELL.map((url) => cache.add(url).catch(() => {})))
+      Promise.all(SHELL.map((url) => cache.add(new Request(url, { cache: 'reload' })).catch(() => {})))
     )
   );
 });
@@ -44,7 +44,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== VERSION).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith('tipnet-') && k !== VERSION).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
