@@ -30,3 +30,11 @@
 - CSV import "overwrite" updates the existing night: keeps its id and barback choice, keeps its cash when the import has no cash, and keeps pay types the import does not mention.
 - gh CLI is not installed/authenticated here, so no GitHub repo was created and nothing was deployed; see DEPLOY.md.
 - "You get paid" is always usable: choosing a schedule moves the end date to match (start + length - 1); if the dates disagree with the schedule, a note says the dates win. Replaces disabling the dropdown, which read as broken.
+
+## Payments (budgeting add-on)
+- Price: $1.99/month or $20/year. Provider: Lemon Squeezy (merchant of record, license keys). Code is provider-agnostic (interface in app/js/billing.js, chosen in app/js/billing-config.js). No server of our own.
+- CORS check (2026-09-29, curl): OPTIONS preflight to api.lemonsqueezy.com/v1/licenses/activate returned 204 with access-control-allow-origin: *, allow-methods including POST, allow-headers Content-Type. A POST to /validate with an Origin header and a fake key returned 404 JSON {"valid":false,"error":"license_key not found."} with access-control-allow-origin: *. Browsers can call it directly, so no proxy is needed. proxy/lemonsqueezy-worker.js and the proxyUrl config field exist only as an unused fallback.
+- Deliberate exception to "no third-party calls": the app calls api.lemonsqueezy.com only when the user activates a key, or when a silent revalidation is due (at most once per 24 hours, online only, only if a key is stored). It sends only the license key and a random device name, never budget, pay or night data. The free app never calls it.
+- Entitlement lives in state.settings.entitlement {plan, key (full; masked for display with maskKey), instanceId, status, validatedAt, expiresAt}. Unlocked = active/on_trial and validated within 14 days (offline grace). A network failure never locks anyone; only a definite provider answer (expired, disabled, not found) does.
+- Dev unlock: ?unlock=dev works only on localhost/127.0.0.1 and gives {plan:'dev'}.
+- The service worker handles only same-origin requests, so provider responses are never cached.
