@@ -39,9 +39,10 @@ test('expected income', () => {
   assert.equal(inc.checkSoFar, t.chk);
   // 4 nights logged of 10 expected: the check estimate scales by 10/4
   assert.equal(inc.projectedCheck, M.round2(t.chk * 2.5));
+  assert.equal(inc.projectedFrom, 'nights');
   assert.equal(inc.avgTakeHomePerPeriod, null);
   const none = B.expectedIncome(P(), [], TODAY);
-  assert.deepEqual(none, { cashSoFar: 0, checkSoFar: 0, projectedCheck: null, avgCheckPerPeriod: null, avgTakeHomePerPeriod: null });
+  assert.deepEqual(none, { cashSoFar: 0, checkSoFar: 0, projectedCheck: null, projectedFrom: null, avgCheckPerPeriod: null, avgTakeHomePerPeriod: null });
   // a finished period gives an average take-home, and an average check when every night has cash entered
   const later = B.expectedIncome(P(), M.exampleNights(), '2026-10-10');
   const done = M.periodTotals(P(), M.exampleNights(), 0, '2026-10-10');
@@ -252,4 +253,49 @@ test('safeToSpend on semimonthly counts bills up to payday and in the following 
   assert.equal(r.payday, '2026-09-16');
   assert.deepEqual(r.bills.map((x) => x.id + '@' + x.date), ['b1@2026-09-12']);
   assert.deepEqual(r.after.bills.map((x) => x.id + '@' + x.date), ['b2@2026-09-20']);
+});
+
+test('between period end and payday: projected check scales from nights with cash, never uses a partial raw total', () => {
+  const p = { ...P(), payDelay: 4 };
+  const today = '2026-10-06'; // check for 09-21..10-04 arrives 10-08
+  const all = M.exampleNights();
+  const full = B.safeToSpend(B.emptyBudget(), p, all, today).after;
+  assert.equal(full.checkFrom, 'finished');
+  assert.equal(full.projectedCheck, M.periodTotals(p, all, 0, today).chk);
+  // half the nights lose their cash: scale the rest up to all nights, then take off the fixed deductions once
+  const half = all.map((n, i) => (i % 2 ? { ...n, cash: '' } : n));
+  const n = M.shiftsPerPeriod(p, half, today, 0).n;
+  const withCash = M.nightsInPeriod(p, half, 0).map((x) => M.computeNight(x, p, n)).filter((c) => c.onCheck != null);
+  const N = M.nightsInPeriod(p, half, 0).length;
+  const sumC = withCash.reduce((s, c) => s + M.toCents(c.onCheck) + M.toCents(c.fixedPerShift), 0);
+  const want = M.fromCents(Math.round((sumC * N) / withCash.length) - M.toCents(M.fixedTotal(p)));
+  const r = B.safeToSpend(B.emptyBudget(), p, half, today).after;
+  assert.equal(r.checkFrom, 'finished');
+  assert.equal(r.projectedCheck, want);
+  assert.ok(r.projectedCheck > M.periodTotals(p, half, 0, today).chk); // not the raw partial sum
+  // no cash on any night and no past average: unknown, never a negative made-up number
+  const none = all.map((x) => ({ ...x, cash: '' }));
+  const u = B.safeToSpend(B.emptyBudget(), p, none, today).after;
+  assert.equal(u.projectedCheck, null);
+  assert.equal(u.checkFrom, null);
+  assert.equal(u.left, null);
+});
+
+test('paydayInfo: short periods with a long pay delay pick the earliest check still to come', () => {
+  const w = { freq: 7, periodStart: '2026-09-07', payDelay: 21 }; // 09-07..09-13 pays 10-04
+  assert.deepEqual(B.nextPayday(w, '2026-09-28'), { date: '2026-10-04', daysAway: 6 });
+  assert.equal(B.paydayInfo(w, '2026-09-28').periodIndex, 0);
+  assert.equal(B.nextPayday(w, '2026-10-04').date, '2026-10-11');
+  const two = { periodStart: '2026-09-01', periodEnd: '2026-09-02', payDelay: 21 }; // 2-day periods
+  const info = B.paydayInfo(two, '2026-09-28');
+  assert.equal(info.date, '2026-09-29');
+  assert.equal(info.periodStart, '2026-09-07');
+  const semi = { freq: 'semimonthly', periodStart: '2026-09-01', payDelay: 21 }; // 09-01..09-15 pays 10-06
+  assert.equal(B.nextPayday(semi, '2026-09-28').date, '2026-10-06');
+  const mon = { freq: 'monthly', periodStart: '2026-09-01', payDelay: 21 }; // 09-01..09-30 pays 10-21
+  assert.equal(B.nextPayday(mon, '2026-10-05').date, '2026-10-21');
+  assert.equal(B.nextPayday(mon, '2026-10-21').date, '2026-11-21');
+  const r = B.safeToSpend(B.emptyBudget(), semi, [], '2026-09-28');
+  assert.equal(r.payday, '2026-10-06');
+  assert.equal(r.after.projectedCheck, null);
 });

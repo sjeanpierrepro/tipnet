@@ -43,10 +43,12 @@ async function recheck() {
 export function bootBilling() {
   try {
     const S = getState();
+    const before = unlocked();
     // A dev unlock only ever counts on localhost; drop one that arrived anywhere else.
     if (S.settings.entitlement && S.settings.entitlement.plan === 'dev' && !isDevHost(location)) { delete S.settings.entitlement; save(); }
     const dev = devEntitlement(location);
     if (dev && !(S.settings.entitlement && S.settings.entitlement.plan === 'dev')) { S.settings.entitlement = dev; save(); }
+    if (unlocked() !== before) bus.rerender(); // the Budget tab may already be on screen
     recheck();
     window.addEventListener('online', recheck);
   } catch (e) { /* ignore */ }
@@ -221,6 +223,11 @@ function breakdown(S, r) {
 }
 
 /* ---------- (b) next paycheck ---------- */
+const CHECK_HINT = {
+  current: 'The projected check comes from the nights you have logged this pay period with cash entered, scaled to the shifts you expect to work.',
+  finished: 'The projected check comes from the pay period that just ended. If some of its nights have no cash entered, TipNet scales up from the nights that do.',
+  average: 'No night in the pay period this check pays for has cash entered yet, so the projected check is your average check from past pay periods.',
+};
 function nextCheckCard(S) {
   const a = safeToSpend(S.budget, S.profile, S.nights, todayISO(), { cashOnHand: clean(cashText) }).after;
   const known = a.projectedCheck != null;
@@ -232,7 +239,7 @@ function nextCheckCard(S) {
       row('Savings goals', '−' + money(a.goalsTotal)),
       row('What is left', known ? money(a.left) : '–', 'total')),
     el('p', { class: 'hint' }, known
-      ? 'The projected check comes from the nights you have logged this pay period with cash entered, or your average past check if you have none yet.'
+      ? (CHECK_HINT[a.checkFrom] || CHECK_HINT.current)
       : 'Log a night with its cash in hand and TipNet can estimate your check. The check is what is left after the cash you already took home.'));
 }
 
@@ -240,7 +247,10 @@ function nextCheckCard(S) {
 function billsCard(S) {
   const B = S.budget, p = S.profile, today = todayISO();
   const idx = periodIndex(p, today);
-  const upcoming = billsDue(B, periodRange(p, idx).start, periodRange(p, idx + 1).end);
+  // Same window safe to spend and the next paycheck card count, so no bill they include is missing here.
+  const nextEnd = periodRange(p, idx + 1).end;
+  const afterEnd = safeToSpend(B, p, S.nights, today).after.periodEnd;
+  const upcoming = billsDue(B, periodRange(p, idx).start, afterEnd > nextEnd ? afterEnd : nextEnd);
   const rows = upcoming.map((b) => {
     const key = periodIndex(p, b.date) + ':' + b.id;
     const cb = el('input', { type: 'checkbox', checked: !!B.paidBills[key] });
@@ -264,7 +274,7 @@ function billsCard(S) {
         })))));
   return el('section', { class: 'card stack' },
     el('h2', null, 'Bills'),
-    rows.length ? el('ul', { class: 'list' }, rows) : el('p', { class: 'hint' }, B.bills.length ? 'No bills due this pay period or the next.' : 'No bills yet. Add the ones that repeat every month.'),
+    rows.length ? el('ul', { class: 'list' }, rows) : el('p', { class: 'hint' }, B.bills.length ? 'No bills due before your next paycheck is spent.' : 'No bills yet. Add the ones that repeat every month.'),
     rows.length ? el('p', { class: 'hint' }, 'Tick a bill when you have paid it. It stops counting against safe to spend.') : null,
     manage.length ? el('details', { open: billsOpen || !!(editing && editing.kind === 'bill'), ontoggle: (e) => { billsOpen = e.target.open; } }, el('summary', { class: 'btn-link' }, 'Edit or remove bills'), el('ul', { class: 'list', style: 'margin-top:var(--s-2)' }, manage)) : null,
     addBox('bill', 'Add a bill'));

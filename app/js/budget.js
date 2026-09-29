@@ -11,6 +11,7 @@
 import {
   num, toCents, fromCents, round2, parseISO, addDays, dayDiff,
   periodIndex, periodRange, isFinal, periodTotals, shiftsPerPeriod, todayISO,
+  computeNight, fixedTotal,
 } from './math.js';
 
 /* ---------- small helpers ---------- */
@@ -88,8 +89,12 @@ export const hasPayDelay = (profile) => !!profile && profile.payDelay !== undefi
  */
 export function paydayInfo(profile, today = todayISO()) {
   const delay = payDelayOf(profile);
-  const idx = periodIndex(profile, today);
-  for (let k = idx - 4; ; k++) {
+  const payOf = (k) => addDays(periodRange(profile, k).end, delay);
+  // Paydays only move forward with k. Step back to the earliest period whose check has not arrived yet
+  // (short periods with a long delay can have several checks still to come), then return that one.
+  let k0 = periodIndex(profile, today);
+  while (payOf(k0 - 1) > today) k0--;
+  for (let k = k0; ; k++) {
     const r = periodRange(profile, k);
     const date = addDays(r.end, delay);
     if (date > today) return { date, daysAway: dayDiff(today, date), periodIndex: k, periodStart: r.start, periodEnd: r.end };
@@ -133,6 +138,7 @@ const hasCash = (n) => n.cash !== '' && n.cash != null && Number.isFinite(parseF
  * {cashSoFar: cash in hand this period, checkSoFar: on-check estimate so far (nights with cash entered),
  *  projectedCheck: estimated check if you work your expected shifts, or null when TipNet cannot tell yet,
  *  avgCheckPerPeriod: average check from finished periods where every night has cash entered, or null,
+ *  projectedFrom: 'nights' (this period's nights with cash) | 'average' | null,
  *  avgTakeHomePerPeriod: from finished periods or null}
  * The check can only be worked out for nights with cash entered (check = take-home - cash in hand), so the
  * projection scales from those nights only. With none this period it falls back to the average past check.
@@ -151,7 +157,25 @@ export function expectedIncome(profile, nights, today = todayISO()) {
   // never scale down what is already earned
   if (withCash > 0) projected = round2(t.chk * Math.max(1, Math.max(expected, t.ns.length) / withCash));
   else projected = avgChk;
-  return { cashSoFar: t.cash, checkSoFar: t.chk, projectedCheck: projected, avgCheckPerPeriod: avgChk, avgTakeHomePerPeriod: avg };
+  const projectedFrom = withCash > 0 ? 'nights' : avgChk == null ? null : 'average';
+  return { cashSoFar: t.cash, checkSoFar: t.chk, projectedCheck: projected, projectedFrom, avgCheckPerPeriod: avgChk, avgTakeHomePerPeriod: avg };
+}
+
+/**
+ * Estimated check {c (cents or null), from} for a finished period whose check has not arrived yet (or null if unknown).
+ * Every night has cash: the period's check as worked out. Some do: scale the nights with cash up to all N nights,
+ * (sum of onCheck + fixed share) x N / withCash - fixed deductions. None do: the average past check, else null.
+ */
+function finishedCheckC(profile, nights, k, today, avgCheck) {
+  const t = periodTotals(profile, nights, k, today);
+  if (t.allCash) return { c: toCents(t.chk), from: 'finished' };
+  const n = shiftsPerPeriod(profile, nights, today, k).n;
+  const withCash = t.ns.map((night) => computeNight(night, profile, n)).filter((c) => c.onCheck != null);
+  if (withCash.length) {
+    const sumC = withCash.reduce((s, c) => s + toCents(c.onCheck) + toCents(c.fixedPerShift), 0);
+    return { c: Math.round((sumC * t.ns.length) / withCash.length) - toCents(fixedTotal(profile)), from: 'finished' };
+  }
+  return { c: avgCheck == null ? null : toCents(avgCheck), from: avgCheck == null ? null : 'average' };
 }
 
 /* ---------- categories and goals ---------- */
@@ -196,7 +220,7 @@ function goalPieces(budget) {
  *  goals:[{id,name,amount}], goalsTotal, categories:[{id,name,remaining,reserved}], categoriesTotal,
  *  safe (can be negative), perDay,
  *  (payday = first pay date after today; bills counted are unpaid ones due up to the day before it)
- *  after:{projectedCheck (null if unknown), bills, billsTotal, goalsTotal, left, periodStart, periodEnd}}
+ *  after:{projectedCheck (null if unknown), checkFrom ('current'|'finished'|'average'|null), bills, billsTotal, goalsTotal, left, periodStart, periodEnd}}
  */
 export function safeToSpend(budget, profile, nights, today = todayISO(), options = {}) {
   const idx = periodIndex(profile, today);
@@ -240,12 +264,11 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
   const afterStart = payday, afterEnd = addDays(nextR.end, delay - 1);
   const nextBills = unpaid(afterStart, afterEnd);
   const nextBillsC = sumC(nextBills, (b) => toCents(num(b.amount)));
-  let projC;
-  if (np.periodIndex === idx) projC = inc.projectedCheck == null ? null : toCents(inc.projectedCheck);
-  else {
-    const t = periodTotals(profile, nights, np.periodIndex, today);
-    projC = t.ns.length > 0 ? toCents(t.chk) : (inc.avgCheckPerPeriod == null ? null : toCents(inc.avgCheckPerPeriod));
-  }
+  let projC, checkFrom;
+  if (np.periodIndex === idx) {
+    projC = inc.projectedCheck == null ? null : toCents(inc.projectedCheck);
+    checkFrom = inc.projectedFrom === 'nights' ? 'current' : inc.projectedFrom;
+  } else ({ c: projC, from: checkFrom } = finishedCheckC(profile, nights, np.periodIndex, today, inc.avgCheckPerPeriod));
 
   return {
     payday, daysAway,
@@ -257,7 +280,7 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
     safe: fromCents(safeC),
     perDay: fromCents(Math.round(safeC / Math.max(1, daysAway))),
     after: {
-      projectedCheck: projC == null ? null : fromCents(projC), bills: nextBills, billsTotal: fromCents(nextBillsC), goalsTotal: fromCents(goalsC),
+      projectedCheck: projC == null ? null : fromCents(projC), checkFrom, bills: nextBills, billsTotal: fromCents(nextBillsC), goalsTotal: fromCents(goalsC),
       left: projC == null ? null : fromCents(projC - nextBillsC - goalsC), periodStart: afterStart, periodEnd: afterEnd,
     },
   };
