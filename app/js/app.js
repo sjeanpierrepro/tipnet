@@ -95,7 +95,7 @@ async function boot() {
   applyTheme(state.settings.theme);
   bus.go = go;
   bus.rerender = render;
-  bus.stateReplaced = () => { periods.reset(); tonight.resetDraft(); render(); }; // after Erase everything / Restore
+  bus.stateReplaced = () => { periods.reset(); tonight.resetDraft(); setup.reset(); render(); }; // after Erase everything / Restore
   wireTabs();
   window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); setInstallPrompt(e); });
   window.addEventListener('appinstalled', () => setInstallPrompt(null));

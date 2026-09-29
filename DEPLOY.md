@@ -28,7 +28,7 @@ folder for you. If you upload only the contents of `app/`, nothing gets deployed
 2. Name it `tipnet`, choose **Public**, leave "Add a README" unchecked, click **Create repository**.
 3. Click **uploading an existing file**.
 4. Open the `tipnet` folder in File Explorer, select **every** file and folder (`app`, `tests`, `.github`, `package.json`, the `.md` files, and so on) and drag them onto the page.
-   - `.github` is a hidden folder. In File Explorer, turn on **View > Show > Hidden items** so you can see and drag it. Without it nothing deploys.
+   - Make sure the `.github` folder is included; without it nothing deploys. Do **not** drag the `.git` folder (it only appears if hidden items are shown).
 5. Click **Commit changes**.
 
 ### Step 3: Turn on GitHub Pages

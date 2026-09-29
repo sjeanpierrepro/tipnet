@@ -71,7 +71,7 @@ TipNet is built for current versions of Safari (iPhone and Mac), Chrome (Android
 
 ## Releasing an update
 
-When you change any file in `app/`, also change the `VERSION` line at the top of `app/sw.js` (for example `tipnet-v1` to `tipnet-v2`). That is how phones learn there is a new version; they then show "Update available: Refresh".
+When you change any file in `app/`, also change the `VERSION` line at the top of `app/sw.js` (for example `tipnet-v2` to `tipnet-v3`). That is how phones learn there is a new version; they then show "Update available: Refresh".
 
 ## Legal
 

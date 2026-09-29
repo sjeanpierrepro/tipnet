@@ -10,6 +10,7 @@ import { renderBackup, renderInstall } from './backup.js';
 
 let guidedStep = 0;
 let guidedActive = false; // stays true once the guided flow starts, even after the first edit ends example mode
+export function reset() { guidedStep = 0; guidedActive = false; }
 
 /** Grouped <select> for presets. */
 function presetSelect(presets, current, id) {
