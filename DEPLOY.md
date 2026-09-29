@@ -1,72 +1,90 @@
 # Deploying TipNet
 
-Choose one method below. Both are free and take about 5 minutes.
+Two free options. GitHub Pages is recommended because updates deploy automatically.
 
 ## Option 1: GitHub Pages (recommended)
 
-GitHub Pages gives you a URL like `https://YourUsername.github.io/tipnet/` that you can share with your staff. It's free and automatic.
+You will publish the **whole `tipnet` folder** (not just `app/`). The folder includes a
+workflow file (`.github/workflows/deploy.yml`) that runs the tests and publishes the `app/`
+folder for you. If you upload only the contents of `app/`, nothing gets deployed.
 
-### Step 1: Create a GitHub account (if you don't have one)
-1. Go to github.com
-2. Click **Sign up**
-3. Enter your email, create a password, choose a username (this will be in your TipNet link)
-4. Click **Create account**
-5. Confirm your email
+### Step 1: Create a GitHub account (skip if you have one)
+1. Go to https://github.com and click **Sign up**.
+2. Pick a username. It becomes part of your link (`https://USERNAME.github.io/tipnet/`).
+3. Confirm your email.
 
-### Step 2: Create a new repository
-1. Click the **+** icon in the top right and choose **New repository**
-2. Name it `tipnet` (exactly)
-3. Choose **Public** (so your staff can access it)
-4. Do NOT initialize with a README (you already have one)
-5. Click **Create repository**
+### Step 2: Publish the folder
 
-### Step 3: Upload the app folder
-1. In the new repository, click **Add file** → **Upload files**
-2. Click **choose your files** and select everything in your `app/` folder (the index.html, css/, js/, manifest.webmanifest, etc.)
-3. Scroll down and click **Commit changes**
+**Easiest: GitHub Desktop** (https://desktop.github.com)
+1. Install GitHub Desktop and sign in with your GitHub account.
+2. **File > Add local repository...**
+3. Choose `C:\Users\jusst\tipnet` and click **Add repository**. (It is already a git repository, so you do not need to create one.)
+4. Click **Publish repository** (top bar).
+5. Keep the name `tipnet`. **Uncheck "Keep this code private"** (GitHub Pages is free only for public repositories).
+6. Click **Publish repository**.
 
-The app is now uploaded. GitHub's automatic workflow will deploy it in a few seconds.
+**Alternative: upload in the browser**
+1. On github.com click **+** (top right) > **New repository**.
+2. Name it `tipnet`, choose **Public**, leave "Add a README" unchecked, click **Create repository**.
+3. Click **uploading an existing file**.
+4. Open the `tipnet` folder in File Explorer, select **every** file and folder (`app`, `tests`, `.github`, `package.json`, the `.md` files, and so on) and drag them onto the page.
+   - `.github` is a hidden folder. In File Explorer, turn on **View > Show > Hidden items** so you can see and drag it. Without it nothing deploys.
+5. Click **Commit changes**.
 
-### Step 4: Enable GitHub Pages
-1. In your repository, click **Settings** (top right)
-2. On the left sidebar, click **Pages**
-3. Under "Build and deployment," make sure **Source** is set to **GitHub Actions**
-4. Wait 1 minute
+### Step 3: Turn on GitHub Pages
+1. In your repository click **Settings** (top bar).
+2. In the left sidebar click **Pages**.
+3. Under **Build and deployment > Source**, choose **GitHub Actions**.
 
-Your site is live at `https://YourUsername.github.io/tipnet/`. Share this link with your staff.
+### Step 4: Run the deploy
+1. Click the **Actions** tab.
+2. The first run (from Step 2) may show a red X. That is expected: Pages was not turned on yet.
+3. Click **Deploy to GitHub Pages** in the left list.
+4. Click **Run workflow** (right side) > **Run workflow**.
+5. Wait for the green check (about 1 to 2 minutes).
+
+Your app is live at **https://USERNAME.github.io/tipnet/** (replace USERNAME with your GitHub username). Share this link with staff.
+
+### Updating later
+Commit and push changes (GitHub Desktop: **Commit to main**, then **Push origin**). The workflow deploys automatically. Bump `VERSION` in `app/sw.js` for each release so staff see "Update available: Refresh".
 
 ---
 
-## Option 2: Netlify Drop (free account to keep the link)
+## Option 2: Netlify Drop (quick test link)
 
-Netlify Drop lets you drag and drop the app folder and get an instant link. Perfect if you want to test before using GitHub.
+1. Go to https://app.netlify.com/drop.
+2. Drag the **`app` folder** (the one containing `index.html`) onto the page.
+3. Netlify gives you a link like `https://random-name.netlify.app/`.
 
-### Steps
-1. Go to app.netlify.com/drop in your browser
-2. Drag your `app/` folder (the one with index.html, css/, js/, etc.) onto the page
-3. Wait for the upload (a few seconds)
-4. Netlify gives you a random link like `https://random-name.netlify.app/`
-
-The app is live immediately. You can share this link, but Netlify may delete it after some time if you don't create an account. For a permanent link, log in and claim your site.
+Drops without an account are temporary. Create a free account and claim the site to keep the link. To update, drag the `app` folder again onto the site's **Deploys** page.
 
 ---
 
 ## Notes
 
-- **HTTPS required**: Both GitHub Pages and Netlify use HTTPS, which is required for the app to work offline.
-- **Update the link**: If you redeploy (upload new files), the same link stays active. Your staff don't need a new link.
-- **Custom domain**: Both hosts support custom domains (like `tipnet.your-bar.com`), but you'll need to own the domain and pay a small annual fee. The free links above work great.
+- **HTTPS is required** for offline use and install. Both hosts use HTTPS.
+- **Same link after updates.** Staff do not need a new link when you redeploy.
+- **Custom domain** (like `tipnet.your-bar.com`) is supported by both, but you must own the domain.
 
 ---
 
 ## Troubleshooting
 
-**"Page not found" after deploying**
+**Actions shows a red X on the first run**
+Expected if Pages was not enabled yet. Do Step 3, then Step 4 (Run workflow).
 
-Make sure you uploaded the *contents* of the `app/` folder, not a folder inside a folder. The `index.html` should be at the top level of your repository or drop, not nested.
+**No "Deploy to GitHub Pages" workflow in the Actions tab**
+The `.github` folder was not uploaded. Upload it (show hidden items in File Explorer), or use GitHub Desktop, which includes it automatically.
 
-**If you need help**
+**The test job fails**
+Open the failed run to see which test failed. Fix it locally (`npm test`), then push again.
 
-Each service has a help button:
-- GitHub: click **?** (help icon, top right)
-- Netlify: click **Support** (bottom right)
+**"404 / Page not found" at the link**
+- Check Settings > Pages says "Your site is live at ...". If not, run the workflow again (Step 4).
+- The link ends in `/tipnet/` and must match the repository name exactly.
+- Wait a minute after a green check; the first publish can lag.
+
+**Staff still see the old version**
+They get an "Update available: Refresh" bar. If you forgot to bump `VERSION` in `app/sw.js`, bump it and push again.
+
+**Need help?** GitHub: https://docs.github.com/pages. Netlify: the **Support** link in the dashboard.
