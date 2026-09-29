@@ -284,7 +284,7 @@ function themeCard(ctx) {
   return el('section', { class: 'card stack' }, el('h2', null, 'Appearance'), el('div', { class: 'cluster', role: 'group', 'aria-label': 'Theme' }, btns));
 }
 
-const finePrint = () => el('p', { class: 'note' }, 'TipNet gives estimates, not tax advice. Your numbers stay on this device. Social Security and Medicare apply to every tip dollar. Under the federal “No Tax on Tips” deduction (tax years 2025–2028, up to $25,000 of qualified tips), some federal income tax taken from your tips may come back at tax time, depending on your situation. Florida has no state income tax. Taxes on cash tips usually come out of the paycheck. Auto-gratuities are wages, not tips.');
+const finePrint = () => el('p', { class: 'note' }, 'Social Security and Medicare apply to every tip dollar. Under the federal “No Tax on Tips” deduction (tax years 2025–2028, up to $25,000 of qualified tips), some federal income tax taken from your tips may come back at tax time, depending on your situation. Florida has no state income tax. Taxes on cash tips usually come out of the paycheck. Auto-gratuities are wages, not tips.');
 
 /* ============ guided flow ============ */
 function guided(root, ctx) {

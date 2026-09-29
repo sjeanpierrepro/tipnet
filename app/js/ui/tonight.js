@@ -173,7 +173,6 @@ export function render(root) {
     save();
     const net = computeNight(night, p, shiftsPerPeriod(p, S.nights).n).net;
     draft = blankDraft(S);
-    draft.date = night.date;
     render(clear(root));
     const m = root.querySelector('[role=status].hint');
     if (m) m.textContent = 'Saved. ' + money(net) + ' take-home for ' + fmtDate(night.date) + '.';

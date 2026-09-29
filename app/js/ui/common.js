@@ -8,10 +8,10 @@ export { getState };
 const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 const usd0 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 const isZero = (n) => Math.abs(n) < 0.005;
-/** "$1,234.56" (negative: "-$12.30"). */
-export const money = (n) => { n = num(n); return (n < 0 && !isZero(n) ? '-' : '') + usd.format(Math.abs(isZero(n) ? 0 : n)); };
+/** "$1,234.56" (negative: "−$12.30"). */
+export const money = (n) => { n = num(n); return (n < 0 && !isZero(n) ? '−' : '') + usd.format(Math.abs(isZero(n) ? 0 : n)); };
 /** Whole dollars. */
-export const money0 = (n) => { n = num(n); return (n < 0 && Math.round(n) !== 0 ? '-' : '') + usd0.format(Math.abs(n)); };
+export const money0 = (n) => { n = num(n); return (n < 0 && Math.round(n) !== 0 ? '−' : '') + usd0.format(Math.abs(n)); };
 /** Minus sign for breakdown rows: "−$5.00". */
 export const minus = (n) => '−' + money(Math.abs(n));
 export const pct = (r, d = 1) => (r * 100).toFixed(d) + '%';

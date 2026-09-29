@@ -140,7 +140,7 @@ details.card > summary{cursor:pointer;min-height:var(--tap);display:flex;align-i
 .row-actions{flex-basis:100%;display:flex;gap:var(--s-2);justify-content:flex-end}
 .tabbar button{-webkit-tap-highlight-color:transparent}
 h1{margin-bottom:0}
-.btn-secondary[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);background:var(--sunk)}
+.btn-secondary[aria-pressed="true"]{border-color:var(--accent);color:var(--hero);background:var(--sunk)}
 .field input[type=date]{min-width:0}
 .field input[type=date]{padding-left:8px;padding-right:6px;font-size:15px}
 @media (max-width:400px){.grid-2{gap:var(--s-2)}}
