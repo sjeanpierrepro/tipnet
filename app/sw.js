@@ -1,0 +1,77 @@
+/* TipNet service worker. Bump VERSION on every release so clients fetch a fresh shell.
+   It does NOT skipWaiting on its own: the page shows "Update available: Refresh" and
+   posts {type:'SKIP_WAITING'} (or the string 'SKIP_WAITING') when the user agrees. */
+const VERSION = 'tipnet-v1';
+
+const SHELL = [
+  './',
+  'index.html',
+  'manifest.webmanifest',
+  'css/fonts.css',
+  'css/tokens.css',
+  'css/components.css',
+  'fonts/big-shoulders-display.woff2',
+  'fonts/figtree.woff2',
+  'fonts/ibm-plex-mono-500.woff2',
+  'icons/icon.svg',
+  'icons/icon-192.png',
+  'icons/icon-512.png',
+  'icons/maskable-512.png',
+  'icons/apple-touch-icon.png',
+  'icons/favicon-32.png',
+  'js/app.js',
+  'js/math.js',
+  'js/storage.js',
+  'js/csv.js',
+  'js/integrations/source.js',
+  'js/ui/tonight.js',
+  'js/ui/periods.js',
+  'js/ui/setup.js',
+  'js/ui/importer.js',
+  'js/ui/backup.js',
+  'js/ui/common.js',
+];
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(VERSION).then((cache) =>
+      // Add one by one so a single missing file cannot block installation.
+      Promise.all(SHELL.map((url) => cache.add(url).catch(() => {})))
+    )
+  );
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== VERSION).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener('message', (event) => {
+  const d = event.data;
+  if (d === 'SKIP_WAITING' || (d && d.type === 'SKIP_WAITING')) self.skipWaiting();
+});
+
+self.addEventListener('fetch', (event) => {
+  const req = event.request;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
+
+  event.respondWith(
+    caches.match(req, { ignoreSearch: true }).then((hit) => {
+      if (hit) return hit;
+      return fetch(req)
+        .then((res) => {
+          if (res && res.ok) {
+            const copy = res.clone();
+            caches.open(VERSION).then((c) => c.put(req, copy));
+          }
+          return res;
+        })
+        .catch(() => (req.mode === 'navigate' ? caches.match('index.html') : Response.error()));
+    })
+  );
+});

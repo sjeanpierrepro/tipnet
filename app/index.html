@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TipNet</title>
+<meta name="description" content="Estimate your take-home tips after tax, one night at a time.">
+<meta name="theme-color" content="#121417" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F4F3EF" media="(prefers-color-scheme: light)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="css/fonts.css">
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/components.css">
+<script>
+/* Apply a saved theme before first paint. Fails quietly if storage is blocked. */
+try{var t=localStorage.getItem("tipnet-theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}
+</script>
+</head>
+<body>
+<div id="update-bar" class="update-bar" role="status" hidden>
+  <span>Update available.</span>
+  <button type="button" id="update-refresh">Refresh</button>
+</div>
+<div class="app-shell">
+  <header class="app-header">
+    <div class="brand">Tip<span>Net</span></div>
+  </header>
+  <nav class="tabbar" id="tabs" aria-label="Main">
+    <button type="button" role="tab" data-tab="tonight" aria-selected="true">Tonight</button>
+    <button type="button" role="tab" data-tab="periods" aria-selected="false">Pay periods</button>
+    <button type="button" role="tab" data-tab="setup" aria-selected="false">Setup</button>
+  </nav>
+  <main id="app" tabindex="-1"></main>
+  <footer class="app-footer">TipNet gives estimates, not tax advice. Your numbers stay on this device.</footer>
+</div>
+<div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+<noscript><p style="padding:16px">TipNet needs JavaScript to run.</p></noscript>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

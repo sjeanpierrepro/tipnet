@@ -1,0 +1,56 @@
+/* TipNet design tokens. Dark is the default; light follows the system,
+   and html[data-theme="light"|"dark"] overrides it. */
+:root{
+  /* dark theme */
+  --bg:#121417; --surface:#1A1D21; --sunk:#16191C; --border:#2A2E34; --border-strong:#3A3F47;
+  --text:#ECEAE4; --muted:#A3A7AE;
+  --accent:#C9A45C; --accent-ink:#1A1408; --hero:#D6B46E; --accent-hover:#D6B46E;
+  --good:#72C69D; --good-bg:#16291F; --bad:#EE8B80; --bad-bg:#33191A; --bad-solid:#C0463C; --bad-solid-ink:#fff;
+  --focus:#D6B46E;
+  color-scheme:dark;
+
+  /* fonts */
+  --font-display:"Big Shoulders Display","Arial Narrow",Impact,sans-serif;
+  --font-body:"Figtree",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+
+  /* 8pt spacing scale */
+  --s-1:4px; --s-2:8px; --s-3:16px; --s-4:24px; --s-5:32px; --s-6:40px; --s-7:48px; --s-8:64px;
+
+  /* one radius family */
+  --r-sm:8px; --r-md:12px; --r-lg:16px; --r-pill:999px;
+
+  --tap:44px;
+  --tabbar-h:64px;
+  --t-fast:150ms; --ease:cubic-bezier(.2,.6,.2,1);
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    --bg:#F4F3EF; --surface:#FFFFFF; --sunk:#ECEAE4; --border:#D9D6CE; --border-strong:#8F8B80;
+    --text:#1B1D20; --muted:#5B6068;
+    --accent:#8C6718; --accent-ink:#FFFFFF; --hero:#7A5810; --accent-hover:#74540F;
+    --good:#1B6E48; --good-bg:#E1F2E9; --bad:#A93B32; --bad-bg:#F8E3E0; --bad-solid:#A93B32; --bad-solid-ink:#fff;
+    --focus:#7A5810;
+    color-scheme:light;
+  }
+}
+:root[data-theme="light"]{
+  --bg:#F4F3EF; --surface:#FFFFFF; --sunk:#ECEAE4; --border:#D9D6CE; --border-strong:#8F8B80;
+  --text:#1B1D20; --muted:#5B6068;
+  --accent:#8C6718; --accent-ink:#FFFFFF; --hero:#7A5810; --accent-hover:#74540F;
+  --good:#1B6E48; --good-bg:#E1F2E9; --bad:#A93B32; --bad-bg:#F8E3E0; --bad-solid:#A93B32; --bad-solid-ink:#fff;
+  --focus:#7A5810;
+  color-scheme:light;
+}
+
+/* utilities */
+.num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+.muted{color:var(--muted)}
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+[hidden]{display:none !important}
+
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important;scroll-behavior:auto !important}
+}

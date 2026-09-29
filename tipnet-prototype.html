@@ -1,0 +1,601 @@
+<title>TipNet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=Figtree:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one-column phone app, sticky tab bar, huge take-home figure as the hero of each night. Dark-first: it gets used behind the bar. */
+:root{
+  --bg:#141217; --panel:#1D1A22; --sunk:#18161C; --line:#2F2A36; --fg:#EFEBF3; --muted:#9C95A8;
+  --brass:#D4AC57; --brass-ink:#1A1408; --good:#72C69D; --bad:#E47E72;
+  --display:"Big Shoulders Display","Arial Narrow",Impact,sans-serif;
+  --body:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){
+  --bg:#F2F1F5; --panel:#FFFFFF; --sunk:#E9E7EE; --line:#DAD6E1; --fg:#1B1820; --muted:#665F72;
+  --brass:#8C6718; --brass-ink:#FFFFFF; --good:#1F7F53; --bad:#B4443A; color-scheme:light}}
+:root[data-theme="light"]{
+  --bg:#F2F1F5; --panel:#FFFFFF; --sunk:#E9E7EE; --line:#DAD6E1; --fg:#1B1820; --muted:#665F72;
+  --brass:#8C6718; --brass-ink:#FFFFFF; --good:#1F7F53; --bad:#B4443A; color-scheme:light}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.5;margin:0}
+.wrap{max-width:560px;margin:0 auto;padding-inline:16px;padding-block:0 48px}
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
+.bar{max-width:560px;margin:0 auto;padding-inline:16px;padding-block:12px 0;display:flex;flex-direction:column;gap:10px}
+.brand{font-family:var(--display);font-weight:800;font-size:26px;letter-spacing:.02em;text-transform:uppercase;line-height:1}
+.brand span{color:var(--brass)}
+.tabs{display:flex;gap:4px}
+.tabs button{flex:1;background:none;border:0;border-bottom:3px solid transparent;color:var(--muted);font:600 14px var(--body);padding:8px 4px 10px;cursor:pointer}
+.tabs button[aria-selected="true"]{color:var(--fg);border-bottom-color:var(--brass)}
+button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible,textarea:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+
+.banner{margin-block:14px 0;padding:12px 14px;border:1px dashed var(--brass);border-radius:10px;font-size:14px;display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between}
+.banner p{margin:0;flex:1 1 220px}
+.label{font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+section{display:flex;flex-direction:column;gap:18px;padding-top:18px}
+
+.strip{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.strip div{background:var(--panel);padding:10px 12px;min-width:0}
+.strip b{display:block;font:800 24px var(--display);font-variant-numeric:tabular-nums;letter-spacing:.01em}
+.strip-cap{font-size:13px;color:var(--muted);margin:-10px 0 0}
+
+form.entry{display:flex;flex-direction:column;gap:14px}
+.field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.field label{font-weight:600;font-size:14px}
+input,select,textarea{font:500 16px var(--body);color:var(--fg);background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:10px 12px;width:100%;min-width:0}
+input[type=number]{font-variant-numeric:tabular-nums}
+.money{display:flex;align-items:center;background:var(--sunk);border:1px solid var(--line);border-radius:12px;padding:4px 14px}
+.money span{font:800 40px var(--display);color:var(--muted)}
+.money input{border:0;background:none;font:800 52px var(--display);padding:4px 8px;letter-spacing:.01em}
+.money input:focus-visible{outline:none}
+.money:focus-within{border-color:var(--brass)}
+.hint{margin:0;font-size:13px;color:var(--muted)}
+.row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.check{display:flex;gap:10px;align-items:center;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--panel);cursor:pointer;font-weight:600}
+.check input{width:22px;height:22px;accent-color:var(--brass);margin:0;flex:none}
+.check small{display:block;font-weight:400;color:var(--muted);font-size:13px}
+.btn{background:var(--brass);color:var(--brass-ink);border:0;border-radius:10px;font:700 16px var(--body);padding:14px 18px;cursor:pointer}
+.btn.ghost{background:none;color:var(--fg);border:1px solid var(--line);font-weight:600;font-size:14px;padding:10px 14px}
+.btn.small{padding:8px 12px;font-size:13px}
+.saved{color:var(--good);font-weight:600;font-size:14px;min-height:1.2em;margin:-6px 0 0}
+
+.result{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:14px}
+.home{font:800 64px/1 var(--display);font-variant-numeric:tabular-nums;color:var(--brass);letter-spacing:.01em}
+.lines{display:flex;flex-direction:column;gap:6px;font-variant-numeric:tabular-nums}
+.lines div{display:flex;justify-content:space-between;gap:12px;font-size:14px}
+.lines div span:first-child{color:var(--muted)}
+.lines .sum{border-top:1px solid var(--line);padding-top:8px;font-weight:600}
+.lines .sum span:first-child{color:var(--fg)}
+.split{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.split div{background:var(--sunk);border-radius:10px;padding:10px 12px}
+.split b{display:block;font:800 28px var(--display);font-variant-numeric:tabular-nums}
+.note{font-size:13px;color:var(--muted);margin:0}
+.note strong{color:var(--fg);font-weight:600}
+
+.group{display:flex;flex-direction:column;gap:0;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--panel)}
+.ghead{display:flex;justify-content:space-between;gap:10px;padding:10px 14px;background:var(--sunk);font-variant-numeric:tabular-nums;flex-wrap:wrap}
+.ghead b{font:800 20px var(--display)}
+.night{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:10px 14px;border-top:1px solid var(--line);font-variant-numeric:tabular-nums}
+.night .d{font-weight:600}
+.night .sub{font-size:12px;color:var(--muted)}
+.night .n{font:800 22px var(--display);color:var(--brass);text-align:right}
+.x{background:none;border:1px solid var(--line);color:var(--muted);border-radius:8px;padding:6px 9px;font:600 12px var(--body);cursor:pointer}
+.x.armed{border-color:var(--bad);color:var(--bad)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.card h2,.card h3{margin:0;font:800 22px var(--display);text-transform:uppercase;letter-spacing:.03em}
+.card p{margin:0}
+.empty{padding:22px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:12px}
+.hist{display:flex;flex-direction:column;gap:4px;font-size:13px;font-variant-numeric:tabular-nums}
+.pill{display:inline-block;padding:1px 8px;border-radius:99px;font:500 12px var(--mono)}
+.pill.ok{background:color-mix(in srgb,var(--good) 18%,transparent);color:var(--good)}
+.pill.off{background:color-mix(in srgb,var(--bad) 18%,transparent);color:var(--bad)}
+.payrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) auto;gap:8px;align-items:end;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--sunk)}
+.payrow.ded{grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) auto}
+.payrow .field label{font-size:12px;font-weight:600;color:var(--muted)}
+.payrow input,.payrow select{background:var(--panel);padding:8px 10px;font-size:15px}
+.payrow .full{grid-column:1/-1}
+.payrow .x{height:38px}
+.payrow .calc{grid-column:1/-1;font-size:12px;color:var(--muted);margin:-2px 0 0;font-variant-numeric:tabular-nums}
+@media (max-width:420px){.payrow{grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto}.payrow .un{grid-column:1/-1;order:5}}
+.summary{background:var(--sunk);border-radius:10px;padding:12px 14px;font-size:14px}
+.summary b{color:var(--brass)}
+.actions{display:flex;flex-wrap:wrap;gap:8px}
+textarea{font:400 12px var(--mono);min-height:80px;resize:vertical}
+@media (max-width:380px){.home{font-size:54px}.money input{font-size:44px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<header class="top"><div class="bar">
+  <div class="brand"><span>Tip</span>Net</div>
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="tonight" aria-selected="true" id="t-tonight">Tonight</button>
+    <button role="tab" data-tab="log" aria-selected="false" id="t-log">Pay periods</button>
+    <button role="tab" data-tab="setup" aria-selected="false" id="t-setup">Setup</button>
+  </nav>
+</div></header>
+
+<div class="wrap">
+  <div class="banner" id="banner" hidden>
+    <p id="bannerText"></p>
+    <button class="btn ghost small" id="clearExamples" type="button">Clear example nights</button>
+  </div>
+
+  <!-- TONIGHT -->
+  <section id="tab-tonight">
+    <div>
+      <div class="label" id="periodLabel">This pay period</div>
+      <div class="strip" id="strip" style="margin-top:6px"></div>
+    </div>
+    <p class="strip-cap" id="stripCap"></p>
+
+    <form class="entry" id="nightForm" novalidate>
+      <div class="field">
+        <label for="nTotal" id="totalLabel">What you made tonight</label>
+        <div class="money"><span>$</span><input id="nTotal" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0" autocomplete="off"></div>
+        <p class="hint" id="totalHint">Cash + card tips + hourly pay, before anything comes out.</p>
+      </div>
+
+      <label class="check" id="bbWrap" for="nBarback">
+        <input type="checkbox" id="nBarback" checked>
+        <span>Barback tip-out tonight<small id="bbHint">Uncheck if you worked without a barback.</small></span>
+      </label>
+
+      <div class="row" id="payInputs"></div>
+      <div class="row">
+        <div class="field"><label for="nCash">Cash in hand <span class="hint">(optional)</span></label><input id="nCash" type="number" inputmode="decimal" step="0.01" min="0" placeholder="—"></div>
+      </div>
+      <div class="field"><label for="nDate">Date</label><input id="nDate" type="date"></div>
+      <button class="btn" type="submit">Save night</button>
+      <p class="saved" id="savedMsg" aria-live="polite"></p>
+    </form>
+
+    <div class="result" id="result" aria-live="polite"></div>
+  </section>
+
+  <!-- LOG -->
+  <section id="tab-log" hidden>
+    <div id="logList"></div>
+    <div class="card" id="calibCard">
+      <h3>Check my accuracy</h3>
+      <p class="note">When a paycheck lands, enter its amount. TipNet compares it with what it predicted for that pay period and adjusts your rates so the next estimate is closer.</p>
+      <div class="field"><label for="cPeriod">Pay period</label><select id="cPeriod"></select></div>
+      <div class="field"><label for="cActual">Actual paycheck amount (take-home on the stub)</label><input id="cActual" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00"></div>
+      <div class="actions"><button class="btn small" type="button" id="cRun">Compare and adjust</button><button class="btn ghost small" type="button" id="cReset">Undo adjustments</button></div>
+      <p class="note" id="cMsg" aria-live="polite"></p>
+      <div class="hist" id="cHist"></div>
+    </div>
+  </section>
+
+  <!-- SETUP -->
+  <section id="tab-setup" hidden>
+    <div class="card">
+      <h2>From your paystub</h2>
+      <p class="note">Use one recent stub. Enter the numbers for that pay period, not year-to-date. Your numbers stay on this phone.</p>
+      <div class="row">
+        <div class="field"><label for="sStart">Pay period started</label><input id="sStart" type="date"></div>
+        <div class="field"><label for="sEnd">Pay period ended</label><input id="sEnd" type="date"></div>
+      </div>
+      <div class="row">
+        <div class="field"><label for="sShifts">Shifts you worked</label><input id="sShifts" type="number" step="1" inputmode="numeric" placeholder="—"></div>
+        <div class="field"><label for="sFreq">You get paid</label>
+          <select id="sFreq"><option value="7">Every week</option><option value="14">Every two weeks</option><option value="15">Twice a month</option><option value="30">Once a month</option></select></div>
+      </div>
+      <p class="hint" style="margin-top:-6px">Fill in the end date, the shift count, or both. The end date keeps each night on the right paycheck. The shift count splits your benefits evenly per shift. Both together give the closest estimate.</p>
+      <div class="field"><label for="sGross">Gross pay</label><input id="sGross" type="number" step="0.01" inputmode="decimal"><p class="hint">Everything before deductions: all hourly pay, card tips and declared cash tips.</p></div>
+    </div>
+
+    <div class="card">
+      <h2>Deductions</h2>
+      <p class="note">Add a row for each line in the deductions part of your stub, using the dollar amount for that pay period. Pick whether it changes with your pay, like taxes, or stays the same every check, like health insurance.</p>
+      <div id="dedRows" style="display:flex;flex-direction:column;gap:10px"></div>
+      <div class="actions"><button class="btn ghost small" type="button" id="addDed">+ Add deduction</button><button class="btn ghost small" type="button" id="autoFica">Fill Social Security + Medicare from gross</button></div>
+      <div class="summary" id="rateSummary"></div>
+    </div>
+
+    <div class="card">
+      <h2>Rates of pay</h2>
+      <p class="note">Add a row for each kind of pay on your stub. The first row is your main rate and fills in on every night automatically. Hourly and per-shift pay are part of the total you enter each night. Flat amounts, like a bonus, are added on top.</p>
+      <div id="payRows" style="display:flex;flex-direction:column;gap:10px"></div>
+      <div><button class="btn ghost small" type="button" id="addPay">+ Add pay type</button></div>
+    </div>
+
+    <div class="card">
+      <h2>Barback tip-out</h2>
+      <label class="check" for="toOn">
+        <input type="checkbox" id="toOn">
+        <span>My bar has barback tip-outs<small>Leave unchecked if you don't tip out a barback.</small></span>
+      </label>
+      <div id="toFields" style="display:flex;flex-direction:column;gap:12px">
+        <div class="row">
+          <div class="field"><label for="toMode">Tip-out is</label><select id="toMode"><option value="pct">A % of my tips</option><option value="flat">A flat $ per shift</option></select></div>
+          <div class="field"><label for="toValue" id="toValueLabel">Amount</label><input id="toValue" type="number" step="0.01" inputmode="decimal"></div>
+        </div>
+        <div class="row">
+          <div class="field"><label for="toBasis">The number I enter is</label><select id="toBasis"><option value="before">Before tip-out</option><option value="after">After tip-out</option></select></div>
+          <div class="field"><label for="toFrom">Barback gets paid from</label><select id="toFrom"><option value="cash">My cash</option><option value="check">Payroll</option></select></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Put TipNet on your home screen</h2>
+      <p class="note">TipNet runs in any browser. Add it once so it opens like an app.</p>
+      <div class="lines">
+        <div><span><strong>iPhone</strong></span><span>Safari → Share → Add to Home Screen</span></div>
+        <div><span><strong>Android</strong></span><span>Chrome → ⋮ menu → Add to Home screen</span></div>
+        <div><span><strong>Mac</strong></span><span>Safari → File → Add to Dock</span></div>
+        <div><span><strong>Windows</strong></span><span>Edge → ⋯ menu → Apps → Install this site as an app</span></div>
+      </div>
+      <p class="note"><strong>Always open TipNet the same way.</strong> Your phone can keep the home-screen version and the browser version as two separate copies with different nights saved. If you switch, move your data with a backup code below.</p>
+    </div>
+
+    <div class="card">
+      <h2>Backup</h2>
+      <p class="note">Your nights live only in this browser. Copy a backup code now and then, and paste it here on a new phone to restore.</p>
+      <div class="actions"><button class="btn ghost small" type="button" id="bkCopy">Copy backup code</button><button class="btn ghost small" type="button" id="bkRestore">Restore from code</button></div>
+      <label class="label" for="bkText">Backup code</label>
+      <textarea id="bkText" placeholder="Paste a backup code here, then tap Restore."></textarea>
+      <p class="note" id="bkMsg" aria-live="polite"></p>
+      <div class="actions"><button class="btn ghost small" type="button" id="wipe">Erase everything</button></div>
+    </div>
+
+    <p class="note">TipNet gives estimates, not tax advice. Social Security and Medicare apply to every tip dollar. Federal tax taken from your tips may partly come back at tax time under the federal tip deduction, depending on your situation.</p>
+  </section>
+</div>
+
+<script>
+(function(){
+const KEY='tipnet.v1', DAY=864e5;
+const $=id=>document.getElementById(id);
+const money=v=>(v<0?'−':'')+'$'+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const money0=v=>(v<0?'−':'')+'$'+Math.abs(Math.round(v)).toLocaleString('en-US');
+const pad=n=>String(n).padStart(2,'0');
+const iso=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+const parseD=s=>{const[a,b,c]=s.split('-').map(Number);return new Date(a,b-1,c)};
+const addDays=(d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x};
+const dayDiff=(a,b)=>Math.round((parseD(b)-parseD(a))/DAY);
+const fmtD=(d,o)=>d.toLocaleDateString('en-US',o||{weekday:'short',month:'short',day:'numeric'});
+const num=v=>{const n=parseFloat(v);return isFinite(n)?n:0};
+const PAY_PRESETS=[
+  {k:'hourly',name:'Hourly',unit:'hr',g:'Hourly'},{k:'training',name:'Training',unit:'hr',g:'Hourly'},
+  {k:'ot',name:'Overtime',unit:'hr',g:'Hourly'},{k:'holiday',name:'Holiday pay',unit:'hr',g:'Hourly'},
+  {k:'diff',name:'Shift lead / supervisor differential',unit:'hr',g:'Hourly'},{k:'pto',name:'Paid time off / sick pay',unit:'hr',g:'Hourly'},
+  {k:'event',name:'Private event / banquet',unit:'shift',g:'Per shift'},{k:'shift',name:'Flat shift pay',unit:'shift',g:'Per shift'},
+  {k:'bonus',name:'Bonus',unit:'amt',supp:1,g:'Flat amount'},{k:'commission',name:'Commission / sales incentive',unit:'amt',supp:1,g:'Flat amount'},
+  {k:'autograt',name:'Service charge / auto-gratuity',unit:'amt',g:'Flat amount'},{k:'other',name:'Other',unit:'hr',g:'Other'}];
+const DED_PRESETS=[
+  {k:'fed',name:'Federal income tax',mode:'pct',g:'Taxes'},{k:'ss',name:'Social Security',mode:'pct',g:'Taxes'},
+  {k:'med',name:'Medicare',mode:'pct',g:'Taxes'},{k:'state',name:'State income tax',mode:'pct',g:'Taxes'},
+  {k:'local',name:'Local / city tax',mode:'pct',g:'Taxes'},{k:'sdi',name:'State disability / paid family leave',mode:'pct',g:'Taxes'},
+  {k:'health',name:'Health insurance',mode:'fixed',g:'Benefits'},{k:'dental',name:'Dental insurance',mode:'fixed',g:'Benefits'},
+  {k:'vision',name:'Vision insurance',mode:'fixed',g:'Benefits'},{k:'life',name:'Life insurance',mode:'fixed',g:'Benefits'},
+  {k:'disab',name:'Disability insurance',mode:'fixed',g:'Benefits'},{k:'hsa',name:'HSA / FSA',mode:'fixed',g:'Benefits'},
+  {k:'supppre',name:'Supplemental (pre-tax)',mode:'fixed',g:'Benefits'},{k:'supppost',name:'Supplemental (post-tax)',mode:'fixed',g:'Benefits'},
+  {k:'k401',name:'401(k) / retirement',mode:'pct',g:'Retirement'},{k:'roth',name:'Roth 401(k)',mode:'pct',g:'Retirement'},
+  {k:'uniform',name:'Uniform',mode:'fixed',g:'Other'},{k:'meals',name:'Employee meals',mode:'fixed',g:'Other'},
+  {k:'parking',name:'Parking / transit',mode:'fixed',g:'Other'},{k:'union',name:'Union dues',mode:'fixed',g:'Other'},
+  {k:'advance',name:'Pay advance repayment',mode:'fixed',g:'Other'},{k:'garnish',name:'Garnishment / child support',mode:'fixed',g:'Other'},
+  {k:'misc',name:'Miscellaneous',mode:'fixed',g:'Other'},{k:'other',name:'Other',mode:'fixed',g:'Other'}];
+const presetOpts=(list,sel)=>{const gs=[...new Set(list.map(x=>x.g))];return gs.map(g=>`<optgroup label="${g}">${list.filter(x=>x.g===g).map(x=>`<option value="${x.k}"${x.k===sel?' selected':''}>${x.name}</option>`).join('')}</optgroup>`).join('')};
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function seed(){
+  return {profileExample:true,nightsExample:true,
+    profile:{freq:14,periodStart:'2026-09-21',periodEnd:'2026-10-04',shifts:10,gross:2000,rateOverride:null,
+      deductions:[{id:'d1',k:'fed',name:'Federal income tax',amount:180,mode:'pct'},{id:'d2',k:'ss',name:'Social Security',amount:124,mode:'pct'},
+        {id:'d3',k:'med',name:'Medicare',amount:29,mode:'pct'},{id:'d4',k:'health',name:'Health insurance',amount:60,mode:'fixed'}],
+      payTypes:[{id:'p1',k:'hourly',name:'Bartending',rate:12,unit:'hr',usual:7},{id:'p2',k:'training',name:'Training',rate:15,unit:'hr',usual:0},
+        {id:'p3',k:'bonus',name:'Bonus',rate:0,unit:'amt',usual:0,supp:1}],
+      tipout:{on:true,mode:'pct',value:15,basis:'before',from:'cash'}},
+    nights:[
+      {id:1,date:'2026-09-21',total:310,cash:90,pay:{p1:6},barback:true},
+      {id:2,date:'2026-09-24',total:420,cash:140,pay:{p1:7},barback:true},
+      {id:3,date:'2026-09-26',total:585,cash:210,pay:{p1:8},barback:true},
+      {id:4,date:'2026-09-27',total:365,cash:100,pay:{p1:5,p2:2},barback:false}],
+    calib:[]};
+}
+let S;
+try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){S=null}
+if(!S||!S.profile) S=seed();
+function migrate(){
+  const p=S.profile;
+  if(!p.payTypes){p.payTypes=[{id:'p1',name:'Main rate',rate:num(p.hourly),unit:'hr',usual:num(p.hours)||7}];
+    S.nights.forEach(n=>{if(!n.pay)n.pay={p1:num(n.hours)}});}
+  if(p.periodEnd===undefined)p.periodEnd='';
+  if(!p.deductions){const d=[];let n=1;
+    [['fed','Federal income tax',p.fed,'pct'],['state','State / local tax',p.other,'pct'],['ss','Social Security',p.ss,'pct'],['med','Medicare',p.med,'pct'],['other','Benefits and fixed deductions',p.fixed,'fixed']]
+      .forEach(([k,name,a,mode])=>{if(num(a))d.push({id:'d'+(n++),k,name,amount:num(a),mode})});
+    p.deductions=d;['fed','other','ss','med','fixed'].forEach(k=>delete p[k]);}
+  p.payTypes.forEach((t,i)=>{if(!t.k)t.k=i===0?'hourly':'other'});
+}
+migrate();
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+const P=()=>S.profile;
+
+/* ---------- pay period ---------- */
+function periodLen(){const p=P();if(p.periodEnd&&p.periodStart){const d=dayDiff(p.periodStart,p.periodEnd)+1;if(d>0&&d<=62)return d}return p.freq}
+function pIdx(s){return Math.floor(dayDiff(P().periodStart,s)/periodLen())}
+function pRange(i){const st=addDays(parseD(P().periodStart),i*periodLen());return [st,addDays(st,periodLen()-1)]}
+function pLabel(i){const[a,b]=pRange(i);return fmtD(a,{month:'short',day:'numeric'})+' – '+fmtD(b,{month:'short',day:'numeric'})}
+function pDone(i){return iso(pRange(i)[1])<iso(new Date())}
+function nightsIn(i){return S.nights.filter(n=>pIdx(n.date)===i).sort((a,b)=>a.date<b.date?-1:1)}
+/* shifts per period: typed count wins; otherwise the average from finished periods; otherwise ~4 shifts a week */
+function shiftInfo(){
+  const p=P();
+  if(p.shifts>0)return {n:p.shifts,src:'the shift count you entered'};
+  const done=[...new Set(S.nights.map(n=>pIdx(n.date)))].filter(pDone);
+  if(done.length){const avg=done.reduce((s,i)=>s+nightsIn(i).length,0)/done.length;return {n:Math.max(1,avg),src:'your average from past pay periods'}}
+  return {n:Math.max(1,Math.round(periodLen()*4/7)),src:'about 4 shifts a week over your pay period dates'};
+}
+
+/* ---------- math ---------- */
+const sumDed=(p,f)=>p.deductions.filter(f).reduce((s,d)=>s+num(d.amount),0);
+function baseRate(p){return p.gross>0?sumDed(p,d=>d.mode==='pct')/p.gross:0}
+function rate(p){return p.rateOverride!=null?p.rateOverride:baseRate(p)}
+function fedRate(p){return p.gross>0?sumDed(p,d=>d.mode==='pct'&&d.k==='fed')/p.gross:0}
+function fixedTotal(p){return sumDed(p,d=>d.mode==='fixed')}
+/* bonuses and commissions: federal withheld at the 22% supplemental rate instead of the regular federal share */
+function suppRate(p){return Math.max(0,rate(p)-fedRate(p))+.22}
+function payAmt(n,t,i){if(n.pay&&n.pay[t.id]!==undefined&&n.pay[t.id]!=='')return num(n.pay[t.id]);return i===0?num(t.usual):0}
+function basePay(n,p){let pay=0,hours=0,extra=0,extraTax=0;const r=rate(p),rs=suppRate(p);
+  p.payTypes.forEach((t,i)=>{const a=payAmt(n,t,i);
+    if(t.unit==='amt'){extra+=a;extraTax+=a*(t.supp?rs:r)}
+    else{pay+=a*num(t.rate);if(t.unit==='hr'&&t.k!=='diff')hours+=a}});
+  return {pay,hours,extra,extraTax}}
+function calc(n,p){
+  const r=rate(p), fixedPer=fixedTotal(p)/shiftInfo().n;
+  const bp=basePay(n,p), total=num(n.total);
+  const tips=Math.max(0,total-bp.pay);
+  const to=p.tipout, useTO=to.on&&n.barback&&to.basis==='before';
+  let tipout=0;
+  if(useTO){tipout=to.mode==='pct'?tips*num(to.value)/100:num(to.value);tipout=Math.min(tipout,tips)}
+  const kept=total-tipout, tax=kept*r+bp.extraTax, net=kept+bp.extra-tax-fixedPer;
+  const fedOnTips=Math.max(0,tips-tipout)*fedRate(p);
+  let cashIH=null,check=null;
+  if(n.cash!==''&&n.cash!=null){const c=num(n.cash);const fromCash=useTO&&to.from==='cash'?Math.min(c,tipout):0;cashIH=c-fromCash;check=net-cashIH}
+  return {total,hours:bp.hours,basePay:bp.pay,extra:bp.extra,tips,tipout,kept,tax,fixedPer,net,fedOnTips,cashIH,check,r};
+}
+/* period totals: once a period is over, subtract the exact benefits total instead of per-shift shares */
+function periodTotals(i){
+  const ns=nightsIn(i),p=P();let net=0,hrs=0,chk=0,kept=0,cash=0,allCash=ns.length>0,fixedShares=0;
+  ns.forEach(n=>{const c=calc(n,p);net+=c.net;hrs+=c.hours;kept+=c.kept;fixedShares+=c.fixedPer;if(c.check==null)allCash=false;else{chk+=c.check;cash+=c.cashIH}});
+  const exact=pDone(i)&&ns.length>0;
+  if(exact){const adj=fixedShares-fixedTotal(p);net+=adj;chk+=adj}
+  return {ns,net,hrs,chk,kept,cash,allCash,exact};
+}
+
+/* ---------- tabs ---------- */
+document.querySelectorAll('.tabs button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.tabs button').forEach(x=>x.setAttribute('aria-selected',x===b));
+  ['tonight','log','setup'].forEach(t=>$('tab-'+t).hidden=t!==b.dataset.tab);
+  renderAll();window.scrollTo(0,0);
+}));
+
+/* ---------- banner ---------- */
+function renderBanner(){
+  const show=S.profileExample||S.nightsExample; $('banner').hidden=!show;
+  $('clearExamples').hidden=!S.nightsExample;
+  $('bannerText').textContent=S.profileExample
+    ?'You are looking at example numbers. Open Setup and enter your own paystub to get your real take-home.'
+    :'The nights listed are examples. Clear them before you start logging.';
+}
+$('clearExamples').addEventListener('click',()=>{S.nights=[];S.calib=[];S.nightsExample=false;save();renderAll()});
+
+/* ---------- tonight ---------- */
+let paySig='';
+function renderPayInputs(){
+  const types=P().payTypes, sig=JSON.stringify(types.map(t=>[t.id,t.name,t.unit,t.usual]));
+  if(sig===paySig)return; paySig=sig;
+  const one=types.length===1;
+  $('payInputs').innerHTML=types.map((t,i)=>{
+    const nm=esc(t.name||'Pay type '+(i+1));
+    const label=t.unit==='amt'?`${nm} $ <span class="hint">(on top)</span>`:one?(t.unit==='hr'?'Hours worked':'Shifts worked'):`${nm} ${t.unit==='hr'?'hours':'shifts'}`;
+    return `<div class="field"><label for="np_${t.id}">${label}</label><input id="np_${t.id}" data-pay="${t.id}" type="number" inputmode="decimal" step="${t.unit==='shift'?'1':t.unit==='amt'?'0.01':'0.25'}" min="0" placeholder="${i===0?num(t.usual):0}"></div>`;
+  }).join('');
+  $('payInputs').querySelectorAll('input').forEach(x=>x.addEventListener('input',renderResult));
+}
+function formNight(){
+  const pay={};$('payInputs').querySelectorAll('[data-pay]').forEach(x=>{if(x.value!=='')pay[x.dataset.pay]=num(x.value)});
+  return {total:$('nTotal').value,cash:$('nCash').value,pay,barback:$('nBarback').checked,date:$('nDate').value};
+}
+function renderStrip(){
+  const i=pIdx(iso(new Date())), t=periodTotals(i);
+  $('periodLabel').textContent='This pay period · '+pLabel(i);
+  $('strip').innerHTML=`<div><span class="label">Take-home</span><b>${money0(t.net)}</b></div><div><span class="label">Nights</span><b>${t.ns.length}</b></div><div><span class="label">Per hour</span><b>${t.hrs?money0(t.net/t.hrs):'—'}</b></div>`;
+  $('stripCap').textContent=t.ns.length?(t.allCash?'Expected on your next check from these nights: '+money(t.chk)+'.':'Add cash amounts to every night to preview your check.'):'No nights logged yet this period.';
+}
+function renderResult(){
+  const p=P(), n=formNight(), c=calc(n,p), to=p.tipout;
+  $('bbWrap').hidden=!(to.on&&to.basis==='before');
+  $('totalHint').textContent=to.on&&to.basis==='after'
+    ?'Cash + card tips + all hourly pay, after the barback tip-out.'
+    :'Cash + card tips + all hourly pay, before anything comes out.';
+  if(!c.total){$('result').innerHTML='<p class="note">Enter tonight’s total above and your take-home appears here.</p>';return}
+  const cal=S.calib.length?S.calib[S.calib.length-1]:null;
+  const acc=cal?`Your last paycheck estimate was off by ${Math.abs(cal.err*100).toFixed(1)}%.`:'Estimate. A single night is usually within 5–10%; a full paycheck is usually closer.';
+  $('result').innerHTML=`
+    <div><div class="label">Estimated take-home tonight</div><div class="home">${money(c.net)}</div></div>
+    <div class="lines">
+      <div><span>Made tonight</span><span>${money(c.total)}</span></div>
+      <div><span>&nbsp;&nbsp;of which base pay</span><span>${money(c.basePay)}</span></div>
+      <div><span>&nbsp;&nbsp;of which tips</span><span>${money(c.tips)}</span></div>
+      ${c.extra?`<div><span>Extra pay (bonus etc.)</span><span>+${money(c.extra)}</span></div>`:''}
+      ${c.tipout?`<div><span>Barback tip-out</span><span>−${money(c.tipout)}</span></div>`:''}
+      <div><span>Taxes (${(c.r*100).toFixed(1)}%)</span><span>−${money(c.tax)}</span></div>
+      ${c.fixedPer?`<div><span>Share of benefits</span><span>−${money(c.fixedPer)}</span></div>`:''}
+      <div class="sum"><span>Take-home</span><span>${money(c.net)}</span></div>
+    </div>
+    ${c.cashIH!=null?`<div class="split"><div><span class="label">Cash in hand</span><b>${money(c.cashIH)}</b></div><div><span class="label">On your check</span><b>${money(c.check)}</b></div></div>
+      ${c.check<0?'<p class="note"><strong>Heads up:</strong> taxes on your cash are bigger than your card tips and base pay tonight, so this night shrinks your check.</p>':''}`:'<p class="note">Add your cash amount to see what lands on your check.</p>'}
+    <p class="note">${acc} About <strong>${money(c.fedOnTips)}</strong> of tonight’s tax is federal income tax on tips, some of which may come back at tax time.</p>`;
+}
+['nTotal','nCash','nBarback','nDate'].forEach(id=>$(id).addEventListener('input',renderResult));
+$('nightForm').addEventListener('submit',e=>{
+  e.preventDefault(); const n=formNight();
+  if(!num(n.total)){$('savedMsg').textContent='Enter what you made tonight first.';$('savedMsg').style.color='var(--bad)';return}
+  if(S.nightsExample){S.nights=[];S.calib=[];S.nightsExample=false}
+  const pay={};P().payTypes.forEach((t,i)=>{pay[t.id]=payAmt(n,t,i)});
+  const d=n.date||iso(new Date());
+  S.nights.push({id:Date.now(),date:d,total:num(n.total),cash:n.cash===''?null:num(n.cash),pay,barback:n.barback});
+  save(); const net=calc(S.nights[S.nights.length-1],P()).net;
+  $('savedMsg').style.color='';$('savedMsg').textContent='Saved. '+money(net)+' take-home for '+fmtD(parseD(d))+'.';
+  $('nTotal').value='';$('nCash').value='';$('payInputs').querySelectorAll('input').forEach(x=>x.value='');$('nBarback').checked=true;
+  renderAll();
+});
+
+/* ---------- log ---------- */
+let armed=null;
+function renderLog(){
+  const idxs=[...new Set(S.nights.map(n=>pIdx(n.date)))].sort((a,b)=>b-a);
+  if(!idxs.length){$('logList').innerHTML='<div class="empty">No nights yet. Log your first shift on the Tonight tab.</div>'}
+  else $('logList').innerHTML=idxs.map(i=>{
+    const t=periodTotals(i);
+    const rows=t.ns.map(n=>{const c=calc(n,P());
+      const sub=[money(c.total)+' made',c.tipout?money(c.tipout)+' tip-out':(P().tipout.on&&!n.barback?'no barback':''),c.cashIH!=null?money(c.check)+' on check':''].filter(Boolean).join(' · ');
+      return `<div class="night"><div><div class="d">${fmtD(parseD(n.date))}</div><div class="sub">${sub}</div></div><div class="n">${money0(c.net)}</div><button class="x${armed===n.id?' armed':''}" data-del="${n.id}" type="button">${armed===n.id?'Delete?':'✕'}</button></div>`}).join('');
+    return `<div class="group" style="margin-bottom:14px"><div class="ghead"><span class="label" style="align-self:center">${pLabel(i)}${t.exact?' · final':''}</span><b>${money0(t.net)} take-home</b></div>${rows}</div>`;
+  }).join('');
+  $('logList').querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',()=>{
+    const id=Number(b.dataset.del);
+    if(armed===id){S.nights=S.nights.filter(n=>n.id!==id);armed=null;save();renderAll()}
+    else{armed=id;renderLog()}
+  }));
+  const sel=$('cPeriod'),cur=sel.value;
+  sel.innerHTML=idxs.map(i=>`<option value="${i}">${pLabel(i)}</option>`).join('')||'<option value="">No pay periods yet</option>';
+  if(cur&&idxs.includes(Number(cur)))sel.value=cur;
+  $('cHist').innerHTML=S.calib.slice(-4).reverse().map(c=>`<div>${c.label}: predicted ${money(c.pred)}, actual ${money(c.actual)} <span class="pill ${Math.abs(c.err)<=.05?'ok':'off'}">${c.err>0?'+':''}${(c.err*100).toFixed(1)}%</span></div>`).join('');
+}
+$('cRun').addEventListener('click',()=>{
+  const i=Number($('cPeriod').value), A=num($('cActual').value), p=P();
+  const ns=nightsIn(i);
+  if(!ns.length||!A){$('cMsg').textContent='Pick a pay period with nights in it and enter the check amount.';return}
+  const missing=ns.filter(n=>n.cash==null).length;
+  if(missing){$('cMsg').textContent=`${missing} night${missing>1?'s':''} in this period ${missing>1?'have':'has'} no cash amount, so the check can’t be predicted. Add cash to every night first.`;return}
+  /* a real check always carries the full period's benefits, so compare against the exact total */
+  let T=0,C=0,pred=0;ns.forEach(n=>{const c=calc(n,p);T+=c.kept+c.extra;C+=c.cashIH;pred+=c.check+c.fixedPer});
+  const F=fixedTotal(p);pred-=F;const err=(pred-A)/A;
+  const newR=Math.min(.45,Math.max(.02,1-(A+F+C)/T));
+  p.rateOverride=(rate(p)+newR)/2;
+  S.calib.push({label:pLabel(i),pred,actual:A,err});save();
+  $('cMsg').textContent=`Predicted ${money(pred)}, actual ${money(A)}: off by ${Math.abs(err*100).toFixed(1)}%. Tax rate adjusted to ${(p.rateOverride*100).toFixed(1)}%.`;
+  $('cActual').value='';renderAll();
+});
+$('cReset').addEventListener('click',()=>{P().rateOverride=null;S.calib=[];save();$('cMsg').textContent='Back to the rates from your paystub.';renderAll()});
+
+/* ---------- setup ---------- */
+const sMap={sFreq:'freq',sStart:'periodStart',sEnd:'periodEnd',sGross:'gross',sShifts:'shifts'};
+function fillSetup(){
+  const p=P();
+  Object.entries(sMap).forEach(([id,k])=>{$(id).value=(k==='shifts'&&!p[k])?'':p[k]});
+  $('toOn').checked=p.tipout.on;$('toMode').value=p.tipout.mode;$('toValue').value=p.tipout.value;$('toBasis').value=p.tipout.basis;$('toFrom').value=p.tipout.from;
+  renderPayRows();renderDedRows();renderSetupSummary();
+}
+function renderDedRows(){
+  const p=P();
+  $('dedRows').innerHTML=p.deductions.length?p.deductions.map(d=>`
+    <div class="payrow ded" data-row="${d.id}">
+      <div class="field full"><label for="dk_${d.id}">Deduction</label><select id="dk_${d.id}" data-k="k">${presetOpts(DED_PRESETS,d.k)}</select></div>
+      ${d.k==='other'?`<div class="field full"><label for="dn_${d.id}">Name on stub</label><input id="dn_${d.id}" data-k="name" value="${esc(d.name==='Other'?'':d.name)}" placeholder="e.g. Tool fee"></div>`:''}
+      <div class="field"><label for="da_${d.id}">Amount this check ($)</label><input id="da_${d.id}" data-k="amount" type="number" step="0.01" inputmode="decimal" value="${d.amount||''}"></div>
+      <div class="field"><label for="dm_${d.id}">This amount</label><select id="dm_${d.id}" data-k="mode"><option value="pct"${d.mode==='pct'?' selected':''}>Changes with my pay</option><option value="fixed"${d.mode==='fixed'?' selected':''}>Same every check</option></select></div>
+      <button class="x" type="button" data-rm="${d.id}" aria-label="Remove ${esc(d.name)}">✕</button>
+      <p class="calc" id="dc_${d.id}"></p>
+    </div>`).join(''):'<div class="empty">No deductions yet. Add one for each line on your stub.</div>';
+  renderDedCalc();
+}
+function renderDedCalc(){const p=P();p.deductions.forEach(d=>{const el=$('dc_'+d.id);if(!el)return;
+  el.textContent=d.mode==='pct'?(p.gross>0?`${(num(d.amount)/p.gross*100).toFixed(2)}% of every dollar you make`:'Enter gross pay to see the rate'):`${money(num(d.amount)/shiftInfo().n)} per shift`+(d.k==='supppre'||d.k==='hsa'?'. Your stub’s taxes already account for this, so nothing else to enter.':'')})}
+$('dedRows').addEventListener('input',e=>{
+  const row=e.target.closest('[data-row]'),k=e.target.dataset.k;if(!row||!k)return;
+  const d=P().deductions.find(x=>x.id===row.dataset.row);
+  if(k==='k'){const pr=DED_PRESETS.find(x=>x.k===e.target.value);d.k=pr.k;d.name=pr.name;d.mode=pr.mode;P().rateOverride=null;save();renderDedRows();}
+  else{d[k]=k==='amount'?num(e.target.value):e.target.value;if(k!=='name')P().rateOverride=null;save();renderDedCalc();}
+  S.profileExample=false;renderSetupSummary();renderBanner();
+});
+$('dedRows').addEventListener('click',e=>{const id=e.target.dataset&&e.target.dataset.rm;if(!id)return;
+  P().deductions=P().deductions.filter(d=>d.id!==id);P().rateOverride=null;save();renderDedRows();renderAll()});
+$('addDed').addEventListener('click',()=>{const used=P().deductions.map(d=>d.k);
+  const pr=DED_PRESETS.find(x=>!used.includes(x.k))||DED_PRESETS[DED_PRESETS.length-1];
+  const id='d'+Date.now();P().deductions.push({id,k:pr.k,name:pr.name,amount:0,mode:pr.mode});save();renderDedRows();
+  const el=$('dk_'+id);if(el)el.focus()});
+function renderPayRows(){
+  const types=P().payTypes;
+  $('payRows').innerHTML=types.map((t,i)=>`
+    <div class="payrow" data-row="${t.id}">
+      <div class="field full"><label for="pk_${t.id}">${i===0?'Main pay type':'Pay type'}</label><select id="pk_${t.id}" data-k="k">${presetOpts(PAY_PRESETS,t.k)}</select></div>
+      <div class="field full"><label for="pn_${t.id}">Name</label><input id="pn_${t.id}" data-k="name" value="${esc(t.name)}" placeholder="What your stub calls it"></div>
+      ${t.unit==='amt'?`<div class="field full"><p class="hint" style="margin:0">You type the dollar amount on the night it applies.${t.supp?' Federal tax is estimated at the 22% bonus rate.':''}${t.k==='autograt'?' Auto-gratuities are taxed as wages, not tips, so they don’t count toward the federal tip deduction.':''}</p></div>`:
+      `<div class="field"><label for="pr_${t.id}">Rate ($)</label><input id="pr_${t.id}" data-k="rate" type="number" step="0.01" inputmode="decimal" value="${t.rate}"></div>`}
+      <div class="field un"><label for="pu_${t.id}">Paid</label><select id="pu_${t.id}" data-k="unit"><option value="hr"${t.unit==='hr'?' selected':''}>Per hour</option><option value="shift"${t.unit==='shift'?' selected':''}>Per shift</option><option value="amt"${t.unit==='amt'?' selected':''}>Flat amount</option></select></div>
+      ${t.unit==='amt'?'':`<div class="field"><label for="pq_${t.id}">${i===0?'Usual per night':'Default per night'}</label><input id="pq_${t.id}" data-k="usual" type="number" step="0.25" inputmode="decimal" value="${t.usual}"></div>`}
+      ${i===0?'<span></span>':`<button class="x" type="button" data-rm="${t.id}" aria-label="Remove ${esc(t.name||'pay type')}">✕</button>`}
+      ${t.k==='ot'?'<p class="calc">Overtime is usually 1.5× your hourly rate for hours past 40 in a week.</p>':t.k==='diff'?'<p class="calc">Enter the extra per hour on top of your base rate. These hours don’t count twice toward your hourly average.</p>':''}
+    </div>`).join('');
+}
+$('payRows').addEventListener('input',e=>{
+  const row=e.target.closest('[data-row]'),k=e.target.dataset.k;if(!row||!k)return;
+  const t=P().payTypes.find(x=>x.id===row.dataset.row);
+  if(k==='k'){const pr=PAY_PRESETS.find(x=>x.k===e.target.value);t.k=pr.k;t.name=pr.k==='other'?'':pr.name;t.unit=pr.unit;t.supp=pr.supp?1:0;
+    if(pr.k==='ot'){const main=P().payTypes[0];if(main&&main!==t)t.rate=+(num(main.rate)*1.5).toFixed(2)}
+    if(pr.unit==='amt'){t.rate=0;t.usual=0}
+    save();renderPayRows();}
+  else if(k==='unit'){t.unit=e.target.value;save();renderPayRows();}
+  else{t[k]=k==='name'?e.target.value:num(e.target.value);save();}
+  S.profileExample=false;renderBanner();renderPayInputs();
+});
+$('payRows').addEventListener('click',e=>{
+  const id=e.target.dataset&&e.target.dataset.rm;if(!id)return;
+  P().payTypes=P().payTypes.filter(t=>t.id!==id);save();renderPayRows();renderPayInputs();renderAll();
+});
+$('addPay').addEventListener('click',()=>{
+  const id='p'+Date.now();P().payTypes.push({id,k:'other',name:'',rate:0,unit:'hr',usual:0});save();renderPayRows();renderPayInputs();
+  const el=$('pk_'+id);if(el)el.focus();
+});
+function renderSetupSummary(){
+  const p=P(), r=rate(p), si=shiftInfo(), fp=fixedTotal(p)/si.n;
+  $('toFields').hidden=!p.tipout.on; $('toFields').style.display=p.tipout.on?'flex':'none';
+  $('toValueLabel').textContent=p.tipout.mode==='pct'?'Percent of tips':'Dollars per shift';
+  $('toFrom').disabled=p.tipout.basis==='after';
+  const endOK=p.periodEnd&&periodLen()!==p.freq||(p.periodEnd&&dayDiff(p.periodStart,p.periodEnd)+1===p.freq);
+  $('sFreq').disabled=!!endOK;
+  $('rateSummary').innerHTML=`Out of every <b>$100</b> you make, about <b>${money(100*r)}</b> goes to taxes and you keep <b>${money(100*(1-r))}</b>.<br>Deductions that stay the same total <b>${money(fixedTotal(p))}</b> a check, or <b>${money(fp)}</b> per shift, based on ${si.src}${p.shifts>0?'':` (${si.n.toFixed(1)} shifts)`}.<br>Pay periods run <b>${periodLen()} days</b>${endOK?' from your dates':''}.${p.rateOverride!=null?'<br><span class="hint">Tax rate is adjusted from your real paychecks.</span>':''}`;
+}
+Object.entries(sMap).forEach(([id,k])=>$(id).addEventListener('input',()=>{
+  const v=$(id).value;
+  if(k==='periodStart')P()[k]=v||P().periodStart; else if(k==='periodEnd')P()[k]=v; else P()[k]=num(v);
+  if(k==='gross')P().rateOverride=null;
+  S.profileExample=false;save();renderSetupSummary();renderDedCalc();renderBanner();
+}));
+[['toOn','on'],['toMode','mode'],['toValue','value'],['toBasis','basis'],['toFrom','from']].forEach(([id,k])=>$(id).addEventListener('input',()=>{
+  P().tipout[k]=k==='on'?$(id).checked:(k==='value'?num($(id).value):$(id).value);
+  S.profileExample=false;save();renderSetupSummary();renderBanner();
+}));
+$('autoFica').addEventListener('click',()=>{const p=P(),g=num(p.gross);
+  [['ss','Social Security',.062],['med','Medicare',.0145]].forEach(([k,name,r],i)=>{let d=p.deductions.find(x=>x.k===k);
+    if(!d){d={id:'d'+Date.now()+i,k,name,mode:'pct'};p.deductions.push(d)}d.amount=+(g*r).toFixed(2)});
+  p.rateOverride=null;S.profileExample=false;save();fillSetup();renderBanner()});
+
+$('bkCopy').addEventListener('click',()=>{
+  const code=btoa(unescape(encodeURIComponent(JSON.stringify(S))));$('bkText').value=code;
+  const ok=()=>$('bkMsg').textContent='Backup code copied. Paste it somewhere safe, like a note to yourself.';
+  const fail=()=>{$('bkText').select();$('bkMsg').textContent='Code is selected below. Copy it manually.'};
+  try{navigator.clipboard.writeText(code).then(ok,fail)}catch(e){fail()}
+});
+$('bkRestore').addEventListener('click',()=>{
+  try{const d=JSON.parse(decodeURIComponent(escape(atob($('bkText').value.trim()))));if(!d.profile||!Array.isArray(d.nights))throw 0;S=d;migrate();save();paySig='';fillSetup();renderAll();$('bkMsg').textContent='Restored '+S.nights.length+' nights.'}
+  catch(e){$('bkMsg').textContent='That code didn’t work. Copy the whole code and try again.'}
+});
+let wipeArmed=false;
+$('wipe').addEventListener('click',()=>{
+  if(!wipeArmed){wipeArmed=true;$('wipe').textContent='Tap again to erase all nights and settings';$('wipe').style.color='var(--bad)';return}
+  S=seed();S.nights=[];S.nightsExample=false;save();wipeArmed=false;paySig='';$('wipe').textContent='Erase everything';$('wipe').style.color='';fillSetup();renderAll();$('bkMsg').textContent='Erased. Example paystub numbers are loaded until you enter yours.';
+});
+
+function renderAll(){renderBanner();renderPayInputs();renderStrip();renderResult();renderLog();renderSetupSummary()}
+$('nDate').value=iso(new Date());
+renderPayInputs();
+if(S.nightsExample){$('nTotal').value='450';$('nCash').value='160'}
+fillSetup();renderAll();
+})();
+</script>

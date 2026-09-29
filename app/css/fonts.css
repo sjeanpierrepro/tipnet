@@ -1,0 +1,4 @@
+/* Self-hosted, latin subset, SIL OFL. Big Shoulders and Figtree are variable fonts (one file, weight range). */
+@font-face{font-family:"Big Shoulders Display";font-style:normal;font-weight:700 800;font-display:swap;src:url("../fonts/big-shoulders-display.woff2") format("woff2")}
+@font-face{font-family:"Figtree";font-style:normal;font-weight:400 700;font-display:swap;src:url("../fonts/figtree.woff2") format("woff2")}
+@font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:500;font-display:swap;src:url("../fonts/ibm-plex-mono-500.woff2") format("woff2")}
