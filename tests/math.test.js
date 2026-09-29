@@ -309,6 +309,17 @@ test('presets: groups, defaults, flags', () => {
   assert.equal(M.applyPayPreset({ id: 'x' }, 'bonus').supp, 1);
 });
 
+test('applyPayPreset only autofills the rate for Overtime (1.5x main rate)', () => {
+  M.PAY_PRESETS.forEach((pr) => {
+    const out = M.applyPayPreset({ id: 'x', rate: 0, usual: 0 }, pr.k, 20);
+    if (pr.k === 'ot') assert.equal(out.rate, 30, 'overtime is 1.5x the main rate');
+    else assert.equal(out.rate, 0, pr.k + ' must not autofill a rate');
+  });
+  assert.deepEqual(M.PAY_PRESETS.filter((pr) => pr.rateMultiplier).map((pr) => pr.k), ['ot']);
+  // No main rate yet: overtime stays as typed.
+  assert.equal(M.applyPayPreset({ id: 'x', rate: 5 }, 'ot', 0).rate, 5);
+});
+
 test('fill Social Security + Medicare from gross', () => {
   const p = { gross: 2000, deductions: [{ id: 'd1', k: 'ss', name: 'Social Security', amount: 1, mode: 'pct' }] };
   const d = M.fillFica(p);

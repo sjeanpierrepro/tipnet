@@ -178,14 +178,19 @@ export function dedupeNights(incoming, existing) {
   incoming.forEach((n) => (byDate.has(n.date) ? duplicates.push({ incoming: n, existing: byDate.get(n.date) }) : fresh.push(n)));
   return { fresh, duplicates };
 }
-/** Merge incoming nights into existing. overwrite=true replaces same-date nights; false skips them. Returns new array + counts. */
+/**
+ * Merge incoming nights into existing. overwrite=true updates same-date nights (keeping the existing id,
+ * barback choice, other pay types, and cash when the import has none); false skips them. Returns new array + counts.
+ */
 export function mergeNights(existing, incoming, { overwrite = false } = {}) {
   const { fresh, duplicates } = dedupeNights(incoming, existing);
   let out = existing.slice();
   if (overwrite) {
     const dupDates = new Set(duplicates.map((d) => d.incoming.date));
     out = out.filter((n) => !dupDates.has(n.date));
-    out.push(...duplicates.map((d) => ({ ...d.incoming, id: d.existing.id })));
+    out.push(...duplicates.map(({ incoming: inc, existing: ex }) => ({
+      ...ex, ...inc, id: ex.id, cash: inc.cash ?? ex.cash ?? null, pay: { ...ex.pay, ...inc.pay }, barback: ex.barback,
+    })));
   }
   out.push(...fresh);
   return { nights: out, added: fresh.length, replaced: overwrite ? duplicates.length : 0, skipped: overwrite ? 0 : duplicates.length };

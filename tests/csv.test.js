@@ -106,6 +106,17 @@ test('dedupe and merge', () => {
   assert.deepEqual([over.added, over.replaced], [1, 1]);
 });
 
+test('mergeNights overwrite keeps existing cash, other pay types and barback when the import lacks them', () => {
+  const existing = [{ id: 7, date: '2026-09-26', total: 100, cash: 40, pay: { p1: 6, p2: 2 }, barback: false }];
+  const incoming = [{ id: 99, date: '2026-09-26', total: 250, cash: null, pay: { p1: 8 }, barback: true }];
+  const o = mergeNights(existing, incoming, { overwrite: true }).nights[0];
+  assert.deepEqual(o, { id: 7, date: '2026-09-26', total: 250, cash: 40, pay: { p1: 8, p2: 2 }, barback: false });
+  const withCash = mergeNights(existing, [{ ...incoming[0], cash: 55 }], { overwrite: true }).nights[0];
+  assert.equal(withCash.cash, 55);
+  const noCashAnywhere = mergeNights([{ ...existing[0], cash: null }], incoming, { overwrite: true }).nights[0];
+  assert.equal(noCashAnywhere.cash, null);
+});
+
 test('csvSource returns nights in range; toastSource throws', async () => {
   const text = 'Date,Total\n9/26/2026,100\n9/27/2026,200\n';
   const src = csvSource({ text, mapping: { date: 0, total: 1, cash: null, card: null, hours: null, employee: null } });
