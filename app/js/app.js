@@ -27,6 +27,7 @@ function render() {
 
 function go(tab, { focus = false } = {}) {
   if (!SCREENS[tab]) tab = 'tonight';
+  if (tab !== current) periods.reset(); // switching tabs closes any open night editor and accuracy message
   current = tab;
   document.querySelectorAll('#tabs [data-tab]').forEach((b) => {
     const on = b.dataset.tab === tab;
@@ -94,6 +95,7 @@ async function boot() {
   applyTheme(state.settings.theme);
   bus.go = go;
   bus.rerender = render;
+  bus.stateReplaced = () => { periods.reset(); tonight.resetDraft(); render(); }; // after Erase everything / Restore
   wireTabs();
   window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); setInstallPrompt(e); });
   window.addEventListener('appinstalled', () => setInstallPrompt(null));

@@ -106,7 +106,7 @@ export function debounce(fn, ms = 300) {
 }
 
 /* ---------- app bus (set by app.js) ---------- */
-export const bus = { go: () => {}, rerender: () => {} };
+export const bus = { go: () => {}, rerender: () => {}, stateReplaced: () => {} };
 
 /* ---------- saving ---------- */
 let persistAsked = false;

@@ -7,6 +7,9 @@ let editingId = null;
 let calMsg = null; // {text, tone}
 let calPeriod = null;
 
+/** Forget screen-local UI state (open editor, accuracy message). Called when leaving the tab and after erase/restore. */
+export function reset() { editingId = null; calMsg = null; calPeriod = null; }
+
 function nightSub(n, c, p) {
   const bits = [money(c.total) + ' made'];
   if (c.tipout) bits.push(money(c.tipout) + ' tip-out');

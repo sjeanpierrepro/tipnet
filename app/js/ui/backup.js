@@ -54,7 +54,7 @@ export function renderBackup(host) {
       applyTheme(s.settings.theme);
       flush();
       toast('Restored ' + s.nights.length + ' night' + (s.nights.length === 1 ? '' : 's') + '.');
-      bus.rerender();
+      bus.stateReplaced();
     } catch (e) { say('That code didn’t work. Copy the whole code and try again.'); }
   };
   const hasReal = !S.nightsExample && S.nights.length > 0;
@@ -69,7 +69,7 @@ export function renderBackup(host) {
       applyTheme('auto');
       flush();
       toast('Erased. Example paystub numbers are loaded until you enter yours.');
-      bus.rerender();
+      bus.stateReplaced();
     },
   });
 
