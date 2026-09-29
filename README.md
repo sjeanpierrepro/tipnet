@@ -32,7 +32,9 @@ To see TipNet running locally:
 npx --yes serve app
 ```
 
-Then open the address it prints (like `http://localhost:3000`). Changes appear when you refresh.
+Then open the address it prints (like `http://localhost:3000`).
+
+A plain refresh does **not** always show your changes, because the service worker serves the saved copy of the app. After an update is deployed, the app shows "Update available: Refresh"; tap it to load the new version. For local development, either bump `VERSION` in `app/sw.js`, or open DevTools > Application > Service workers and tick **Update on reload**.
 
 ## How to deploy TipNet
 
@@ -63,7 +65,9 @@ See [STAFF-GUIDE.md](STAFF-GUIDE.md) for a one-page printable guide. It covers:
 
 TipNet is built for current versions of Safari (iPhone and Mac), Chrome (Android, Windows, Mac), Edge, and Firefox.
 
-**What was and was not tested**: The money math is covered by automated tests (`npm test`). The screens were checked in a desktop Chromium browser at phone and desktop sizes, in both themes. Not tested on real devices: installing and offline use on iPhone Safari, Android Chrome, Windows Edge/Chrome, and Mac Safari/Chrome were not tried directly, and the offline service worker could not run in the builder's preview browser. Before the pilot, install it on one iPhone and one Android phone, turn on airplane mode, and reopen it to confirm it works offline.
+**What was and was not tested**: The money math is covered by automated tests (`npm test`). The screens were checked in a desktop Chromium browser at phone and desktop sizes, in both themes. The service worker was verified in desktop Chrome on Windows 11: it registers, the app works offline after the local server is stopped, the install prompt fires, and the update bar appears after a `VERSION` bump.
+
+**Not tested**: a Lighthouse audit, actually installing the app, iPhone Safari, Android Chrome, Edge, macOS, and a real GitHub Pages deploy. Before the pilot, install it on one iPhone and one Android phone, turn on airplane mode, and reopen it to confirm it works offline.
 
 ## Releasing an update
 

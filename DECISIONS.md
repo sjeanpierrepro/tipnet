@@ -15,11 +15,17 @@
 
 ## UI layer
 - UI: money fields are type=text with inputmode=decimal (not type=number) so "$1,200" pastes cleanly; values are cleaned before math.
-- UI: example mode pre-fills Tonight with the spec night ($585, 8 hours, $210 cash = $420.46) so the first screen shows a real result; it resets after the first real save.
+- UI: example mode (example profile AND example nights) pre-fills Tonight with the spec night ($585, 8 hours, $210 cash = $420.46) so the first screen shows a real result. The pre-fill is dropped as soon as example mode ends (first save, Finish setup, Clear example nights); the fresh draft leaves cash blank and main-rate hours fall back to the user's usual hours. Erase everything and Restore also clear the draft and the Pay periods editor/accuracy message.
 - UI: guided setup shows while the profile is still the example and setup was not skipped/finished; it stays active after the first edit (which ends example mode) until Finish or Skip. Step 1 blocks Next only on missing start date or gross pay.
 - UI: Edit night opens an inline form in Pay periods (same fields as Tonight); one editor at a time.
 - UI: Restore asks for a second tap only when real (non-example) nights exist; Erase always needs two taps.
 - UI: CSV import treats the Cash column as cash in hand, requires picking your own name when an Employee column is mapped, and uses the main pay type's rate for hours x rate.
-- UI: sw.js precache list already matched the final file set, so VERSION was not bumped.
+- UI: sw.js precache requests use cache:'reload' so a new VERSION never caches stale HTTP-cached files; activate only deletes caches named tipnet-* because a github.io origin is shared with the owner's other Pages sites.
 - UI: theme stored in settings.theme and mirrored to localStorage "tipnet-theme" (auto removes the key).
 - Two-column Setup fields stack into one column below 380 px wide, so dates and dropdowns are not cut off on small Android phones.
+
+## Final review
+- Bonuses/commissions use the 22% federal supplemental rate; some payroll companies instead add bonuses to regular pay (aggregate method), which would change withholding.
+- applyPayPreset: only Overtime autofills its rate (1.5x the main rate), matching the prototype. Every other preset leaves the rate for the user to type (covered by a regression test).
+- CSV import "overwrite" updates the existing night: keeps its id and barback choice, keeps its cash when the import has no cash, and keeps pay types the import does not mention.
+- gh CLI is not installed/authenticated here, so no GitHub repo was created and nothing was deployed; see DEPLOY.md.
