@@ -256,9 +256,11 @@ function billsCard(S) {
       el('div', { class: 'main' }, b.name, el('div', { class: 'hint' }, money(b.amount) + ', due on day ' + b.dueDay + ' each month')),
       el('div', { class: 'row-actions' }, editBtn('bill', b.id, 'Edit ' + b.name),
         removeBtn('Delete ' + b.name, () => {
+          const gone = b, goneMarks = {};
           B.bills = B.bills.filter((x) => x.id !== b.id);
-          Object.keys(B.paidBills).forEach((k) => { if (k.endsWith(':' + b.id)) delete B.paidBills[k]; });
-          save(); bus.rerender(); toast('Bill removed.');
+          Object.keys(B.paidBills).forEach((k) => { if (k.endsWith(':' + b.id)) { goneMarks[k] = B.paidBills[k]; delete B.paidBills[k]; } });
+          save(); bus.rerender();
+          toast('Bill removed.', { undo: () => { if (!B.bills.some((x) => x.id === gone.id)) B.bills.push(gone); Object.assign(B.paidBills, goneMarks); save(); bus.rerender(); } });
         })))));
   return el('section', { class: 'card stack' },
     el('h2', null, 'Bills'),

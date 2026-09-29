@@ -73,6 +73,10 @@ TipNet is built for current versions of Safari (iPhone and Mac), Chrome (Android
 
 When you change any file in `app/`, also change the `VERSION` line at the top of `app/sw.js` (for example `tipnet-v2` to `tipnet-v3`). That is how phones learn there is a new version; they then show "Update available: Refresh".
 
+## Privacy
+
+Your numbers stay on your device. A Content Security Policy in `app/index.html` makes the browser enforce that TipNet only talks to its own site and to Lemon Squeezy's license API (only used by the optional Budget add-on).
+
 ## Legal
 
 TipNet gives estimates, not tax advice. Your numbers stay on your device. It does not collect your name, Social Security number, or any personal information beyond what you voluntarily type into it.

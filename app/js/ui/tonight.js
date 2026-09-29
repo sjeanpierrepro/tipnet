@@ -28,7 +28,7 @@ export function draftFromNight(n, p) {
 export function liveNight(d, id) {
   const pay = {};
   Object.keys(d.pay).forEach((k) => { if (d.pay[k] !== '') pay[k] = clean(d.pay[k]); });
-  return { id, date: d.date || todayISO(), total: clean(d.total), cash: clean(d.cash), pay, barback: d.barback };
+  return { id, date: d.date || todayISO(), total: numOf(d.total) > 0 ? clean(d.total) : '', cash: clean(d.cash), pay, barback: d.barback };
 }
 /** Draft -> night to store. Freezes each pay type's amount (main type falls back to its usual). */
 export function storedNight(d, p, id) {
