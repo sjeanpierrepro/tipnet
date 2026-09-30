@@ -19,6 +19,14 @@ import {
   convertPaidKeys,
   hasOldPaidKeys,
   balanceIsStale,
+  isPlan,
+  purchasePlan,
+  planShare,
+  expectedIncome,
+  incomeDates,
+  otherIncomeMonthly,
+  otherIncomePerPaycheck,
+  INCOME_FREQ_LABEL,
 } from '../budget.js';
 import {
   BILLING,
@@ -52,6 +60,7 @@ import {
   bus,
   getState,
   debounce,
+  addDays,
 } from './common.js';
 
 const MANAGE_URL = 'https://app.lemonsqueezy.com/my-orders';
@@ -70,7 +79,9 @@ export function reset() {
   keyText = '';
   busy = false;
   billsOpen = false;
-  addOpen.bill = addOpen.category = addOpen.goal = false;
+  addOpen.bill = addOpen.category = addOpen.goal = addOpen.plan = addOpen.income = false;
+  doneOpen = false;
+  planMode = 'date';
 }
 
 const newId = (p) => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
@@ -635,6 +646,14 @@ function breakdown(S, r) {
                 )
               : null,
           ].filter(Boolean)),
+      ...(r.otherIncome.length
+        ? [
+            row('Other income before payday', '+' + money(r.otherIncomeTotal)),
+            ...r.otherIncome.map((o) =>
+              row('   ' + o.name + ', ' + fmtDate(o.date), '+' + money(o.amount), 'hint'),
+            ),
+          ]
+        : []),
       row('Bills due before payday (' + r.bills.length + ' unpaid)', '−' + money(r.billsTotal)),
       ...r.bills.map((b) => row('   ' + b.name + ', ' + fmtShort(b.date), '−' + money(b.amount), 'hint')),
       row('Savings goals this paycheck', '−' + money(r.goalsTotal)),
@@ -689,6 +708,9 @@ function nextCheckCard(S, r0) {
       'dl',
       { class: 'breakdown' },
       row('Projected check (estimated)', known ? money(a.projectedCheck) : 'Not known yet'),
+      ...(a.otherIncome.length
+        ? [row('Other income in that window (' + a.otherIncome.length + ')', '+' + money(a.otherIncomeTotal))]
+        : []),
       row('Bills due in that window (' + a.bills.length + ')', '−' + money(a.billsTotal)),
       row('Savings goals', '−' + money(a.goalsTotal)),
       row('What is left', known ? money(a.left) : '–', 'total'),
@@ -983,102 +1005,439 @@ function spendingCard(S) {
   );
 }
 
-/* ---------- (e) goals ---------- */
+/* ---------- (e) goals and big-purchase plans ---------- */
+let doneOpen = false; // keeps the "Done" list open after an Undo
+let planMode = 'date'; // which way the "Plan a big purchase" form was last set
+
+/** The "Add to saved" box, the "Set aside for this paycheck" tick and its hint. Shared by goals and plans. */
+function goalControls(B, g, payday) {
+  const add = moneyInput({
+    placeholder: 'Amount',
+    'aria-label': 'Amount to add to ' + g.name,
+    'data-focus-key': 'goal-add-' + g.id,
+    class: 'input',
+  });
+  const dkey = goalKey(g.id, payday);
+  const done = el('input', {
+    type: 'checkbox',
+    'aria-label': 'Set aside for ' + g.name + ' this paycheck',
+    checked: isGoalDone(B, g.id, payday),
+    'data-focus-key': 'goal-done-' + g.id,
+  });
+  done.addEventListener('change', () => {
+    if (done.checked) B.goalsDone[dkey] = true;
+    else delete B.goalsDone[dkey];
+    save();
+    bus.rerender();
+  });
+  const addBtn = el('button', { type: 'button', class: 'btn btn-secondary btn-small' }, 'Add to saved');
+  addBtn.addEventListener('click', () => {
+    const n = numOf(add.value);
+    if (!(n > 0)) {
+      add.focus();
+      toast('Enter an amount to add.');
+      return;
+    }
+    g.saved = (toCents(g.saved) + toCents(n)) / 100;
+    B.goalsDone[dkey] = true; // you just set money aside for this paycheck, so it stops coming out of the money you have now
+    save();
+    bus.rerender();
+  });
+  add.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addBtn.click();
+    }
+  });
+  return [
+    el('div', { class: 'cluster' }, el('div', { style: 'flex:1;min-width:120px' }, add), addBtn),
+    el('label', { class: 'check' }, done, 'Set aside for this paycheck'),
+    el(
+      'div',
+      { class: 'hint' },
+      'Tick this once you have put the money away, or use Add to saved. It then stops coming out of the money you have now until your next payday.',
+    ),
+  ];
+}
+
+/** Delete with two taps and an Undo that puts the goal back where it was. */
+function goalRemoveBtn(B, g, noun) {
+  return removeBtn('Delete ' + (noun ? noun + ' ' : '') + g.name, () => {
+    const at = B.goals.findIndex((x) => x.id === g.id);
+    if (at < 0) return;
+    const [gone] = B.goals.splice(at, 1);
+    save();
+    bus.rerender();
+    toast(noun ? 'Plan removed.' : 'Goal removed.', {
+      undo: () => {
+        if (!B.goals.some((x) => x.id === gone.id)) B.goals.splice(Math.min(at, B.goals.length), 0, gone);
+        save();
+        bus.rerender();
+      },
+    });
+  });
+}
+
+/** What the typical paycheck is, for comparing a plan to it: average take-home from finished periods, else this period's projected check. */
+function typicalCheck(S) {
+  const inc = expectedIncome(S.profile, S.nights, todayISO());
+  const check = inc.avgTakeHomePerPeriod != null ? inc.avgTakeHomePerPeriod : inc.projectedCheck;
+  if (check == null) return { base: null, other: 0 };
+  const other = otherIncomePerPaycheck(S.budget, S.profile, todayISO()); // regular other income, spread over one pay period
+  return { base: check + other, other };
+}
+
+/** The plain-words lines that describe a plan: what to put aside, and how big that is next to a typical check. */
+function planLines(p, tc) {
+  const lines = [];
+  if (p.ready) lines.push('You already have enough saved for this.');
+  else if (p.noPaychecks)
+    lines.push(
+      'No paychecks arrive before that date, so there is nothing to spread this over. Pick a later date.',
+    );
+  else if (p.paychecksLeft == null) lines.push('Enter an amount per paycheck to see a timeline.');
+  else
+    lines.push(
+      'About ' +
+        money(p.perPaycheck) +
+        ' a paycheck for ' +
+        plural(p.paychecksLeft, 'paycheck') +
+        (p.readyBy ? ' (ready by ' + fmtDate(p.readyBy) + ')' : '') +
+        '.',
+    );
+  if (!p.ready && !p.noPaychecks && p.paychecksLeft != null) {
+    const sh = planShare(p.perPaycheck, tc.base);
+    if (!sh) lines.push("We'll compare it to your paychecks once you have a finished pay period.");
+    else {
+      lines.push(
+        "That's about " +
+          sh.pct +
+          '% of a typical check' +
+          (tc.other > 0 ? ' plus your regular other income.' : '.'),
+      );
+      if (sh.big) lines.push("That's a big share of each check; a later date lowers it.");
+    }
+  }
+  return lines;
+}
+
+/** The "Plan a big purchase" form. With an item it edits that plan. */
+function planForm(item) {
+  const S = getState(),
+    B = S.budget;
+  const today = todayISO();
+  const key = (k) => 'ef-plan-' + (item ? item.id : 'new') + '-' + k;
+  const name = el('input', {
+    type: 'text',
+    autocomplete: 'off',
+    placeholder: 'Car down payment',
+    maxlength: '40',
+    value: item ? item.name : '',
+    'data-focus-key': key('name'),
+  });
+  const cost = moneyInput({
+    placeholder: '0.00',
+    value: item && item.target ? String(item.target) : '',
+    'data-focus-key': key('cost'),
+  });
+  const saved = moneyInput({
+    placeholder: '0.00',
+    value: item && item.saved ? String(item.saved) : '',
+    'data-focus-key': key('saved'),
+  });
+  const mode0 = item ? (item.targetDate ? 'date' : 'fixed') : planMode;
+  const pid = 'plan-' + (item ? item.id : 'new') + '-mode';
+  const radio = (v, label) =>
+    el(
+      'label',
+      { class: 'check' },
+      el('input', {
+        type: 'radio',
+        name: pid,
+        value: v,
+        checked: mode0 === v,
+        'data-focus-key': key('mode-' + v),
+      }),
+      label,
+    );
+  const byDate = el('input', {
+    type: 'date',
+    min: addDays(today, 1),
+    value: item && item.targetDate ? item.targetDate : '',
+    'data-focus-key': key('date'),
+  });
+  const perCheck = moneyInput({
+    placeholder: '0.00',
+    value: item && !item.targetDate && item.perPaycheck ? String(item.perPaycheck) : '',
+    'data-focus-key': key('per'),
+  });
+  const fName = field('What is it?', name),
+    fCost = field('How much does it cost?', cost),
+    fSaved = field('Already saved', saved, { optional: true }),
+    fDate = field('Date you want it by', byDate),
+    fPer = field('How much can you put aside each paycheck?', perCheck);
+  const preview = el('div', { class: 'stack-sm', id: pid + '-preview' });
+  const mode = () => {
+    const on = Array.from(form.querySelectorAll('input[type=radio]')).find((r) => r.checked);
+    return on ? on.value : 'date';
+  };
+  // A draft goal from what is typed so far (null fields stay empty); the same maths as a saved plan.
+  const draft = () => {
+    const d = {
+      kind: 'purchase',
+      name: name.value.trim(),
+      target: Math.max(0, numOf(cost.value)),
+      saved: Math.max(0, numOf(saved.value)),
+      createdAt: today,
+    };
+    d.startSaved = d.saved;
+    if (mode() === 'date') d.targetDate = byDate.value;
+    else d.perPaycheck = Math.max(0, numOf(perCheck.value));
+    return d;
+  };
+  const refresh = () => {
+    const m = mode();
+    fDate.hidden = m !== 'date';
+    fPer.hidden = m !== 'fixed';
+    clear(preview);
+    const d = draft();
+    if (!(d.target > 0) || (m === 'date' ? !d.targetDate : !(d.perPaycheck > 0))) return;
+    if (m === 'date' && d.targetDate <= today) return;
+    preview.append(
+      ...planLines(purchasePlan(d, S.profile, today), typicalCheck(S)).map((t, i) =>
+        el('p', i === 0 ? { class: 'num' } : { class: 'hint' }, t),
+      ),
+    );
+  };
+  const submit = el(
+    'button',
+    { type: 'submit', class: 'btn btn-small', 'data-focus-key': item ? key('submit') : 'add-plan' },
+    item ? 'Save plan' : 'Make this plan',
+  );
+  const cancel = item
+    ? el(
+        'button',
+        {
+          type: 'button',
+          class: 'btn btn-secondary btn-small',
+          onclick: () => {
+            editing = null;
+            bus.rerender();
+          },
+        },
+        'Cancel',
+      )
+    : null;
+  const form = el(
+    'form',
+    {
+      class: 'stack-sm',
+      novalidate: true,
+      'aria-label': item ? 'Edit plan ' + item.name : 'Plan a big purchase',
+    },
+    fName,
+    fCost,
+    fSaved,
+    el(
+      'fieldset',
+      { class: 'stack-sm' },
+      el('legend', null, 'How do you want to plan it?'),
+      radio('date', 'I want it by a date'),
+      radio('fixed', 'I can put aside a set amount each paycheck'),
+    ),
+    fDate,
+    fPer,
+    preview,
+    el('div', { class: 'cluster' }, submit, cancel),
+  );
+  form.addEventListener('input', refresh);
+  form.addEventListener('change', (e) => {
+    if (e.target && e.target.type === 'radio' && !item) planMode = e.target.value;
+    refresh();
+  });
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const d = draft();
+    const m = mode();
+    let bad = false;
+    const check = (f, msg) => {
+      f.setError(msg);
+      if (msg) bad = true;
+    };
+    check(fName, d.name ? '' : 'Give it a name.');
+    check(fCost, d.target > 0 ? '' : 'Enter an amount above zero.');
+    check(fSaved, '');
+    check(fDate, m === 'date' && !(d.targetDate > today) ? 'Pick a date after today.' : '');
+    check(fPer, m === 'fixed' && !(d.perPaycheck > 0) ? 'Enter an amount above zero.' : '');
+    if (bad) {
+      const first = form.querySelector('[aria-invalid]');
+      if (first) first.focus();
+      return;
+    }
+    const p = purchasePlan(d, S.profile, today);
+    const fields = {
+      kind: 'purchase',
+      name: d.name,
+      target: d.target,
+      saved: d.saved,
+      startSaved: d.saved,
+      createdAt: today,
+      perPaycheck: m === 'date' ? p.perPaycheck : d.perPaycheck,
+    };
+    if (m === 'date') fields.targetDate = d.targetDate;
+    if (item) {
+      delete item.targetDate;
+      Object.assign(item, fields);
+    } else B.goals.push({ id: newId('g'), ...fields });
+    editing = null;
+    save();
+    bus.rerender();
+    toast(item ? 'Saved.' : 'Plan added.');
+  });
+  refresh();
+  return form;
+}
+
+function planRow(S, g, payday, tc) {
+  const B = S.budget;
+  if (isEditing('plan', g.id))
+    return el('li', { class: 'list-row wrap' }, el('div', { class: 'main' }, planForm(g)));
+  const p = purchasePlan(g, S.profile, todayISO());
+  const status = p.ready
+    ? el('b', null, 'Ready to buy')
+    : el('b', null, p.onTrack ? 'On track' : 'Behind by ' + money(p.behind));
+  const head = [
+    el('div', { class: 'spread' }, el('span', null, g.name), el('b', { class: 'num' }, p.pct + '%')),
+    bar(p.pct, g.name + ' progress'),
+    el('div', { class: 'hint' }, money(g.saved) + ' saved of ' + money(g.target) + '.'),
+  ];
+  const body = [el('div', null, status)];
+  if (p.ready) {
+    const buy = el('button', {
+      type: 'button',
+      class: 'btn btn-small',
+      'aria-label': 'Mark ' + g.name + ' as bought',
+      'data-focus-key': 'plan-bought-' + g.id,
+    });
+    arm(buy, {
+      label: 'Mark as bought',
+      armedLabel: 'Bought? Tap again',
+      onConfirm: () => {
+        g.boughtAt = todayISO();
+        doneOpen = false;
+        save();
+        bus.rerender();
+        toast('Moved to Done.', {
+          undo: () => {
+            delete g.boughtAt;
+            save();
+            bus.rerender();
+          },
+        });
+      },
+    });
+    body.push(el('div', { class: 'hint' }, 'You have saved enough. Nice work.'), buy);
+  } else {
+    planLines(p, tc).forEach((t, i) => body.push(el('p', i === 0 ? { class: 'num' } : { class: 'hint' }, t)));
+    body.push(
+      el(
+        'div',
+        { class: 'hint' },
+        (p.paychecksLeft != null ? plural(p.paychecksLeft, 'paycheck') + ' left. ' : '') +
+          (g.targetDate ? 'Wanted by ' + fmtDate(g.targetDate) + '. ' : '') +
+          'The amount is worked out again each payday (estimated).',
+      ),
+    );
+    body.push(...goalControls(B, g, payday));
+  }
+  return el(
+    'li',
+    { class: 'list-row wrap' },
+    el('div', { class: 'main stack-sm' }, ...head, ...body),
+    el(
+      'div',
+      { class: 'row-actions' },
+      editBtn('plan', g.id, 'Edit plan ' + g.name),
+      goalRemoveBtn(B, g, 'plan'),
+    ),
+  );
+}
+
+function doneList(S, done) {
+  const B = S.budget;
+  return el(
+    'details',
+    {
+      class: 'stack-sm',
+      open: doneOpen,
+      ontoggle: (e) => {
+        doneOpen = e.target.open;
+      },
+    },
+    el('summary', null, 'Done (' + done.length + ')'),
+    el(
+      'ul',
+      { class: 'list' },
+      done.map((g) =>
+        el(
+          'li',
+          { class: 'list-row wrap' },
+          el(
+            'div',
+            { class: 'main' },
+            el('span', null, g.name),
+            el('div', { class: 'hint' }, money(g.target) + ', bought ' + fmtShort(g.boughtAt) + '.'),
+          ),
+          el('div', { class: 'row-actions' }, goalRemoveBtn(B, g, 'plan')),
+        ),
+      ),
+    ),
+  );
+}
+
 function goalsCard(S) {
   const B = S.budget;
   const payday = paydayInfo(S.profile, todayISO()).date; // a tick lasts until this payday
   B.goalsDone = B.goalsDone || {};
-  const rows = B.goals.map((g) => {
-    if (isEditing('goal', g.id))
-      return el('li', { class: 'list-row wrap' }, el('div', { class: 'main' }, entityForm('goal', g)));
-    const pr = goalProgress(g);
-    const add = moneyInput({
-      placeholder: 'Amount',
-      'aria-label': 'Amount to add to ' + g.name,
-      'data-focus-key': 'goal-add-' + g.id,
-      class: 'input',
-    });
-    const dkey = goalKey(g.id, payday);
-    const done = el('input', {
-      type: 'checkbox',
-      'aria-label': 'Set aside for ' + g.name + ' this paycheck',
-      checked: isGoalDone(B, g.id, payday),
-      'data-focus-key': 'goal-done-' + g.id,
-    });
-    done.addEventListener('change', () => {
-      if (done.checked) B.goalsDone[dkey] = true;
-      else delete B.goalsDone[dkey];
-      save();
-      bus.rerender();
-    });
-    const addBtn = el('button', { type: 'button', class: 'btn btn-secondary btn-small' }, 'Add to saved');
-    addBtn.addEventListener('click', () => {
-      const n = numOf(add.value);
-      if (!(n > 0)) {
-        add.focus();
-        toast('Enter an amount to add.');
-        return;
-      }
-      g.saved = (toCents(g.saved) + toCents(n)) / 100;
-      B.goalsDone[dkey] = true; // you just set money aside for this paycheck, so it stops coming out of the money you have now
-      save();
-      bus.rerender();
-    });
-    add.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        addBtn.click();
-      }
-    });
-    const togo =
-      pr.remaining === 0
-        ? 'Goal reached.'
-        : pr.paychecksToGo == null
-          ? 'Set an amount per paycheck to see a timeline.'
-          : 'About ' + plural(pr.paychecksToGo, 'paycheck') + ' to go (estimated).';
-    return el(
-      'li',
-      { class: 'list-row wrap' },
-      el(
-        'div',
-        { class: 'main stack-sm' },
-        el('div', { class: 'spread' }, el('span', null, g.name), el('b', { class: 'num' }, pr.pct + '%')),
-        bar(pr.pct, g.name + ' progress'),
+  const tc = typicalCheck(S);
+  const rows = B.goals
+    .filter((g) => !g.boughtAt)
+    .map((g) => {
+      if (isPlan(g)) return planRow(S, g, payday, tc);
+      if (isEditing('goal', g.id))
+        return el('li', { class: 'list-row wrap' }, el('div', { class: 'main' }, entityForm('goal', g)));
+      const pr = goalProgress(g);
+      const togo =
+        pr.remaining === 0
+          ? 'Goal reached.'
+          : pr.paychecksToGo == null
+            ? 'Set an amount per paycheck to see a timeline.'
+            : 'About ' + plural(pr.paychecksToGo, 'paycheck') + ' to go (estimated).';
+      return el(
+        'li',
+        { class: 'list-row wrap' },
         el(
           'div',
-          { class: 'hint' },
-          money(g.saved) + ' of ' + money(g.target) + ', ' + money(g.perPaycheck) + ' per paycheck. ' + togo,
+          { class: 'main stack-sm' },
+          el('div', { class: 'spread' }, el('span', null, g.name), el('b', { class: 'num' }, pr.pct + '%')),
+          bar(pr.pct, g.name + ' progress'),
+          el(
+            'div',
+            { class: 'hint' },
+            money(g.saved) +
+              ' of ' +
+              money(g.target) +
+              ', ' +
+              money(g.perPaycheck) +
+              ' per paycheck. ' +
+              togo,
+          ),
+          ...goalControls(B, g, payday),
         ),
-        el('div', { class: 'cluster' }, el('div', { style: 'flex:1;min-width:120px' }, add), addBtn),
-        el('label', { class: 'check' }, done, 'Set aside for this paycheck'),
-        el(
-          'div',
-          { class: 'hint' },
-          'Tick this once you have put the money away, or use Add to saved. It then stops coming out of the money you have now until your next payday.',
-        ),
-      ),
-      el(
-        'div',
-        { class: 'row-actions' },
-        editBtn('goal', g.id, 'Edit ' + g.name),
-        removeBtn('Delete ' + g.name, () => {
-          const at = B.goals.findIndex((x) => x.id === g.id);
-          if (at < 0) return;
-          const [gone] = B.goals.splice(at, 1);
-          save();
-          bus.rerender();
-          toast('Goal removed.', {
-            undo: () => {
-              if (!B.goals.some((x) => x.id === gone.id))
-                B.goals.splice(Math.min(at, B.goals.length), 0, gone);
-              save();
-              bus.rerender();
-            },
-          });
-        }),
-      ),
-    );
-  });
+        el('div', { class: 'row-actions' }, editBtn('goal', g.id, 'Edit ' + g.name), goalRemoveBtn(B, g, '')),
+      );
+    });
+  const done = B.goals.filter((g) => g.boughtAt);
   return el(
     'section',
     { class: 'card stack' },
@@ -1091,6 +1450,232 @@ function goalsCard(S) {
           'No goals yet. A goal is something you are saving toward, like an emergency fund.',
         ),
     addBox('goal', 'Add a savings goal'),
+    el(
+      'details',
+      {
+        class: 'card',
+        open: !!addOpen.plan,
+        ontoggle: (e) => {
+          addOpen.plan = e.target.open;
+        },
+      },
+      el('summary', null, 'Plan a big purchase'),
+      el('div', { style: 'padding-top:var(--s-2)' }, planForm(null)),
+    ),
+    done.length ? doneList(S, done) : null,
+  );
+}
+
+/* ---------- (f) other income ---------- */
+const FREQ_OPTIONS = [
+  ['weekly', 'Every week'],
+  ['biweekly', 'Every two weeks'],
+  ['twiceMonthly', 'Twice a month'],
+  ['monthly', 'Once a month'],
+  ['once', 'One time'],
+];
+
+/** The "Add other income" form. With an item it edits that source. Money is entered once; every later date is worked out. */
+function incomeForm(item) {
+  const B = getState().budget;
+  const key = (k) => 'ef-income-' + (item ? item.id : 'new') + '-' + k;
+  const name = el('input', {
+    type: 'text',
+    autocomplete: 'off',
+    placeholder: 'DoorDash',
+    maxlength: '40',
+    value: item ? item.name : '',
+    'data-focus-key': key('name'),
+  });
+  const amount = moneyInput({
+    placeholder: '0.00',
+    value: item && item.amount ? String(item.amount) : '',
+    'data-focus-key': key('amount'),
+  });
+  const freq = select(FREQ_OPTIONS, item ? item.freq : 'weekly', { 'data-focus-key': key('freq') });
+  const next = el('input', { type: 'date', value: item ? item.nextDate : '', 'data-focus-key': key('date') });
+  const dayAttrs = (k, v) => ({
+    type: 'text',
+    inputmode: 'numeric',
+    autocomplete: 'off',
+    placeholder: '1 to 31',
+    value: v ? String(v) : '',
+    'data-focus-key': key(k),
+  });
+  const day1 = el('input', dayAttrs('day1', item && item.days ? item.days[0] : ''));
+  const day2 = el('input', dayAttrs('day2', item && item.days && item.days[1] ? item.days[1] : ''));
+  const lab1 = el('span', null, 'Day of the month');
+  const fName = field('What is it called?', name),
+    fAmount = field('How much does it pay?', amount),
+    fFreq = field('How often?', freq),
+    fNext = field('Next date it arrives', next, {
+      hint: 'TipNet works out every date after this one, so you only enter it once.',
+    }),
+    fDay1 = field(lab1, day1),
+    fDay2 = field('Second day of the month', day2);
+  const sync = () => {
+    fDay1.hidden = !(freq.value === 'monthly' || freq.value === 'twiceMonthly');
+    fDay2.hidden = freq.value !== 'twiceMonthly';
+    lab1.textContent =
+      freq.value === 'twiceMonthly' ? 'First day of the month' : 'Day of the month (optional)';
+  };
+  freq.addEventListener('change', sync);
+  sync();
+  const submitBtn = el(
+    'button',
+    { type: 'submit', class: 'btn btn-small', 'data-focus-key': item ? key('submit') : 'add-income' },
+    item ? 'Save changes' : 'Add other income',
+  );
+  const cancel = item
+    ? el(
+        'button',
+        {
+          type: 'button',
+          class: 'btn btn-secondary btn-small',
+          onclick: () => {
+            editing = null;
+            bus.rerender();
+          },
+        },
+        'Cancel',
+      )
+    : null;
+  const form = el(
+    'form',
+    {
+      class: 'stack-sm',
+      novalidate: true,
+      'aria-label': item ? 'Edit other income ' + item.name : 'Add other income',
+    },
+    fName,
+    fAmount,
+    fFreq,
+    fNext,
+    fDay1,
+    fDay2,
+    el('div', { class: 'cluster' }, submitBtn, cancel),
+  );
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const f = freq.value;
+    const dayOf = (v) => Math.round(numOf(v));
+    const okDay = (d) => d >= 1 && d <= 31;
+    let bad = false;
+    const check = (fld, msg) => {
+      fld.setError(msg);
+      if (msg) bad = true;
+    };
+    const n = name.value.trim(),
+      a = numOf(amount.value);
+    check(fName, n ? '' : 'Give it a name.');
+    check(fAmount, a > 0 ? '' : 'Enter an amount above zero.');
+    check(fNext, /^\d{4}-\d{2}-\d{2}$/.test(next.value) ? '' : 'Pick the next date it arrives.');
+    const needDay1 = f === 'twiceMonthly' || (f === 'monthly' && day1.value.trim());
+    check(fDay1, needDay1 && !okDay(dayOf(day1.value)) ? 'Enter a day from 1 to 31.' : '');
+    check(fDay2, f === 'twiceMonthly' && !okDay(dayOf(day2.value)) ? 'Enter a day from 1 to 31.' : '');
+    if (bad) {
+      const first = form.querySelector('[aria-invalid]');
+      if (first) first.focus();
+      return;
+    }
+    const out = { name: n, amount: Math.max(0, a), freq: f, nextDate: next.value };
+    if (item) delete item.days;
+    if (f === 'monthly') out.days = [day1.value.trim() ? dayOf(day1.value) : +next.value.slice(8, 10)];
+    if (f === 'twiceMonthly') out.days = [dayOf(day1.value), dayOf(day2.value)].sort((x, y) => x - y);
+    if (item) Object.assign(item, out);
+    else (B.income ||= []).push({ id: newId('i'), ...out });
+    editing = null;
+    save();
+    bus.rerender();
+    toast(item ? 'Saved.' : 'Added.');
+  });
+  return form;
+}
+
+function otherIncomeCard(S) {
+  const B = S.budget,
+    today = todayISO();
+  const list = B.income || [];
+  const rows = list.map((src) => {
+    if (isEditing('income', src.id))
+      return el('li', { class: 'list-row wrap' }, el('div', { class: 'main' }, incomeForm(src)));
+    const nextDate = incomeDates(src, today, addDays(today, 800))[0];
+    return el(
+      'li',
+      { class: 'list-row wrap' },
+      el(
+        'div',
+        { class: 'main' },
+        el(
+          'div',
+          { class: 'spread' },
+          el('span', null, src.name),
+          el('b', { class: 'num' }, money(src.amount)),
+        ),
+        el(
+          'div',
+          { class: 'hint' },
+          INCOME_FREQ_LABEL[src.freq].replace(/^./, (c) => c.toUpperCase()) +
+            '. ' +
+            (nextDate ? 'Next: ' + fmtDate(nextDate) + '.' : 'No more dates coming up.'),
+        ),
+      ),
+      el(
+        'div',
+        { class: 'row-actions' },
+        editBtn('income', src.id, 'Edit other income ' + src.name),
+        removeBtn('Delete other income ' + src.name, () => {
+          const at = B.income.findIndex((x) => x.id === src.id);
+          if (at < 0) return;
+          const [gone] = B.income.splice(at, 1);
+          if (!B.income.length) delete B.income;
+          save();
+          bus.rerender();
+          toast('Other income removed.', {
+            undo: () => {
+              B.income = B.income || [];
+              if (!B.income.some((x) => x.id === gone.id))
+                B.income.splice(Math.min(at, B.income.length), 0, gone);
+              save();
+              bus.rerender();
+            },
+          });
+        }),
+      ),
+    );
+  });
+  const monthly = otherIncomeMonthly(B);
+  return el(
+    'section',
+    { class: 'card stack' },
+    el('h2', null, 'Other income'),
+    el(
+      'p',
+      { class: 'hint' },
+      'Money that does not go through TipNet, like a second job you do not track here, gig work, child support or benefits. Enter it once and TipNet works out every date.',
+    ),
+    rows.length ? el('ul', { class: 'list' }, rows) : el('p', { class: 'hint' }, 'Nothing added yet.'),
+    monthly > 0
+      ? el(
+          'p',
+          { class: 'hint' },
+          'About ' +
+            money(monthly) +
+            ' a month from regular other income (estimated). One-time amounts are not counted.',
+        )
+      : null,
+    el(
+      'details',
+      {
+        class: 'card',
+        open: !!addOpen.income,
+        ontoggle: (e) => {
+          addOpen.income = e.target.open;
+        },
+      },
+      el('summary', null, 'Add other income'),
+      el('div', { style: 'padding-top:var(--s-2)' }, incomeForm(null)),
+    ),
   );
 }
 
@@ -1214,6 +1799,7 @@ function unlockedView(S) {
     nextCheckCard(S, r0),
     billsCard(S, r0),
     spendingCard(S),
+    otherIncomeCard(S),
     goalsCard(S),
     subscriptionCard(),
   );

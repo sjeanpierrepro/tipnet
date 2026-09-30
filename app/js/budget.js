@@ -8,6 +8,11 @@
 //   spends:     [{id, date, amount, categoryId, note?}]          money spent, logged by the user
 //   paidBills:  {"<billId>@<due date>": true}                    bills already paid, keyed by the bill and the day it fell due
 //                                                                (so changing your pay schedule never un-pays a bill)
+//              a goal may also be a big-purchase plan: kind:'purchase', createdAt (date), startSaved (saved when planned),
+//              and either targetDate ("I want it by") or a fixed perPaycheck ("I can put aside"), boughtAt (date, once marked bought)
+//   income:     [{id, name, amount, freq, nextDate, days?}]    money that does not go through TipNet (a second job, gig work, benefits...), entered once.
+//                 freq: 'weekly'|'biweekly'|'twiceMonthly'|'monthly'|'once'. nextDate: the next (or first) date it arrives; it never arrives before it.
+//                 days: the day(s) of the month for monthly ([d]) and twiceMonthly ([d1, d2]). Absent when there is none.
 //   goalsDone:  {"<goalId>@<payday>": true}                    goals ticked "set aside for this paycheck" (keyed by goal and the payday it was
 //                                                                ticked for, so it wears off by itself when the next payday comes)
 //   balance:    {amount, asOf} (absent if none)     money you said you had, and when (ISO date and time)
@@ -27,6 +32,7 @@ import {
   shiftsPerPeriod,
   todayISO,
   indexNights,
+  periodLength,
   computeNight,
   periodFixed,
 } from './math.js';
@@ -36,6 +42,9 @@ const pad = (n) => String(n).padStart(2, '0');
 const daysInMonth = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate(); // m is 1-12
 const cents = (v) => Math.max(0, toCents(num(v)));
 const sumC = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
+
+const isDateStr = (v) =>
+  typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && Number.isFinite(parseISO(v));
 
 /* ---------- shape ---------- */
 export function emptyBudget() {
@@ -157,13 +166,24 @@ export function migrateBudget(x, profile) {
     name: text(c.name, 'Category'),
     monthly: money(c.monthly),
   }));
-  out.goals = list(x.goals).map((g, i) => ({
-    id: id(g.id, 'g', i),
-    name: text(g.name, 'Goal'),
-    target: money(g.target),
-    saved: money(g.saved),
-    perPaycheck: money(g.perPaycheck),
-  }));
+  out.goals = list(x.goals).map((g, i) => {
+    const goal = {
+      id: id(g.id, 'g', i),
+      name: text(g.name, 'Goal'),
+      target: money(g.target),
+      saved: money(g.saved),
+      perPaycheck: money(g.perPaycheck),
+    };
+    if (g.kind === 'purchase') {
+      goal.kind = 'purchase';
+      if (isDateStr(g.targetDate)) goal.targetDate = g.targetDate;
+      if (isDateStr(g.createdAt)) goal.createdAt = g.createdAt;
+      if (g.startSaved !== undefined && g.startSaved !== null && g.startSaved !== '')
+        goal.startSaved = money(g.startSaved);
+      if (isDateStr(g.boughtAt)) goal.boughtAt = g.boughtAt;
+    }
+    return goal;
+  });
   out.spends = list(x.spends)
     .filter((s) => Number.isFinite(parseISO(s.date)))
     .map((s, i) => {
@@ -189,6 +209,25 @@ export function migrateBudget(x, profile) {
       if (x.goalsDone[k] === true && /@\d{4}-\d{2}-\d{2}$/.test(k)) (out.goalsDone ||= {})[k] = true;
     });
   }
+  // Other income: a source with a bad frequency or date is dropped; everything else is cleaned. The field only appears once one exists.
+  list(x.income).forEach((s, i) => {
+    if (!INCOME_FREQS.includes(s.freq) || !isDateStr(s.nextDate)) return;
+    const src = {
+      id: id(s.id, 'i', i),
+      name: text(s.name, 'Other income'),
+      amount: money(s.amount),
+      freq: s.freq,
+      nextDate: s.nextDate,
+    };
+    const dom = (v, d) => Math.min(31, Math.max(1, Math.round(num(v)) || d));
+    const first = +s.nextDate.slice(8, 10);
+    if (s.freq === 'monthly') src.days = [dom(Array.isArray(s.days) ? s.days[0] : s.days, first)];
+    if (s.freq === 'twiceMonthly') {
+      const d = Array.isArray(s.days) ? s.days : [];
+      src.days = [dom(d[0], 1), dom(d[1], 15)].sort((a, b) => a - b);
+    }
+    (out.income ||= []).push(src);
+  });
   const bal = cleanBalance(x.balance);
   if (bal) out.balance = bal;
   return out;
@@ -369,21 +408,209 @@ export function goalProgress(goal) {
   return { pct, remaining: fromCents(remC), paychecksToGo };
 }
 
+/* ---------- other income (money that arrives outside TipNet) ---------- */
+export const INCOME_FREQS = ['weekly', 'biweekly', 'twiceMonthly', 'monthly', 'once'];
+export const INCOME_FREQ_LABEL = {
+  weekly: 'every week',
+  biweekly: 'every two weeks',
+  twiceMonthly: 'twice a month',
+  monthly: 'once a month',
+  once: 'one time',
+};
+
+/**
+ * The dates one other-income source arrives on, from fromISO to toISO (both included), oldest first.
+ * Pure: it only needs the source and the window, so the same call works for any window (and later for any number of pay sources).
+ * weekly / biweekly count from nextDate in whole days (no clock, so daylight saving never shifts a date).
+ * monthly / twiceMonthly use the chosen day(s) of the month; a day past the end of a short month is the last day of that month, like bills.
+ * Nothing arrives before nextDate. "once" arrives only on nextDate.
+ */
+export function incomeDates(src, fromISO, toISO) {
+  const out = [];
+  if (!src || !isDateStr(src.nextDate) || !isDateStr(fromISO) || !isDateStr(toISO) || toISO < fromISO)
+    return out;
+  const start = src.nextDate;
+  const lo = fromISO > start ? fromISO : start;
+  if (lo > toISO) return out;
+  if (src.freq === 'once') return start >= fromISO && start <= toISO ? [start] : [];
+  if (src.freq === 'weekly' || src.freq === 'biweekly') {
+    const step = src.freq === 'weekly' ? 7 : 14;
+    let d = addDays(start, Math.ceil(dayDiff(start, lo) / step) * step);
+    for (let i = 0; d <= toISO && i < 4000; i++, d = addDays(d, step)) out.push(d);
+    return out;
+  }
+  const first = +start.slice(8, 10);
+  const days = (Array.isArray(src.days) && src.days.length ? src.days : [first]).slice(
+    0,
+    src.freq === 'monthly' ? 1 : 2,
+  );
+  let y = +lo.slice(0, 4),
+    m = +lo.slice(5, 7);
+  const endY = +toISO.slice(0, 4),
+    endM = +toISO.slice(5, 7);
+  for (let i = 0; (y < endY || (y === endY && m <= endM)) && i < 4000; i++) {
+    const last = daysInMonth(y, m);
+    const here = new Set(
+      days.map((d) => y + '-' + pad(m) + '-' + pad(Math.min(Math.max(1, Math.round(num(d)) || 1), last))),
+    );
+    [...here].sort().forEach((date) => {
+      if (date >= lo && date <= toISO) out.push(date);
+    });
+    if (++m > 12) {
+      m = 1;
+      y++;
+    }
+  }
+  return out;
+}
+/** Other income arriving from fromISO to toISO: [{id, name, amount, freq, date}], oldest first. */
+export function incomeInWindow(budget, fromISO, toISO) {
+  const found = [];
+  (budget.income || []).forEach((src) =>
+    incomeDates(src, fromISO, toISO).forEach((date) =>
+      found.push({ id: src.id, name: src.name, amount: fromCents(cents(src.amount)), freq: src.freq, date }),
+    ),
+  );
+  return found.sort((p, q) => (p.date < q.date ? -1 : p.date > q.date ? 1 : p.name < q.name ? -1 : 0));
+}
+/** What one source comes to in a month, in cents: weekly x 52/12, every two weeks x 26/12, twice a month x 2, monthly x 1. One time is 0. */
+export function incomeMonthlyC(src) {
+  const c = cents(src.amount);
+  return src.freq === 'weekly'
+    ? Math.round((c * 52) / 12)
+    : src.freq === 'biweekly'
+      ? Math.round((c * 26) / 12)
+      : src.freq === 'twiceMonthly'
+        ? c * 2
+        : src.freq === 'monthly'
+          ? c
+          : 0;
+}
+/** The monthly equivalent of all regular (not one-time) other income, in dollars. */
+export const otherIncomeMonthly = (budget) => fromCents(sumC(budget.income || [], incomeMonthlyC));
+/** Regular other income spread over one pay period of the profile (a paycheck's worth), in dollars. */
+export function otherIncomePerPaycheck(budget, profile, today = todayISO()) {
+  const len = periodLength(profile, periodIndex(profile, today));
+  return fromCents(Math.round((sumC(budget.income || [], incomeMonthlyC) * 12 * len) / 365));
+}
+
+/* ---------- big-purchase plans (a goal with kind 'purchase') ---------- */
+export const isPlan = (g) => !!g && g.kind === 'purchase';
+/** Above about this share of a typical check, the plan gets a gentle note. */
+export const PLAN_BIG_SHARE = 35;
+
+/**
+ * Paydays after fromExclusive, up to and including throughISO (or just the first `max` of them), oldest first.
+ * Follows the real pay schedule: weekly, biweekly, semimonthly and monthly calendar periods, and payDelay.
+ * Capped so bad data can never freeze the screen.
+ */
+export function paydaysBetween(profile, fromExclusive, throughISO, max = 1500) {
+  const out = [];
+  if (!Number.isFinite(parseISO(fromExclusive))) return out;
+  const delay = payDelayOf(profile);
+  const k0 = paydayInfo(profile, fromExclusive).periodIndex;
+  for (let k = k0, i = 0; i < Math.min(max, 1500); k++, i++) {
+    const date = addDays(periodRange(profile, k).end, delay);
+    if (date <= fromExclusive) continue;
+    if (throughISO && date > throughISO) break;
+    out.push(date);
+  }
+  return out;
+}
+/** How many paychecks arrive after today, up to and including dateISO. */
+export const paychecksUntil = (profile, dateISO, today = todayISO()) =>
+  Number.isFinite(parseISO(dateISO)) ? paydaysBetween(profile, today, dateISO).length : 0;
+
+/**
+ * Where a big-purchase plan stands today. Everything is an estimate.
+ * Mode "by a date" (targetDate): what is needed each paycheck is worked out again from what is still missing and the paychecks
+ * still to come, so falling behind raises it and getting ahead lowers it. Mode "fixed" (no targetDate): perPaycheck stays as set.
+ * Returns {mode:'date'|'fixed', cost, saved, remaining, pct, ready, perPaycheck, paychecksLeft (null when it cannot be worked out),
+ *  readyBy (date of the payday that finishes it, or null), noPaychecks (true when a dated plan has none left), elapsed (paydays since it was made),
+ *  expected (saved you should have by now), behind (0 when on track), onTrack}
+ */
+export function purchasePlan(goal, profile, today = todayISO()) {
+  const costC = cents(goal.target),
+    savedC = cents(goal.saved);
+  const remC = Math.max(0, costC - savedC);
+  const dated = isDateStr(goal.targetDate);
+  const out = {
+    mode: dated ? 'date' : 'fixed',
+    cost: fromCents(costC),
+    saved: fromCents(savedC),
+    remaining: fromCents(remC),
+    pct: costC > 0 ? Math.min(100, Math.floor((savedC / costC) * 100)) : 0,
+    ready: costC > 0 && remC === 0,
+    perPaycheck: 0,
+    paychecksLeft: null,
+    readyBy: null,
+    noPaychecks: false,
+    elapsed: 0,
+    expected: fromCents(savedC),
+    behind: 0,
+    onTrack: true,
+  };
+  if (remC === 0) {
+    out.paychecksLeft = 0;
+    return out;
+  }
+  let planC; // per paycheck as first planned (cents), for the on-track check
+  const startC = Math.min(costC, goal.startSaved === undefined ? savedC : cents(goal.startSaved));
+  const made = isDateStr(goal.createdAt) ? goal.createdAt : null;
+  if (dated) {
+    const days = paydaysBetween(profile, today, goal.targetDate);
+    const n = days.length;
+    out.paychecksLeft = n;
+    out.noPaychecks = n === 0;
+    out.perPaycheck = fromCents(n > 0 ? Math.ceil(remC / n) : remC);
+    out.readyBy = n > 0 ? days[n - 1] : null;
+    if (made) {
+      const total = paydaysBetween(profile, made, goal.targetDate).length;
+      const need = Math.max(0, costC - startC);
+      planC = total > 0 ? Math.ceil(need / total) : need;
+    }
+  } else {
+    const per = cents(goal.perPaycheck);
+    out.perPaycheck = fromCents(per);
+    if (per > 0) {
+      const n = Math.ceil(remC / per);
+      out.paychecksLeft = n;
+      out.readyBy = paydaysBetween(profile, today, null, n)[n - 1] || null;
+    }
+    planC = per;
+  }
+  if (made && planC != null) {
+    const elapsed = paydaysBetween(profile, made, today).length;
+    out.elapsed = elapsed;
+    const expC = Math.min(costC, startC + elapsed * planC);
+    out.expected = fromCents(expC);
+    out.behind = fromCents(Math.max(0, expC - savedC));
+    out.onTrack = expC - savedC <= 0;
+  }
+  return out;
+}
+
+/** How big the per-paycheck amount is next to a typical check: {pct (whole number), big} or null when the check is not known. */
+export function planShare(perPaycheck, typicalCheck) {
+  const base = toCents(num(typicalCheck));
+  if (!(base > 0) || !(num(perPaycheck) > 0)) return null;
+  const pct = Math.round((toCents(num(perPaycheck)) / base) * 100);
+  return { pct, big: pct > PLAN_BIG_SHARE };
+}
+
 /* ---------- safe to spend ---------- */
 /**
  * Money to put toward goals this paycheck (never more than a goal still needs), in cents.
  * done: the goal is ticked "set aside for this paycheck" for this payday, so it is no longer taken out of the money you have now.
  */
-function goalPieces(budget, payday) {
-  return (budget.goals || []).map((g) => {
-    const remC = Math.max(0, toCents(num(g.target)) - toCents(num(g.saved)));
-    return {
-      id: g.id,
-      name: g.name,
-      amountC: Math.min(Math.max(0, toCents(num(g.perPaycheck))), remC),
-      done: isGoalDone(budget, g.id, payday),
-    };
-  });
+function goalPieces(budget, payday, profile, today) {
+  return (budget.goals || [])
+    .filter((g) => !g.boughtAt) // a purchase already bought no longer needs money set aside
+    .map((g) => {
+      const remC = Math.max(0, toCents(num(g.target)) - toCents(num(g.saved)));
+      const per = isPlan(g) ? toCents(purchasePlan(g, profile, today).perPaycheck) : cents(g.perPaycheck);
+      return { id: g.id, name: g.name, amountC: Math.min(per, remC), done: isGoalDone(budget, g.id, payday) };
+    });
 }
 
 /**
@@ -434,7 +661,7 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
   const bills = unpaid(lastPayday(profile, today), addDays(payday, -1));
   const billsC = sumC(bills, (b) => toCents(num(b.amount)));
 
-  const goals = goalPieces(budget, payday);
+  const goals = goalPieces(budget, payday, profile, today);
   const goalsAllC = sumC(goals, (g) => g.amountC); // what the next paycheck sets aside
   const goalsC = sumC(
     goals.filter((g) => !g.done),
@@ -470,7 +697,11 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
   });
   const catsC = sumC(cats, (c) => c.reservedC);
 
-  const safeC = incomeC - billsC - goalsC - catsC;
+  // Other income that arrives before payday: from today up to the day before it.
+  const otherItems = incomeInWindow(budget, today, addDays(payday, -1));
+  const otherC = sumC(otherItems, (o) => toCents(o.amount));
+
+  const safeC = incomeC + otherC - billsC - goalsC - catsC;
 
   // After payday: bills from payday until the following payday come out of the check that arrives on payday.
   // That check pays for period np.periodIndex: the current one, or (between its end and payday) the finished one.
@@ -479,6 +710,8 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
     afterEnd = addDays(nextR.end, delay - 1);
   const nextBills = unpaid(afterStart, afterEnd);
   const nextBillsC = sumC(nextBills, (b) => toCents(num(b.amount)));
+  const afterOther = incomeInWindow(budget, afterStart, afterEnd);
+  const afterOtherC = sumC(afterOther, (o) => toCents(o.amount));
   let projC, checkFrom;
   if (np.periodIndex === idx) {
     projC = inc.projectedCheck == null ? null : toCents(inc.projectedCheck);
@@ -504,6 +737,8 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
     },
     bills,
     billsTotal: fromCents(billsC),
+    otherIncome: otherItems,
+    otherIncomeTotal: fromCents(otherC),
     goals: goals.map((g) => ({
       id: g.id,
       name: g.name,
@@ -527,7 +762,9 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
       bills: nextBills,
       billsTotal: fromCents(nextBillsC),
       goalsTotal: fromCents(goalsAllC),
-      left: projC == null ? null : fromCents(projC - nextBillsC - goalsAllC),
+      otherIncome: afterOther,
+      otherIncomeTotal: fromCents(afterOtherC),
+      left: projC == null ? null : fromCents(projC + afterOtherC - nextBillsC - goalsAllC),
       periodStart: afterStart,
       periodEnd: afterEnd,
     },
