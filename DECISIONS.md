@@ -100,3 +100,6 @@
 - The icon script make-icons.ps1 moved to tools/ so it isn't published with the site.
 - The app is live at https://sjeanpierrepro.github.io/tipnet/. The gh command-line tool isn't installed on this computer, so updates are published by pushing from GitHub Desktop (see DEPLOY.md).
 - Hosting stays public on GitHub Pages (owner decision). The Budget paywall runs in the browser, so a technical person could unlock it on their own copy; accepted as a business risk at this price.
+- A night locks when its pay period ends (not when it's saved), so fixing a Setup mistake still corrects the current period while finished periods never change. Locking runs at start-up, on every screen update, when the app comes back into view, on save, on import, and before any Setup edit is applied.
+- "Check my accuracy" works out the usual shift count without the period being checked, so a missed night shows up as missing.
+- Code style: Prettier (110-column lines) and ESLint run on every publish; `npm run format` tidies the code.
