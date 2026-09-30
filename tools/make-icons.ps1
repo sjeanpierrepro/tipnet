@@ -1,6 +1,6 @@
 # Regenerates PNG icons from the same geometry as icon.svg. Run from tools/: powershell -File make-icons.ps1
 Add-Type -AssemblyName System.Drawing
-$dir = Join-Path (Split-Path $PSScriptRoot -Parent) 'app' 'icons'
+$dir = Join-Path (Join-Path (Split-Path $PSScriptRoot -Parent) 'app') 'icons'  # two-step Join-Path works in Windows PowerShell 5.1
 function Make($size, $scale, $name) {
   $bmp = New-Object System.Drawing.Bitmap $size, $size
   $g = [System.Drawing.Graphics]::FromImage($bmp)
