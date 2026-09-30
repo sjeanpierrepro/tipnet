@@ -253,3 +253,23 @@ test('parseMoney catches a minus sign after the currency symbol; negative hours 
     ['negative', 'negative'],
   );
 });
+
+test('accounting brackets after a currency symbol and "$-3" hours are read as negative', () => {
+  assert.equal(parseMoney('$(5)'), -5);
+  assert.equal(parseMoney('$(1,234.50)'), -1234.5);
+  assert.equal(parseMoney('$5'), 5);
+  const rows = [
+    ['2026-09-01', '$-3', '100'],
+    ['2026-09-02', '$(2)', '100'],
+    ['2026-09-03', '6', '100'],
+  ];
+  const { nights, skipped } = buildNights(rows, { date: 0, hours: 1, cash: 2 }, { rate: 12, payId: 'p1' });
+  assert.deepEqual(
+    nights.map((n) => n.date),
+    ['2026-09-03'],
+  );
+  assert.deepEqual(
+    skipped.map((s) => s.reason),
+    ['negative', 'negative'],
+  );
+});
