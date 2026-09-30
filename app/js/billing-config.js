@@ -13,8 +13,9 @@ export const BILLING = {
   prices: { monthly: '$1.99', yearly: '$20' },
 
   // STEP 1: paste each variant's checkout link between the quote marks.
-  // In Lemon Squeezy: Store > Products > TipNet Budget > the variant > Share > copy the link.
-  // It looks like https://your-store.lemonsqueezy.com/buy/xxxxxxxx-xxxx-xxxx
+  // In Lemon Squeezy: Products > TipNet Budget > Share > pick the variant > copy the link.
+  // It looks like https://your-store.lemonsqueezy.com/checkout/buy/xxxxxxxx-xxxx-xxxx
+  // (never a link with "?cart=" in it: those are single-use).
   checkout: {
     monthly: '',
     yearly: '',
