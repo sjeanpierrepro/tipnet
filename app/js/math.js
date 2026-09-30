@@ -146,16 +146,61 @@ export const SHIFT_SOURCE_TEXT = {
   default: 'about 4 shifts a week over your pay period dates',
 };
 
+/* ---------- locked nights (snapshots) ---------- */
+/*
+ * A night can carry `snap`: the Setup numbers it was worked out with, so a later raise or a new deduction
+ * never rewrites a finished pay period. Nights without one are "unlocked" and follow the current Setup.
+ *   snap = {v:1, r, rf, fixed, n, pay:[{id, rate, unit, usual?, supp?, diff?}], tipout:{on, mode, value, basis, from}}
+ *   r: tax rate used (paystub rate or the calibrated one), rf: federal share, fixed: fixed deductions per period,
+ *   n: shifts the fixed deductions were spread over, pay: pay types (usual only matters for the first), tipout: settings.
+ */
+/**
+ * snapshotFor(profile, shifts?) -> a snapshot to store on a night as `night.snap`.
+ * shifts: the shift count used for that night's period (shiftsPerPeriod().n). Default: the entered count, else about 4 a week.
+ */
+export function snapshotFor(p, shifts) {
+  const to = p.tipout || {};
+  return {
+    v: 1, r: rate(p), rf: fedRate(p), fixed: round2(fixedTotal(p)),
+    n: shifts > 0 ? shifts : shiftsPerPeriod(p, [], todayISO()).n,
+    pay: (p.payTypes || []).map((t, i) => {
+      const o = { id: t.id, rate: num(t.rate), unit: t.unit };
+      if (i === 0) o.usual = num(t.usual);
+      if (t.supp) o.supp = 1;
+      if (t.k === 'diff' || t.diff) o.diff = 1;
+      return o;
+    }),
+    tipout: { on: !!to.on, mode: to.mode === 'flat' ? 'flat' : 'pct', value: num(to.value), basis: to.basis || 'before', from: to.from || 'cash' },
+  };
+}
+export const isLocked = (night) => !!(night && night.snap);
+/** The numbers one night is worked out with: its snapshot when locked, else the current Setup. */
+function termsOf(night, p, shifts) {
+  const s = night && night.snap;
+  if (s) return { r: s.r, rf: s.rf, fixed: s.fixed, n: s.n, payTypes: s.pay || [], tipout: s.tipout || { on: false } };
+  return {
+    r: rate(p), rf: fedRate(p), fixed: fixedTotal(p), payTypes: p.payTypes || [], tipout: p.tipout || { on: false },
+    n: shifts > 0 ? shifts : shiftsPerPeriod(p, [], todayISO()).n,
+  };
+}
+/** Fixed deductions a period's check carries: from the newest locked night in it, else the current Setup. */
+export function periodFixed(p, ns) {
+  for (let i = ns.length - 1; i >= 0; i--) if (ns[i].snap) return ns[i].snap.fixed;
+  return fixedTotal(p);
+}
+
 /* ---------- one night (6.4) ---------- */
 /** Amount for a pay type on a night; the main (first) type falls back to its usual amount. */
 export function payAmount(night, t, i) {
   if (night.pay && night.pay[t.id] !== undefined && night.pay[t.id] !== '' && night.pay[t.id] !== null) return num(night.pay[t.id]);
   return i === 0 ? num(t.usual) : 0;
 }
-export function basePay(night, p) {
+/** Pay from pay types for one night (uses the night's snapshot when it has one). */
+export function basePay(night, p) { return basePayWith(night, termsOf(night, p, 1)); }
+function basePayWith(night, T) {
   let pay = 0, hours = 0, extra = 0, extraTax = 0;
-  const r = rate(p), rs = suppRate(p);
-  (p.payTypes || []).forEach((t, i) => {
+  const r = T.r, rs = Math.max(0, T.r - T.rf) + 0.22; // supplemental rate (6.5)
+  T.payTypes.forEach((t, i) => {
     const a = payAmount(night, t, i);
     if (t.unit === 'amt') {
       extra += a;
@@ -170,19 +215,21 @@ export function basePay(night, p) {
 /**
  * computeNight(night, profile, shifts)
  * shifts: number of shifts to spread fixed deductions over (use shiftsPerPeriod().n).
+ * A locked night (night.snap) uses its snapshot's rates, pay types, tip-out, fixed total and shift count instead.
  * Returns dollars rounded to cents:
  * {total, basePay, hours, extra, extraTax, tips, tipout, kept, tax, fixedPerShift, net,
- *  fromCash, cashInHand (null if no cash entered), onCheck (null), fedOnTips, r}
+ *  fromCash, cashInHand (null if no cash entered), onCheck (null), fedOnTips, r, locked}
  */
 export function computeNight(night, p, shifts) {
-  const n = shifts > 0 ? shifts : shiftsPerPeriod(p, [], todayISO()).n;
-  const r = rate(p);
-  const bp = basePay(night, p);
+  const T = termsOf(night, p, shifts);
+  const n = T.n > 0 ? T.n : 1;
+  const r = T.r;
+  const bp = basePayWith(night, T);
   const total = toCents(num(night.total));
   const baseC = toCents(bp.pay);
   const extraC = toCents(bp.extra);
   const tipsC = Math.max(0, total - baseC);
-  const to = p.tipout || { on: false };
+  const to = T.tipout;
   const useTO = !!(to.on && night.barback && to.basis === 'before');
   let tipoutC = 0;
   if (useTO) {
@@ -192,9 +239,9 @@ export function computeNight(night, p, shifts) {
   const keptC = total - tipoutC;
   const extraTaxC = toCents(bp.extraTax);
   const taxC = toCents((keptC / 100) * r) + extraTaxC;
-  const fixedC = toCents(fixedTotal(p) / n);
+  const fixedC = toCents(T.fixed / n);
   const netC = keptC + extraC - taxC - fixedC;
-  const fedOnTipsC = toCents((Math.max(0, tipsC - tipoutC) / 100) * fedRate(p));
+  const fedOnTipsC = toCents((Math.max(0, tipsC - tipoutC) / 100) * T.rf);
   let fromCashC = 0, cashInHandC = null, onCheckC = null;
   const hasCash = night.cash !== '' && night.cash != null && Number.isFinite(parseFloat(night.cash));
   if (hasCash) {
@@ -208,7 +255,7 @@ export function computeNight(night, p, shifts) {
     total: d(total), basePay: d(baseC), hours: bp.hours, extra: d(extraC), extraTax: d(extraTaxC),
     tips: d(tipsC), tipout: d(tipoutC), kept: d(keptC), tax: d(taxC), fixedPerShift: d(fixedC), net: d(netC),
     fromCash: d(fromCashC), cashInHand: cashInHandC == null ? null : d(cashInHandC),
-    onCheck: onCheckC == null ? null : d(onCheckC), fedOnTips: d(fedOnTipsC), r,
+    onCheck: onCheckC == null ? null : d(onCheckC), fedOnTips: d(fedOnTipsC), r, locked: !!night.snap,
   };
 }
 
@@ -217,7 +264,8 @@ export function computeNight(night, p, shifts) {
  * periodTotals(profile, nights, idx, today?, shifts?, index?) ->  (index: optional indexNights() result, for speed)
  * {ns, net, hrs, chk, kept, cash, allCash, exact}
  * When the period is final and has nights, the sum of per-shift fixed shares is replaced by the
- * exact fixed total (applied to net and expected check).
+ * exact fixed total (applied to net and expected check). Locked nights use their own snapshot, and the exact
+ * total then comes from the period's snapshots (periodFixed), so a later Setup change leaves the period as it was.
  */
 export function periodTotals(p, nights, idx, today = todayISO(), shifts, index) {
   const ns = nightsInPeriod(p, nights, idx, index);
@@ -231,18 +279,27 @@ export function periodTotals(p, nights, idx, today = todayISO(), shifts, index) 
   });
   const exact = ns.length > 0 && isFinal(p, idx, today);
   if (exact) {
-    const adj = fixedShares - toCents(fixedTotal(p));
+    const adj = fixedShares - toCents(periodFixed(p, ns));
     net += adj; chk += adj;
   }
   return { ns, net: fromCents(net), hrs, chk: fromCents(chk), kept: fromCents(kept), cash: fromCents(cash), allCash, exact };
 }
 
 /* ---------- calibration (6.7) ---------- */
+/** One "Check my accuracy" run never moves the tax rate more than this (3 percentage points). */
+export const MAX_RATE_STEP = 0.03;
+/** An error bigger than this (25%) usually means a missing night or a mistyped check amount. */
+export const SUSPECT_ERROR = 0.25;
 /**
  * calibrate(profile, nights, idx, actual, today?, shifts?)
  * Does not mutate. Returns {ok:false, reason:'nonights'|'noactual'|'notFinal'|'missingCash', missingCash}
- * or {ok:true, pred, actual, err, rNew, rateOverride, T, C, F}.
- * The caller stores {label, pred, actual, err} in calib and sets profile.rateOverride = rateOverride.
+ * or {ok:true, pred, actual, err, rNew, rOld, rateOverride, uncapped, capped, change,
+ *     nightsLogged, expectedShifts, expectedSource, missingNights, suspect, T, C, F}.
+ *   rOld: the current rate. uncapped: (rOld + rNew) / 2. rateOverride: that, kept within MAX_RATE_STEP of rOld (capped says so).
+ *   expectedShifts: the entered shift count if set, else the period's expected count (shiftsPerPeriod); missingNights is
+ *   how many fewer nights were logged than that (0 if none). suspect: |err| > SUSPECT_ERROR.
+ * Nothing is applied here: the screen shows old -> new and asks first. On "Apply", the caller stores
+ * {label, pred, actual, err} in calib and sets profile.rateOverride = rateOverride (which only moves unlocked nights).
  */
 export function calibrate(p, nights, idx, actual, today = todayISO(), shifts) {
   const ns = nightsInPeriod(p, nights, idx);
@@ -251,24 +308,34 @@ export function calibrate(p, nights, idx, actual, today = todayISO(), shifts) {
   if (!(A > 0)) return { ok: false, reason: 'noactual', missingCash: 0 };
   // A paycheck only exists for a finished pay period; comparing a half-worked one would drag the tax rate down.
   if (!isFinal(p, idx, today)) return { ok: false, reason: 'notFinal', missingCash: 0 };
-  const n0 = shifts > 0 ? shifts : shiftsPerPeriod(p, nights, today, idx).n;
+  const sp = shifts > 0 ? { n: shifts, source: 'entered' } : shiftsPerPeriod(p, nights, today, idx);
+  const n = sp.n;
   // same test computeNight uses, so junk like "abc" counts as missing instead of silently being $0
-  const missing = ns.filter((night) => computeNight(night, p, n0).cashInHand == null).length;
+  const cs = ns.map((night) => computeNight(night, p, n));
+  const missing = cs.filter((c) => c.cashInHand == null).length;
   if (missing) return { ok: false, reason: 'missingCash', missingCash: missing };
-  const n = n0;
   let T = 0, C = 0, predC = 0;
-  ns.forEach((night) => {
-    const c = computeNight(night, p, n);
+  cs.forEach((c) => {
     T += toCents(c.kept) + toCents(c.extra);
     C += toCents(c.cashInHand);
     predC += toCents(c.onCheck) + toCents(c.fixedPerShift);
   });
-  const F = toCents(fixedTotal(p));
+  const F = toCents(periodFixed(p, ns));
   predC -= F;
   const pred = fromCents(predC);
   const err = (pred - A) / A;
-  const rNew = T > 0 ? Math.min(0.45, Math.max(0.02, 1 - (A + fromCents(F) + fromCents(C)) / fromCents(T))) : rate(p);
-  return { ok: true, pred, actual: A, err, rNew, rateOverride: (rate(p) + rNew) / 2, T: fromCents(T), C: fromCents(C), F: fromCents(F) };
+  const rOld = rate(p);
+  const rNew = T > 0 ? Math.min(0.45, Math.max(0.02, 1 - (A + fromCents(F) + fromCents(C)) / fromCents(T))) : rOld;
+  const uncapped = (rOld + rNew) / 2; // blend to avoid overreacting to one check
+  const rateOverride = Math.min(rOld + MAX_RATE_STEP, Math.max(rOld - MAX_RATE_STEP, uncapped));
+  const expectedShifts = Math.max(1, Math.round(n));
+  return {
+    ok: true, pred, actual: A, err, rNew, rOld, rateOverride, uncapped,
+    capped: Math.abs(uncapped - rateOverride) > 1e-12, change: rateOverride - rOld,
+    nightsLogged: ns.length, expectedShifts, expectedSource: sp.source, missingNights: Math.max(0, expectedShifts - ns.length),
+    suspect: Math.abs(err) > SUSPECT_ERROR,
+    T: fromCents(T), C: fromCents(C), F: fromCents(F),
+  };
 }
 
 /* ---------- weekly hours for the overtime nudge (7.1) ---------- */

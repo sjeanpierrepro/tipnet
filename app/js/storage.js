@@ -1,6 +1,6 @@
 // TipNet persistence: state shape, migration, backup codes, IndexedDB + localStorage.
 // The pure helpers (seedState, migrate, encodeBackup, decodeBackup) work in Node with no browser APIs.
-import { exampleProfile, exampleNights, num, parseISO, todayISO } from './math.js';
+import { exampleProfile, exampleNights, num, parseISO, todayISO, indexNights, isFinal, shiftsPerPeriod, snapshotFor } from './math.js';
 import { emptyBudget, migrateBudget } from './budget.js';
 
 export const SCHEMA_VERSION = 2;
@@ -66,6 +66,39 @@ function cleanDeductions(list) {
     name: text(d.name), amount: numOr0(d.amount), mode: d.mode === 'fixed' ? 'fixed' : 'pct',
   }));
 }
+const finiteIn = (v, lo, hi) => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
+/** A night's locked Setup numbers (see snapshotFor in math.js). Anything malformed is dropped (the night is then unlocked). */
+function cleanSnap(s) {
+  if (!isObj(s) || !finiteIn(s.r, 0, 1) || !finiteIn(s.rf, 0, 1) || !finiteIn(s.fixed, 0, 1e7) || !finiteIn(s.n, 0.01, 1000) || !Array.isArray(s.pay)) return null;
+  const pay = s.pay.filter((t) => isObj(t) && (typeof t.id === 'string' || typeof t.id === 'number')).slice(0, 30).map((t, i) => {
+    const o = { id: t.id, rate: numOr0(t.rate), unit: ['hr', 'shift', 'amt'].includes(t.unit) ? t.unit : 'hr' };
+    if (i === 0) o.usual = numOr0(t.usual);
+    if (t.supp) o.supp = 1;
+    if (t.diff) o.diff = 1;
+    return o;
+  });
+  const to = isObj(s.tipout) ? s.tipout : {};
+  return {
+    v: 1, r: s.r, rf: s.rf, fixed: s.fixed, n: s.n, pay,
+    tipout: { on: !!to.on, mode: to.mode === 'flat' ? 'flat' : 'pct', value: numOr0(to.value), basis: text(to.basis, 'before') || 'before', from: text(to.from, 'cash') || 'cash' },
+  };
+}
+/**
+ * Lock every night in a FINISHED pay period that has no snapshot yet, with the Setup it is shown with right now.
+ * This freezes history on load even for nights saved before snapshots existed (or by screens that do not add one).
+ * Nights in the current period stay unlocked and keep following Setup until it ends.
+ */
+function lockFinished(profile, nights, today = todayISO()) {
+  if (!nights.some((n) => !n.snap)) return;
+  const index = indexNights(profile, nights);
+  const base = shiftsPerPeriod(profile, nights, today, undefined, index);
+  index.forEach((list, idx) => {
+    if (!isFinal(profile, idx, today) || list.every((n) => n.snap)) return;
+    const shifts = base.source === 'default' ? shiftsPerPeriod(profile, nights, today, idx, index).n : base.n;
+    const snap = snapshotFor(profile, shifts);
+    list.forEach((n) => { if (!n.snap) n.snap = JSON.parse(JSON.stringify(snap)); });
+  });
+}
 function cleanNights(list) {
   const seen = new Set();
   return (Array.isArray(list) ? list : []).filter((n) => isObj(n) && validDate(n.date)).map((n, i) => {
@@ -79,6 +112,8 @@ function cleanNights(list) {
     const hasCash = (typeof n.cash === 'number' || typeof n.cash === 'string') && n.cash !== '' && Number.isFinite(parseFloat(n.cash));
     const o = { id: uniqueId(n.id, seen, 'n', i + 1), date: n.date, total: numOr0(n.total), cash: hasCash ? num(n.cash) : null, pay, barback: n.barback === undefined ? true : !!n.barback };
     if (typeof n.note === 'string' && n.note) o.note = n.note.slice(0, 500);
+    const snap = cleanSnap(n.snap);
+    if (snap) o.snap = snap;
     return o;
   });
 }
@@ -154,12 +189,14 @@ function migrateUnsafe(input) {
   out.payTypes = cleanPayTypes(p.payTypes);
   const to = isObj(p.tipout) ? p.tipout : {};
   out.tipout = { on: !!to.on, mode: to.mode === 'flat' ? 'flat' : 'pct', value: numOr0(to.value), basis: text(to.basis, 'before') || 'before', from: text(to.from, 'cash') || 'cash' };
+  const nights = cleanNights(rawNights);
+  lockFinished(out, nights);
   return {
     schemaVersion: SCHEMA_VERSION,
     profileExample: !!S.profileExample,
     nightsExample: !!S.nightsExample,
     profile: out,
-    nights: cleanNights(rawNights),
+    nights,
     calib: (Array.isArray(S.calib) ? S.calib : []).filter(isObj).slice(-50)
       .map((c) => ({ label: text(c.label), pred: numOr0(c.pred), actual: numOr0(c.actual), err: numOr0(c.err) })),
     budget: migrateBudget(S.budget, out), // old states and old backup codes have none: they get an empty budget; the profile converts old "Paid" ticks

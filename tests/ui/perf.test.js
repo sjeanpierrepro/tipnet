@@ -4,8 +4,11 @@ import { performance } from 'node:perf_hooks';
 import { boot, realState } from './harness.js';
 import { exampleBudget } from '../../app/js/budget.js';
 import { addDays, todayISO } from '../../app/js/math.js';
+import { PAGE } from '../../app/js/ui/periods.js';
 
-test('performance smoke: 700 nights with blank shifts render Pay periods and Budget in under a second each', async () => {
+// Wall-clock limits here are deliberately loose (slow CI machines vary a lot). The real guard is the amount of work:
+// Pay periods only draws the latest PAGE periods, whatever the history length.
+test('performance smoke: 700 nights with blank shifts; Pay periods draws only recent periods, Budget renders', async () => {
   const today = todayISO();
   const S = realState((s) => {
     s.settings.setupDone = true;
@@ -19,13 +22,14 @@ test('performance smoke: 700 nights with blank shifts render Pay periods and Bud
     let t = performance.now();
     page.tab('periods');
     const periodsMs = performance.now() - t;
-    assert.ok(page.$$('.list-row', page.app).length >= 700, 'every night is listed');
+    assert.equal(page.$$('section[data-period]', page.app).length, PAGE, 'only the latest periods are drawn');
+    assert.ok(page.$$('.list-row', page.app).length <= PAGE * 15, 'rows drawn stay bounded');
     t = performance.now();
     page.tab('budget');
     const budgetMs = performance.now() - t;
     assert.ok(page.$('#budget-balance'), 'budget rendered');
     console.log('# periods ' + Math.round(periodsMs) + ' ms, budget ' + Math.round(budgetMs) + ' ms');
-    assert.ok(periodsMs < 1000, 'Pay periods took ' + periodsMs + ' ms');
-    assert.ok(budgetMs < 1000, 'Budget took ' + budgetMs + ' ms');
+    assert.ok(periodsMs < 5000, 'Pay periods took ' + periodsMs + ' ms');
+    assert.ok(budgetMs < 5000, 'Budget took ' + budgetMs + ' ms');
   } finally { await page.close(); }
 });

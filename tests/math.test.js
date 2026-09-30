@@ -249,7 +249,11 @@ test('calibration clamps r_new at 0.02 and 0.45', () => {
   assert.equal(hi.rNew, 0.02);
   const lo = M.calibrate(p, N(), 0, 1, AFTER); // tiny check -> rate would exceed 100%
   assert.equal(lo.rNew, 0.45);
-  near(lo.rateOverride, (M.rate(p) + 0.45) / 2, 1e-9);
+  near(lo.uncapped, (M.rate(p) + 0.45) / 2, 1e-9);
+  // one adjustment never moves the rate more than 3 points
+  near(lo.rateOverride, M.rate(p) + 0.03, 1e-12);
+  assert.equal(lo.capped, true);
+  near(hi.rateOverride, M.rate(p) - 0.03, 1e-12);
 });
 
 test('calibration refuses when cash is missing and counts the nights', () => {
