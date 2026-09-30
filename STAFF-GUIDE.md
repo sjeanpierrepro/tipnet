@@ -18,7 +18,7 @@ Always open TipNet the same way. On iPhone, Safari and the home-screen app keep 
 
 ## 3. Set up from one paystub (one time)
 
-Grab your latest paystub and go to **Setup**.
+Grab your latest paystub. The first time, TipNet opens in **Setup**. (Moving from another phone? Tap **Restore a backup code** instead.) Until setup is done, Tonight has no numbers; **See an example first** shows made-up ones.
 
 **Step 1: Pay period and gross pay**
 - **Pay period started** and **Pay period ended** (the dates on the stub)
@@ -33,6 +33,7 @@ Grab your latest paystub and go to **Setup**.
 
 **Step 3: Pay and tip-out**
 - **Main pay type:** your **hourly rate** (Rate) and your **usual hours** per night (Usual per night).
+- **The number I type each night is:** leave **Just my tips (cash + card)** picked, and TipNet adds your hourly pay. Pick **Everything** if you'd rather type tips plus hourly pay. Switching later doesn't change nights you already saved.
 - **Barback tip-out:** check **My bar has barback tip-outs** if you tip out, then pick a % of tips or $ per shift, and whether it comes from your cash or payroll.
 
 Tap **Finish setup**.
@@ -52,7 +53,7 @@ Something changed (raise, new insurance)? Update it in **Setup**.
 
 ## 4. Every night
 
-- **What you made tonight:** cash tips + card tips + hourly pay, before anything comes out.
+- **Tips you made tonight:** type your tips (cash + card); TipNet adds your hourly pay. (If you picked **Everything** in Setup, the box says **What you made tonight**: type tips plus hourly pay.)
 - **Cash:** if you pay the barback out of your cash, type all the cash tips you collected, before paying the barback (TipNet takes their cash out). Otherwise type the cash you are taking home.
 - **Hours:** leave blank to use your usual hours, or type tonight's (8, 7.5 or 7:30).
 - Tap **Save night**.

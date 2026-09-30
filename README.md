@@ -1,12 +1,13 @@
 # TipNet
 
-TipNet is a free app that helps bartenders see their estimated take-home pay at the end of a shift. You enter one number—everything you made that night—and it shows how much cash you're taking home and how much will appear on your paycheck after taxes and deductions.
+TipNet is a free app that helps bartenders see their estimated take-home pay at the end of a shift. You enter one number—your tips for the night (TipNet adds your hourly pay)—and it shows how much cash you're taking home and how much will appear on your paycheck after taxes and deductions.
 
 All the numbers stay on your phone or computer. Your bar cannot see them. No accounts to create. Your pay and budget data never leave your device; the only thing TipNet ever sends is a license key check to Lemon Squeezy, and only if you use the paid Budget add-on.
 
 ## What you can do with TipNet
 
-- **Record your shift**: Type what you made (tips, hourly pay, everything) and how much cash you're carrying home.
+- **Record your shift**: Type your tips (cash + card) and your hours; TipNet adds your hourly pay. Prefer typing everything (tips plus hourly pay)? Switch "The number I type each night is" in Setup. Saved nights never change when you switch.
+- **Start with your paystub**: A new install opens in Setup. Tonight and Pay periods show no numbers until setup is done (or a backup is restored), so no estimate is ever based on example taxes. "See an example first" shows made-up numbers, clearly marked.
 - **See your split**: Find out instantly how much is cash in hand and how much hits your check.
 - **Set up once**: Tell TipNet about your pay schedule (weekly, every two weeks, twice a month, or monthly), your gross pay, and your deductions (taxes, health insurance, etc.).
 - **Track accuracy**: At the end of a pay period, enter your actual paycheck and let TipNet learn. Each check you compare brings the next estimate closer.

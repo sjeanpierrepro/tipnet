@@ -113,3 +113,10 @@
 - An update installs all-or-nothing: if any file fails to download, the previous version stays in charge and the browser retries later.
 - The publishing check fails if files in app/ changed but the VERSION line in app/sw.js didn't (tools/check-version.mjs).
 - Finishing guided setup clears the example nights; setup errors appear only after leaving a field or pressing Next.
+- The nightly number is tips only by default (cash + card; TipNet adds the hourly and per-shift pay for the hours entered). Setup has the switch ("The number I type each night is"). Saved nights always store everything made, so math, CSV, backups and accuracy checks are unchanged and switching never changes a saved night.
+- Existing installs keep typing totals: a state without the setting gets "Everything" if it has real nights or its own paystub; new installs, erased apps and example-only states get tips. Old backup codes restore as "Everything".
+- In tips mode the night editor shows the tips inside the stored total (worked out with the night's locked rates when it has them) and converts back on save; untouched, the stored total is kept exactly. "Add to that night" adds the tips plus the pay for the added hours only, at that night's rates.
+- The "total below your hourly pay" warning only shows when typing everything. In tips mode 0 tips is allowed (hourly pay only); blank is not.
+- New users start in Setup. Until TipNet is set up (guided setup finished, real nights saved or restored, or the paystub basics entered after "Skip"), Tonight, Pay periods and an unlocked Budget show a "Finish setup" card: no estimate, no Save. "See an example first" shows the example night with a "These are example numbers, not yours" banner.
+- "Skip guided setup" swaps the example paystub for a blank one and does not count as set up: Tonight unlocks once gross pay, a deduction (or "My paystub has no deductions") and the main rate are in. Importing nights waits for the same basics.
+- Restoring a backup from the first-launch Setup (or the error screen) lands on Tonight; Erase everything returns to the first-launch Setup.
