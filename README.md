@@ -85,6 +85,8 @@ Your numbers stay on your device. A Content Security Policy in `app/index.html` 
 
 ## Legal
 
+Changing the contact email: edit `CONTACT_EMAIL` in `app/js/legal.js` (the Privacy and Terms pages show it), then bump `VERSION` in `app/sw.js` and push.
+
 TipNet gives estimates, not tax advice. Your numbers stay on your device. It does not collect your name, Social Security number, or any personal information beyond what you voluntarily type into it.
 
 ## Budget (optional paid add-on)
