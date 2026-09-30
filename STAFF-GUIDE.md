@@ -31,8 +31,9 @@ Grab your latest paystub. The first time, TipNet opens in **Setup**. (Moving fro
 - Add each line that comes out: federal tax, Social Security, Medicare, state tax, health insurance, and so on.
 - Choose **Changes with my pay** for taxes and **Same every check** for things like insurance.
 
-**Step 3: Pay and tip-out**
-- **Main pay type:** your **hourly rate** (Rate) and your **usual hours** per night (Usual per night).
+**Step 3: Your jobs and pay**
+- **Jobs:** add every job you do where you work and what it pays: for example **Bartender** $12 per hour, **Prep** $10 per hour, **Supervisor / shift lead** $15 per hour, **Training**, or a **Private event / banquet** paid per shift. The first job is your main job. Tap **+ Add a job** for each extra one. Not in the list? Pick **Other job** and type its name.
+- **Other pay** (only if you get it): **Overtime** (filled in at 1.5 times your main job's rate), **Holiday pay**, a **shift lead / supervisor differential** (the extra per hour on top), **Paid time off / sick pay**, **Bonus**, **Commission**, or a **Service charge / auto-gratuity** (that one is wages, not tips).
 - **The number I type each night is:** leave **Just my tips (cash + card)** picked, and TipNet adds your hourly pay. Pick **Everything** if you'd rather type tips plus hourly pay. Switching later doesn't change nights you already saved.
 - **Barback tip-out:** check **My bar has barback tip-outs** if you tip out, then pick a % of tips or $ per shift, and whether it comes from your cash or payroll.
 
@@ -47,15 +48,16 @@ Hourly rate:   $12               Medicare:         $29
 Gross pay:   $2,000              Health ins.:      $60
 ```
 
-Enter: start Sep 1, end Sep 14, shifts 10, every two weeks, gross $2,000, the four deductions, rate $12, usual hours per night (for example 8).
+Enter: start Sep 1, end Sep 14, shifts 10, every two weeks, gross $2,000, the four deductions, and your job (Bartender) at $12 per hour.
 
 Something changed (raise, new insurance)? Update it in **Setup**.
 
 ## 4. Every night
 
-- **Tips you made tonight:** type your tips (cash + card); TipNet adds your hourly pay. (If you picked **Everything** in Setup, the box says **What you made tonight**: type tips plus hourly pay.)
+- **Tips you made tonight:** type your tips (cash + card); TipNet adds the pay for the jobs you worked. (If you picked **Everything** in Setup, the box says **What you made tonight**: type tips plus hourly pay.)
+- **What did you work tonight?** Your main job is already picked. Type the **hours** (8, 7.5 or 7:30); the rate fills in by itself. Worked a double? Tap **+ Add another job**, pick it and type its hours (for example Prep 2 hours, then Bartender 6 hours). Overtime, holiday hours or a bonus? Tap **+ Add other pay**.
 - **Cash:** if you pay the barback out of your cash, type all the cash tips you collected, before paying the barback (TipNet takes their cash out). Otherwise type the cash you are taking home.
-- **Hours:** leave blank to use your usual hours, or type tonight's (8, 7.5 or 7:30).
+- Hours are typed every night, because shifts are never quite the same length.
 - Tap **Save night**.
 
 You see your estimated take-home, the cash you keep, and what should land on your check. If the same date already has a night, TipNet asks whether to add to it, replace it, or save a separate night.
