@@ -120,3 +120,18 @@
 - New users start in Setup. Until TipNet is set up (guided setup finished, real nights saved or restored, or the paystub basics entered after "Skip"), Tonight, Pay periods and an unlocked Budget show a "Finish setup" card: no estimate, no Save. "See an example first" shows the example night with a "These are example numbers, not yours" banner.
 - "Skip guided setup" swaps the example paystub for a blank one and does not count as set up: Tonight unlocks once gross pay, a deduction (or "My paystub has no deductions") and the main rate are in. Importing nights waits for the same basics.
 - Restoring a backup from the first-launch Setup (or the error screen) lands on Tonight; Erase everything returns to the first-launch Setup.
+- Jobs (owner request): Setup lists every job the user works (Bartender, Server, Barback, Supervisor / shift lead, Prep, Training, Host, Private event, Other) with its rate; Tonight picks the job(s) worked and the hours, and the rate fills in. Job vs "other pay" (overtime, holiday, differential, PTO, bonus, commission, service charge) is worked out from each pay type's unit and preset; nothing extra is stored. Other pay stays hidden on Tonight until "+ Add other pay".
+- Hours are typed every night (owner decision): Setup has no "usual hours" fields, and nothing pre-fills or remembers hours from past nights, because shift lengths and breaks between doubles vary. Every hourly job row with a rate needs hours; per-shift jobs start at 1 shift.
+- In tips mode the typed tips are stored on the night, so fixing a job's rate later changes the wages, not the tips, for nights in an unfinished pay period.
+- "Check my accuracy" matches earlier comparisons by their start and end dates, so editing Setup dates can't let one pay period adjust twice.
+- Spreadsheet import has a "Tips (cash + card)" column choice; headers containing "tip" map to it. "Replace" replaces every night on that date. Hours over 24, or ambiguous like "1,250", skip the row with a reason.
+- Budget counts unpaid bills from the last payday (not the pay period start), so a bill stays until it's paid even when payday comes days after the period ends.
+- Big-purchase plans: by a date (TipNet works out the amount per paycheck from the real pay schedule, rounded up) or a set amount per paycheck (TipNet works out the ready-by date). A realism line compares the amount with a typical check plus regular other income.
+- Other income (outside TipNet) is entered once with its amount, how often and next date; TipNet generates every future date and counts it in Safe to spend and the after-payday view.
+- Two open copies of TipNet never overwrite each other: newer saved data is merged in (nights by id, settings key by key) and other windows redraw.
+- If the browser's main storage (IndexedDB) doesn't answer within 2 seconds, TipNet opens from its backup copy and takes in the newer copy later.
+- TipNet isn't set up without a pay period start date; a missing one is never filled in with today.
+- "All changes saved" only appears after a real save; a failed save shows a banner with "Try again".
+- Backup files (tipnet-backup-YYYY-MM-DD.json) hold the same data as backup codes, without the license key or a half-finished setup. A reminder appears at 5+ real nights with no backup in 30 days; iPhone Safari users get a one-time note about Safari clearing data.
+- billing-config.js loads from the offline cache and refreshes in the background, so the first screen never waits on the network; switching payments on reaches installed apps on their next open.
+- `npm run test:dates` (also run before every publish) runs all tests under three fake dates, so date-dependent tests can't silently break later.
