@@ -103,3 +103,13 @@
 - A night locks when its pay period ends (not when it's saved), so fixing a Setup mistake still corrects the current period while finished periods never change. Locking runs at start-up, on every screen update, when the app comes back into view, on save, on import, and before any Setup edit is applied.
 - "Check my accuracy" works out the usual shift count without the period being checked, so a missed night shows up as missing.
 - Code style: Prettier (110-column lines) and ESLint run on every publish; `npm run format` tidies the code.
+- The cash box keeps the approved math (cash collected; a barback paid from cash comes out of it) and the labels now say so: "Cash tips collected (before paying the barback)" when the barback is paid from cash, otherwise "Cash you're taking home"; the result shows "Cash you keep".
+- Hours accept "7:30" (7.5 hours); more than 24 hours on an hourly pay type is refused; a total below the night's hourly pay gets a gentle warning, not a block.
+- Logging a second night on the same date asks: add to that night (the default), replace it, or save a separate night.
+- "Check my accuracy" adjusts once per pay period. Redoing the most recent comparison replaces it, starting from the rate before it; an older comparison can't be redone once a later one exists ("Undo adjustments" starts over).
+- Budget sets aside spending money day by day: each category's monthly amount divided by the days in that month, for each day until payday, never more than what's left this month.
+- Savings goals have a "Set aside for this paycheck" tick; once ticked (or after "Add to saved"), that goal isn't subtracted again until the next payday.
+- Payments count as switched on only when billing-config.js has a product ID; Lemon Squeezy test-mode keys are refused unless allowTestMode is true (for the owner's own testing only).
+- An update installs all-or-nothing: if any file fails to download, the previous version stays in charge and the browser retries later.
+- The publishing check fails if files in app/ changed but the VERSION line in app/sw.js didn't (tools/check-version.mjs).
+- Finishing guided setup clears the example nights; setup errors appear only after leaving a field or pressing Next.

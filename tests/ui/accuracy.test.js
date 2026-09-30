@@ -151,6 +151,38 @@ test('check my accuracy: the same pay period adjusts once; Replace restarts from
   }
 });
 
+test('check my accuracy: an older comparison cannot be redone once a later one exists', async () => {
+  const page = await boot({ seed: seed(2) });
+  try {
+    page.tab('periods');
+    const S0 = page.state();
+    const compare = (idx, factor) => {
+      const sel = page.$('#cal-period');
+      sel.value = String(idx);
+      page.change(sel);
+      const pred = calibrate(page.state().profile, page.state().nights, idx, 1, today).pred;
+      page.type(page.$('#cal-actual'), String(Math.round(pred * factor)));
+      page.click(page.$('#cal-run'));
+    };
+    assert.ok(calibrate(S0.profile, S0.nights, 0, 1, today).pred > 0, 'period 0 has nights');
+    compare(1, 0.95);
+    page.click(page.$('#cal-apply'));
+    compare(0, 0.97);
+    page.click(page.$('#cal-apply'));
+    const before = page.state();
+    assert.equal(before.calib.length, 2);
+    // Going back to period 1 is refused: it would throw away the period 0 adjustment made after it.
+    compare(1, 0.9);
+    assert.equal(page.$('#cal-pending'), null, 'no adjustment offered');
+    assert.match(page.text(), /have compared a later one since, so it can’t be redone/);
+    const after = page.state();
+    assert.equal(after.calib.length, 2);
+    assert.equal(after.profile.rateOverride, before.profile.rateOverride, 'rate unchanged');
+  } finally {
+    await page.close();
+  }
+});
+
 test('check my accuracy: Pay periods has a heading and a night note is shown and editable', async () => {
   const page = await boot({
     seed: realState((S) => {

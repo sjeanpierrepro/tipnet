@@ -567,6 +567,15 @@ function calibCard(S, idxs, today) {
     calActual = actual.value;
     // One adjustment per pay period: an earlier comparison of this period is replaced, measured from the rate before it.
     const prev = S.calib.find((c) => c.idx === idx) || null;
+    // Only the most recent comparison can be replaced: redoing an older one would throw away the later ones.
+    if (prev && S.calib.indexOf(prev) !== S.calib.length - 1)
+      return show(
+        'You already compared this pay period (predicted ' +
+          money(prev.pred) +
+          ', actual ' +
+          money(prev.actual) +
+          ') and have compared a later one since, so it can’t be redone. To start over, use “Undo adjustments”.',
+      );
     const base = prev && typeof prev.rateBefore === 'number' ? prev.rateBefore : undefined;
     const r = idxs.length
       ? calibrate(p, S.nights, idx, numOf(actual.value), today, undefined, base)
