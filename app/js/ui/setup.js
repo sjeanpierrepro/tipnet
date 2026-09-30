@@ -5,12 +5,16 @@ import {
   PAY_PRESETS, DEDUCTION_PRESETS, findPayPreset, findDeductionPreset, applyPayPreset, applyDeductionPreset, fillFica,
 } from '../math.js';
 import { el, clear, field, moneyInput, select, numOf, money, pct, exampleBanner, toast, save, debounce, bus, getState, applyTheme } from './common.js';
+import { cutoffFromSettings } from '../inputs.js';
 import { renderImporter } from './importer.js';
 import { renderBackup, renderInstall } from './backup.js';
 
 let guidedStep = 0;
 let guidedActive = false; // stays true once the guided flow starts, even after the first edit ends example mode
 export function reset() { guidedStep = 0; guidedActive = false; }
+
+/** Example nights are not real history: shift averages ignore them until the first real night is saved. */
+const historyOf = (S) => (S.nightsExample ? [] : S.nights);
 
 /** Grouped <select> for presets. */
 function presetSelect(presets, current, id) {
@@ -153,12 +157,12 @@ function dedCard(ctx) {
 
   const lineText = (d) => {
     if (d.mode === 'pct') return p.gross > 0 ? (num(d.amount) / p.gross * 100).toFixed(2) + '% of every dollar you make' : 'Enter gross pay to see the rate';
-    return money(num(d.amount) / shiftsPerPeriod(p, S.nights).n) + ' per shift';
+    return money(num(d.amount) / shiftsPerPeriod(p, historyOf(S)).n) + ' per shift';
   };
   const drawSummary = () => {
-    const s = summary(p, S.nights);
+    const s = summary(p, historyOf(S));
     clear(summaryBox).append(
-      'Out of every ', el('b', null, '$100'), ' you make, about ', el('b', null, money(s.taxPer100)), ' goes to taxes and you keep ', el('b', null, money(s.keepPer100)), '. ',
+      'Out of every ', el('b', null, '$100'), ' you make, about ', el('b', null, money(s.taxPer100)), ' goes to taxes and other deductions that grow with your pay, and you keep ', el('b', null, money(s.keepPer100)), '. ',
       'Deductions that stay the same total ', el('b', null, money(s.fixed)), ' a check, or ', el('b', null, money(s.fixedPerShift)), ' per shift, based on ', s.shiftSourceText,
       s.shiftSource === 'entered' ? '' : ' (' + s.shifts.toFixed(1).replace(/\.0$/, '') + ' shifts)', '. ',
       'Pay periods run ', el('b', null, s.calendar === 'semimonthly' ? semiLabel(p.periodStart).replace('Twice a month (', 'twice a month (the ') : s.calendar === 'monthly' ? 'once a month, on the calendar' : s.periodLength + ' days'), s.fromDates ? ' from your dates' : '', '.',
@@ -198,7 +202,14 @@ function dedCard(ctx) {
       });
       amt.addEventListener('input', () => { d.amount = numOf(amt.value); fAmt.setError(d.amount < 0 ? 'Amounts on a stub are positive numbers.' : ''); ctx.touch(true); });
       mode.addEventListener('change', () => { d.mode = mode.value; ctx.touch(true); });
-      rm.addEventListener('click', () => { p.deductions = p.deductions.filter((x) => x !== d); ctx.touch(true); drawRows(); });
+      rm.addEventListener('click', () => {
+        const at = p.deductions.indexOf(d);
+        p.deductions = p.deductions.filter((x) => x !== d); ctx.touch(true); drawRows();
+        toast('Removed ' + d.name + '.', { undo: () => {
+          if (p.deductions.includes(d)) return;
+          p.deductions.splice(Math.min(at, p.deductions.length), 0, d); ctx.touch(true); drawRows();
+        } });
+      });
       rowsHost.append(el('div', { class: 'repeat-row', style: 'grid-template-columns:minmax(0,1fr)' }, kids));
     });
   };
@@ -321,6 +332,18 @@ function tipoutCard(ctx) {
     fields);
 }
 
+/* ============ business day cutoff ============ */
+function cutoffCard(ctx) {
+  const S = ctx.S;
+  const opts = [[0, '12 a.m. (off)']];
+  for (let h = 1; h <= 8; h++) opts.push([h, h + ' a.m.']);
+  const sel = select(opts, cutoffFromSettings(S.settings), { id: 'day-cutoff', 'data-focus-key': 'day-cutoff' });
+  sel.addEventListener('change', () => { S.settings.dayCutoffHour = Number(sel.value); save(); toast('Saved.'); });
+  return el('section', { class: 'card stack' }, el('h2', null, 'Late nights'),
+    field('Shifts logged before this time count as the night before', sel,
+      { hint: 'If you enter your night at 2 a.m., TipNet dates it the day your shift started. You can always change the date.' }));
+}
+
 /* ============ theme ============ */
 function themeCard(ctx) {
   const S = ctx.S;
@@ -336,7 +359,7 @@ function themeCard(ctx) {
   return el('section', { class: 'card stack' }, el('h2', null, 'Appearance'), el('div', { class: 'cluster', role: 'group', 'aria-label': 'Theme' }, btns));
 }
 
-const finePrint = () => el('p', { class: 'note' }, 'Social Security and Medicare apply to every tip dollar. Under the federal “No Tax on Tips” deduction (tax years 2025–2028, up to $25,000 of qualified tips), some federal income tax taken from your tips may come back at tax time, depending on your situation. Florida has no state income tax. Taxes on cash tips usually come out of the paycheck. Auto-gratuities are wages, not tips.');
+const finePrint = () => el('p', { class: 'note' }, 'Social Security and Medicare apply to every tip dollar. Under the federal “No Tax on Tips” deduction (tax years 2025–2028, up to $25,000 of qualified tips), some federal income tax taken from your tips may come back at tax time, depending on your situation. Some states have no state income tax; if yours does, add State income tax as a deduction. Taxes on cash tips usually come out of the paycheck. Auto-gratuities are wages, not tips.');
 
 /* ============ guided flow ============ */
 function guided(root, ctx) {
@@ -374,6 +397,6 @@ export function render(root) {
   renderImporter(importHost); renderInstall(installHost); renderBackup(backupHost);
   root.append(el('div', { class: 'stack' },
     exampleBanner(), el('h1', null, 'Setup'), ctx.saved,
-    periodCard(ctx, { title: 'From your paystub' }), dedCard(ctx), payCard(ctx), tipoutCard(ctx),
+    periodCard(ctx, { title: 'From your paystub' }), dedCard(ctx), payCard(ctx), tipoutCard(ctx), cutoffCard(ctx),
     themeCard(ctx), importHost, installHost, backupHost, finePrint()));
 }

@@ -138,3 +138,18 @@ test('regression: hours in H:MM or "7h 30m" form are not read as 730', async () 
   const { nights } = buildNights([['9/26/2026', '100', '7:30']], { date: 0, cash: 1, hours: 2 }, { payId: 'p1' });
   assert.deepEqual(nights[0].pay, { p1: 7.5 });
 });
+
+test('buildNights skips rows with negative cash, card, total or hours', () => {
+  const m = { date: 0, total: 1, cash: 2, card: 3, hours: 4, employee: null };
+  const rows = [
+    ['9/26/2026', '100', '(12.00)', '', '8'],
+    ['9/27/2026', '-50', '10', '', '8'],
+    ['9/28/2026', '100', '10', '-5', '8'],
+    ['9/29/2026', '100', '10', '', '-8'],
+    ['9/30/2026', '100', '10', '', '8'],
+  ];
+  const { nights, skipped } = buildNights(rows, m, { refYear: 2026 });
+  assert.equal(nights.length, 1);
+  assert.equal(nights[0].date, '2026-09-30');
+  assert.deepEqual(skipped.map((s) => [s.row, s.reason]), [[1, 'negative'], [2, 'negative'], [3, 'negative'], [4, 'negative']]);
+});

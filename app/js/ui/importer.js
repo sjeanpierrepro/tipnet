@@ -1,4 +1,4 @@
-// Generic CSV import (CLAUDE.md 7.4). The file is read and parsed on this device; nothing is uploaded.
+// Generic CSV import: map your columns, preview, then add the nights. The file is read and parsed on this device; nothing is uploaded.
 import { parseCSV, guessMapping, namesToMapping, mappingToNames, listEmployees, buildNights, dedupeNights, mergeNights } from '../csv.js';
 import { num } from '../math.js';
 import { el, clear, select, money, fmtDate, toast, save, bus, getState } from './common.js';
@@ -11,7 +11,7 @@ const FIELDS = [
   ['hours', 'Hours', false],
   ['employee', 'Employee', false],
 ];
-const REASONS = { date: 'no date we could read', amount: 'no amount' };
+const REASONS = { date: 'no date we could read', amount: 'no amount', negative: 'a negative amount or hours' };
 
 export function renderImporter(host) {
   const S = getState(), p = S.profile;

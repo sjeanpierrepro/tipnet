@@ -134,7 +134,8 @@ export function listEmployees(rows, mapping) {
  *  opts: {employee, refYear, rate (hourly $ for hours*rate), payId (id of main pay type; hours are stored there),
  *         barback (default true)}
  *  total = total column, else cash + card + hours * rate. Several rows on the same date are summed.
- *  Night: {id, date, total, cash|null, pay:{[payId]:hours}, barback}. skipped: [{row, reason}] (row = 1-based data row).
+ *  Night: {id, date, total, cash|null, pay:{[payId]:hours}, barback}. skipped: [{row, reason}] (row = 1-based data row;
+ *  reason is 'date', 'amount', or 'negative' for a negative cash, card, total or hours value).
  */
 export function buildNights(rows, mapping, opts = {}) {
   const { employee, refYear, rate = 0, payId = 'p1', barback = true } = opts;
@@ -149,6 +150,9 @@ export function buildNights(rows, mapping, opts = {}) {
     const card = mapping.card != null ? parseMoney(r[mapping.card]) : null;
     const hours = mapping.hours != null ? parseHours(r[mapping.hours]) : 0;
     let total = mapping.total != null ? parseMoney(r[mapping.total]) : null;
+    // A negative amount or hours (refund, void, typo) is not a night we can trust: skip the row and say why.
+    const negHours = mapping.hours != null && /^s*[-−(]/.test(String(r[mapping.hours] == null ? '' : r[mapping.hours]));
+    if ((cash != null && cash < 0) || (card != null && card < 0) || (total != null && total < 0) || negHours) { skipped.push({ row: rowNo, reason: 'negative' }); return; }
     if (total == null) {
       if (cash == null && card == null && !(hours && rate)) { skipped.push({ row: rowNo, reason: 'amount' }); return; }
       total = fromCents(toCents(cash || 0) + toCents(card || 0) + toCents(hours * rate));
