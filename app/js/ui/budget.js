@@ -1,6 +1,6 @@
 // Budget tab (paid add-on): safe to spend, next paycheck, bills, spending, goals, subscription.
 // Locked users see an honest preview and can buy or paste a license key. The free app is unchanged.
-import { todayISO, periodIndex, periodRange, toCents, round2, indexNights } from '../math.js';
+import { todayISO, periodIndex, periodRange, round2, indexNights } from '../math.js';
 import { isSetUp } from '../storage.js';
 import {
   safeToSpend,
@@ -8,14 +8,16 @@ import {
   hasPayDelay,
   billsDue,
   categoryStatus,
-  goalProgress,
   exampleBudget,
   migrateBudget,
   paidKey,
   isPaid,
-  goalKey,
-  isGoalDone,
-  paydayInfo,
+  contributionsOf,
+  recordContribution,
+  editContribution,
+  removeContribution,
+  restoreContribution,
+  PLAN_BIG_SHARE,
   convertPaidKeys,
   hasOldPaidKeys,
   balanceIsStale,
@@ -72,9 +74,13 @@ let keyMsg = ''; // license key error
 let keyText = ''; // what was pasted, kept so a failed try does not wipe it (never saved)
 let busy = false;
 let billsOpen = false; // keeps the "Edit or remove bills" list open after a save or cancel
+let editingEntry = null; // {id, index}: the history entry of a goal that is being edited
+const historyOpen = new Set(); // goal ids whose history list is open
 
 export function reset() {
   editing = null;
+  editingEntry = null;
+  historyOpen.clear();
   keyMsg = '';
   keyText = '';
   busy = false;
@@ -438,6 +444,18 @@ function entityForm(kind, item) {
       const first = form.querySelector('[aria-invalid]');
       if (first) first.focus();
       return;
+    }
+    if (kind === 'goal') {
+      // The schedule a goal is measured against starts when it is made, or again when its numbers are changed.
+      const changed =
+        !item ||
+        ['target', 'saved', 'perPaycheck'].some(
+          (k) => Math.round((Number(item[k]) || 0) * 100) !== Math.round(out[k] * 100),
+        );
+      if (changed) {
+        out.createdAt = todayISO();
+        out.startSaved = out.saved;
+      }
     }
     if (item) Object.assign(item, out);
     else B[K.list].push({ id: newId(kind[0]), ...out });
@@ -1009,28 +1027,310 @@ function spendingCard(S) {
 let doneOpen = false; // keeps the "Done" list open after an Undo
 let planMode = 'date'; // which way the "Plan a big purchase" form was last set
 
-/** The "Add to saved" box, the "Set aside for this paycheck" tick and its hint. Shared by goals and plans. */
-function goalControls(B, g, payday) {
+/** The local calendar day of an ISO date-time, "YYYY-MM-DD" ('' if unreadable). */
+function localDay(iso) {
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return '';
+  const p2 = (n) => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate());
+}
+/** "Oct 2 check: $150 (planned $218.19)" or "Extra: $50 (Oct 5)". */
+function entryText(c) {
+  if (c.payday)
+    return (
+      fmtShort(c.payday) +
+      ' check: ' +
+      money(c.amount) +
+      (c.planned !== undefined ? ' (planned ' + money(c.planned) + ')' : '')
+    );
+  const day = localDay(c.recordedAt);
+  return 'Extra: ' + money(c.amount) + (day ? ' (' + fmtShort(day) + ')' : '');
+}
+
+/** The status word for a goal: Ready to buy / Goal reached / Behind by / Ahead by / On track (null when there is nothing to measure against). */
+function statusText(g, p) {
+  if (p.ready) return isPlan(g) ? 'Ready to buy' : 'Goal reached';
+  if (!p.hasSchedule) return isPlan(g) ? 'On track' : null;
+  if (p.behind > 0) return 'Behind by ' + money(p.behind);
+  if (p.ahead > 0) return 'Ahead by ' + money(p.ahead);
+  return 'On track';
+}
+
+/**
+ * The plain-words lines that say what to put aside and how that changed, for a goal or plan that is not done yet.
+ * Returns {lines: [[text, isHint]], move: true when changing the date would help}.
+ */
+function trackerLines(g, p, tc) {
+  const lines = [];
+  let move = false;
+  const share = () => {
+    const sh = planShare(p.perPaycheck, tc.base);
+    if (!sh) {
+      lines.push(["We'll compare it to your paychecks once you have a finished pay period.", true]);
+      return;
+    }
+    lines.push([
+      "That's about " +
+        sh.pct +
+        '% of a typical check' +
+        (tc.other > 0 ? ' plus your regular other income.' : '.'),
+      true,
+    ]);
+    if (sh.pct > 50) {
+      lines.push([
+        'That is more than half of a typical check, which may be hard to keep up. A later date lowers it.',
+        true,
+      ]);
+      move = true;
+    } else if (sh.pct > PLAN_BIG_SHARE)
+      lines.push(["That's a big share of each check; a later date lowers it.", true]);
+  };
+  if (p.mode === 'date') {
+    if (p.noPaychecks) {
+      lines.push([
+        'No paychecks arrive before that date, so there is nothing to spread this over. Pick a later date.',
+        false,
+      ]);
+      move = true;
+    } else {
+      lines.push([
+        'To reach ' +
+          money(p.cost) +
+          ' by ' +
+          fmtShort(g.targetDate) +
+          ': ' +
+          money(p.perPaycheck) +
+          ' a paycheck for ' +
+          plural(p.paychecksLeft, p.recorded != null ? 'more paycheck' : 'paycheck') +
+          '.',
+        false,
+      ]);
+      if (p.perChange)
+        lines.push([
+          (p.perChange > 0 ? 'Up ' : 'Down ') +
+            money(Math.abs(p.perChange)) +
+            ' because this check was ' +
+            (p.perChange > 0 ? 'below' : 'above') +
+            ' plan.',
+          true,
+        ]);
+      share();
+    }
+  } else if (p.paychecksLeft == null) {
+    lines.push([
+      isPlan(g)
+        ? 'Enter an amount per paycheck to see a timeline.'
+        : 'Set an amount per paycheck to see a timeline.',
+      false,
+    ]);
+  } else {
+    const w = p.shiftDays == null ? 0 : Math.round(Math.abs(p.shiftDays) / 7);
+    const moved =
+      p.shiftDays != null && Math.abs(p.shiftDays) >= 4
+        ? ' (moved ' + plural(Math.max(1, w), 'week') + (p.shiftDays > 0 ? ' later' : ' sooner') + ')'
+        : '';
+    lines.push(['Ready by about ' + (p.readyBy ? fmtShort(p.readyBy) : 'soon') + moved + '.', false]);
+    lines.push([
+      plural(p.paychecksLeft, 'paycheck') + ' to go at ' + money(p.perPaycheck) + ' a paycheck.',
+      true,
+    ]);
+    if (isPlan(g)) share();
+  }
+  return { lines, move };
+}
+
+/** One row of the history list, with inline Edit and a two-tap Remove that has Undo. */
+function historyRow(B, g, c, i) {
+  const who = c.payday ? fmtShort(c.payday) + ' check' : 'extra';
+  if (editingEntry && editingEntry.id === g.id && editingEntry.index === i) {
+    const input = moneyInput({
+      value: String(c.amount),
+      'aria-label': 'New amount for ' + g.name + ', ' + who,
+      'data-focus-key': 'entry-edit-' + g.id + '-' + i,
+      class: 'input',
+    });
+    const fld = field('New amount for ' + entryText(c).split(':')[0], input);
+    const okBtn = el(
+      'button',
+      {
+        type: 'submit',
+        class: 'btn btn-small',
+        'aria-label': 'Save amount for ' + g.name + ', ' + who,
+        'data-focus-key': 'entry-save-' + g.id + '-' + i,
+      },
+      'Save',
+    );
+    const cancel = el(
+      'button',
+      {
+        type: 'button',
+        class: 'btn btn-secondary btn-small',
+        'data-focus-key': 'entry-edit-btn-' + g.id + '-' + i,
+        onclick: () => {
+          editingEntry = null;
+          bus.rerender();
+        },
+      },
+      'Cancel',
+    );
+    const form = el(
+      'form',
+      { class: 'stack-sm', novalidate: true },
+      fld,
+      el('div', { class: 'cluster' }, okBtn, cancel),
+    );
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const raw = clean(input.value);
+      const n = numOf(raw);
+      if (raw === '' || raw === '-' || raw === '.' || !(n >= 0)) {
+        fld.setError(n < 0 ? 'Amounts cannot be negative.' : 'Enter an amount, or 0.');
+        input.focus();
+        return;
+      }
+      editContribution(g, i, n);
+      editingEntry = null;
+      save();
+      bus.rerender();
+      toast('Saved.');
+    });
+    return el('li', { class: 'list-row wrap' }, el('div', { class: 'main' }, form));
+  }
+  return el(
+    'li',
+    { class: 'list-row wrap' },
+    el('div', { class: 'main' }, el('span', null, entryText(c))),
+    el(
+      'div',
+      { class: 'row-actions' },
+      el(
+        'button',
+        {
+          type: 'button',
+          class: 'btn btn-secondary btn-small',
+          'aria-label': 'Edit the amount for ' + g.name + ', ' + who,
+          'data-focus-key': 'entry-edit-btn-' + g.id + '-' + i,
+          onclick: () => {
+            editingEntry = { id: g.id, index: i };
+            historyOpen.add(g.id);
+            bus.rerender();
+          },
+        },
+        'Edit',
+      ),
+      removeBtn('Delete the amount for ' + g.name + ', ' + who, () => {
+        const undo = removeContribution(g, i);
+        if (!undo.ok) return;
+        editingEntry = null;
+        save();
+        bus.rerender();
+        toast('Removed.', {
+          undo: () => {
+            restoreContribution(g, undo);
+            save();
+            bus.rerender();
+          },
+        });
+      }),
+    ),
+  );
+}
+
+/** What you put in so far: newest first, each with Edit and Remove. */
+function historyBox(B, g) {
+  const list = contributionsOf(g);
+  if (!list.length) return null;
+  return el(
+    'details',
+    {
+      class: 'stack-sm',
+      open: historyOpen.has(g.id),
+      ontoggle: (e) => {
+        if (e.target.open) historyOpen.add(g.id);
+        else historyOpen.delete(g.id);
+      },
+    },
+    el('summary', null, 'What you put in (' + list.length + ')'),
+    el('ul', { class: 'list' }, list.map((c, i) => historyRow(B, g, c, i)).reverse()),
+  );
+}
+
+/**
+ * "How much did you put toward this from this check?" plus "Add to saved" for extra money and the history. Shared by goals and plans.
+ * Recording an amount adds it to saved and stops this goal coming out of the money you have now until the next payday.
+ */
+function goalControls(B, g, p) {
+  const who = fmtShort(p.payday);
+  const plannedNow = p.recorded != null && p.perBefore != null ? p.perBefore : p.perPaycheck;
+  const out = [];
+  if (!p.ready) {
+    const input = moneyInput({
+      placeholder: plannedNow > 0 ? 'planned ' + money(plannedNow) : 'Amount',
+      'aria-label': 'Amount saved for ' + g.name + ' from the ' + who + ' check',
+      'data-focus-key': 'goal-rec-' + g.id,
+      class: 'input',
+    });
+    const fld = field('How much did you put toward this from this check?', input);
+    const btn = el(
+      'button',
+      {
+        type: 'submit',
+        class: 'btn btn-secondary btn-small',
+        'aria-label': 'Save amount for ' + g.name + ' from the ' + who + ' check',
+        'data-focus-key': 'goal-rec-save-' + g.id,
+      },
+      'Save',
+    );
+    const form = el(
+      'form',
+      { class: 'stack-sm', novalidate: true },
+      fld,
+      el('div', { class: 'cluster' }, btn),
+    );
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const raw = clean(input.value);
+      const n = numOf(raw);
+      if (raw === '' || raw === '-' || raw === '.' || !(n >= 0)) {
+        fld.setError(
+          n < 0 ? 'Amounts cannot be negative.' : 'Enter an amount, or 0 if you put nothing toward it.',
+        );
+        input.focus();
+        return;
+      }
+      const again = p.recorded != null;
+      recordContribution(g, p.payday, n, { planned: plannedNow });
+      save();
+      bus.rerender();
+      toast(
+        again
+          ? 'Changed to ' + money(n) + ' from the ' + who + ' check.'
+          : 'Saved ' + money(n) + ' from the ' + who + ' check.',
+      );
+    });
+    out.push(form);
+    out.push(
+      el(
+        'div',
+        { class: 'hint' },
+        p.recorded != null
+          ? 'You put ' +
+              money(p.recorded) +
+              ' toward this from the ' +
+              who +
+              ' check. Enter a new amount to change it. It stays out of the money you have now until your next payday.'
+          : 'Enter what you actually put away from this check. It then stops coming out of the money you have now until your next payday, and the plan adjusts so you still reach your goal.',
+      ),
+    );
+  }
   const add = moneyInput({
     placeholder: 'Amount',
     'aria-label': 'Amount to add to ' + g.name,
     'data-focus-key': 'goal-add-' + g.id,
     class: 'input',
   });
-  const dkey = goalKey(g.id, payday);
-  const done = el('input', {
-    type: 'checkbox',
-    'aria-label': 'Set aside for ' + g.name + ' this paycheck',
-    checked: isGoalDone(B, g.id, payday),
-    'data-focus-key': 'goal-done-' + g.id,
-  });
-  done.addEventListener('change', () => {
-    if (done.checked) B.goalsDone[dkey] = true;
-    else delete B.goalsDone[dkey];
-    save();
-    bus.rerender();
-  });
   const addBtn = el('button', { type: 'button', class: 'btn btn-secondary btn-small' }, 'Add to saved');
+  addBtn.setAttribute('aria-label', 'Add extra money to ' + g.name);
   addBtn.addEventListener('click', () => {
     const n = numOf(add.value);
     if (!(n > 0)) {
@@ -1038,8 +1338,7 @@ function goalControls(B, g, payday) {
       toast('Enter an amount to add.');
       return;
     }
-    g.saved = (toCents(g.saved) + toCents(n)) / 100;
-    B.goalsDone[dkey] = true; // you just set money aside for this paycheck, so it stops coming out of the money you have now
+    recordContribution(g, null, n);
     save();
     bus.rerender();
   });
@@ -1049,15 +1348,11 @@ function goalControls(B, g, payday) {
       addBtn.click();
     }
   });
-  return [
-    el('div', { class: 'cluster' }, el('div', { style: 'flex:1;min-width:120px' }, add), addBtn),
-    el('label', { class: 'check' }, done, 'Set aside for this paycheck'),
-    el(
-      'div',
-      { class: 'hint' },
-      'Tick this once you have put the money away, or use Add to saved. It then stops coming out of the money you have now until your next payday.',
-    ),
-  ];
+  out.push(el('div', { class: 'hint' }, 'Extra money any time (a gift, a bonus):'));
+  out.push(el('div', { class: 'cluster' }, el('div', { style: 'flex:1;min-width:120px' }, add), addBtn));
+  const hist = historyBox(B, g);
+  if (hist) out.push(hist);
+  return out;
 }
 
 /** Delete with two taps and an Undo that puts the goal back where it was. */
@@ -1298,20 +1593,50 @@ function planForm(item) {
   return form;
 }
 
-function planRow(S, g, payday, tc) {
+/** The lines, status and controls that follow a goal's progress bar. */
+function trackerBody(S, g, p, tc) {
+  const st = statusText(g, p);
+  const body = st ? [el('div', null, el('b', null, st))] : [];
+  if (p.ready) return body;
+  const t = trackerLines(g, p, tc);
+  t.lines.forEach(([text, hint], i) =>
+    body.push(el('p', hint ? { class: 'hint' } : i === 0 ? { class: 'num' } : null, text)),
+  );
+  if (t.move && isPlan(g) && g.targetDate)
+    body.push(
+      el(
+        'div',
+        { class: 'cluster' },
+        el(
+          'button',
+          {
+            type: 'button',
+            class: 'btn btn-secondary btn-small',
+            'aria-label': 'Move the date for ' + g.name,
+            'data-focus-key': 'plan-move-' + g.id,
+            onclick: () => {
+              editing = { kind: 'plan', id: g.id };
+              bus.rerender();
+            },
+          },
+          'Move the date',
+        ),
+      ),
+    );
+  return body;
+}
+
+function planRow(S, g, tc) {
   const B = S.budget;
   if (isEditing('plan', g.id))
     return el('li', { class: 'list-row wrap' }, el('div', { class: 'main' }, planForm(g)));
   const p = purchasePlan(g, S.profile, todayISO());
-  const status = p.ready
-    ? el('b', null, 'Ready to buy')
-    : el('b', null, p.onTrack ? 'On track' : 'Behind by ' + money(p.behind));
   const head = [
     el('div', { class: 'spread' }, el('span', null, g.name), el('b', { class: 'num' }, p.pct + '%')),
     bar(p.pct, g.name + ' progress'),
     el('div', { class: 'hint' }, money(g.saved) + ' saved of ' + money(g.target) + '.'),
   ];
-  const body = [el('div', null, status)];
+  const body = trackerBody(S, g, p, tc);
   if (p.ready) {
     const buy = el('button', {
       type: 'button',
@@ -1338,18 +1663,16 @@ function planRow(S, g, payday, tc) {
     });
     body.push(el('div', { class: 'hint' }, 'You have saved enough. Nice work.'), buy);
   } else {
-    planLines(p, tc).forEach((t, i) => body.push(el('p', i === 0 ? { class: 'num' } : { class: 'hint' }, t)));
     body.push(
       el(
         'div',
         { class: 'hint' },
-        (p.paychecksLeft != null ? plural(p.paychecksLeft, 'paycheck') + ' left. ' : '') +
-          (g.targetDate ? 'Wanted by ' + fmtDate(g.targetDate) + '. ' : '') +
-          'The amount is worked out again each payday (estimated).',
+        (g.targetDate ? 'Wanted by ' + fmtDate(g.targetDate) + '. ' : '') +
+          'The amount is worked out again after each check you record (estimated).',
       ),
     );
-    body.push(...goalControls(B, g, payday));
   }
+  body.push(...goalControls(B, g, p));
   return el(
     'li',
     { class: 'list-row wrap' },
@@ -1397,42 +1720,25 @@ function doneList(S, done) {
 
 function goalsCard(S) {
   const B = S.budget;
-  const payday = paydayInfo(S.profile, todayISO()).date; // a tick lasts until this payday
-  B.goalsDone = B.goalsDone || {};
   const tc = typicalCheck(S);
   const rows = B.goals
     .filter((g) => !g.boughtAt)
     .map((g) => {
-      if (isPlan(g)) return planRow(S, g, payday, tc);
+      if (isPlan(g)) return planRow(S, g, tc);
       if (isEditing('goal', g.id))
         return el('li', { class: 'list-row wrap' }, el('div', { class: 'main' }, entityForm('goal', g)));
-      const pr = goalProgress(g);
-      const togo =
-        pr.remaining === 0
-          ? 'Goal reached.'
-          : pr.paychecksToGo == null
-            ? 'Set an amount per paycheck to see a timeline.'
-            : 'About ' + plural(pr.paychecksToGo, 'paycheck') + ' to go (estimated).';
+      const p = purchasePlan(g, S.profile, todayISO());
       return el(
         'li',
         { class: 'list-row wrap' },
         el(
           'div',
           { class: 'main stack-sm' },
-          el('div', { class: 'spread' }, el('span', null, g.name), el('b', { class: 'num' }, pr.pct + '%')),
-          bar(pr.pct, g.name + ' progress'),
-          el(
-            'div',
-            { class: 'hint' },
-            money(g.saved) +
-              ' of ' +
-              money(g.target) +
-              ', ' +
-              money(g.perPaycheck) +
-              ' per paycheck. ' +
-              togo,
-          ),
-          ...goalControls(B, g, payday),
+          el('div', { class: 'spread' }, el('span', null, g.name), el('b', { class: 'num' }, p.pct + '%')),
+          bar(p.pct, g.name + ' progress'),
+          el('div', { class: 'hint' }, money(g.saved) + ' of ' + money(g.target) + '.'),
+          ...trackerBody(S, g, p, tc),
+          ...goalControls(B, g, p),
         ),
         el('div', { class: 'row-actions' }, editBtn('goal', g.id, 'Edit ' + g.name), goalRemoveBtn(B, g, '')),
       );

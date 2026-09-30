@@ -5,7 +5,7 @@ import { exampleBudget } from '../../app/js/budget.js';
 
 const DEV = 'http://localhost/?unlock=dev';
 
-test('budget: bill and goal checkboxes have names that include the item', async () => {
+test('budget: bill checkboxes and goal amount fields have names that include the item', async () => {
   const page = await boot({
     url: DEV,
     seed: realState((S) => {
@@ -21,8 +21,10 @@ test('budget: bill and goal checkboxes have names that include the item', async 
       'a bill checkbox is named',
     );
     assert.ok(
-      labels.some((l) => /^Set aside for .+ this paycheck$/.test(l)),
-      'a goal checkbox is named',
+      page
+        .$$('input')
+        .some((i) => /^Amount saved for .+ from the .+ check$/.test(i.getAttribute('aria-label') || '')),
+      'a goal amount field is named',
     );
     assert.match(page.text(), /After payday \(/);
     assert.doesNotMatch(page.text(), /Next paycheck, /);

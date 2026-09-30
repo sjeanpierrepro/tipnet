@@ -43,33 +43,51 @@ test('payDelay moves the paydays that are counted', () => {
 });
 
 test('by a date: per paycheck is rounded UP to the cent', () => {
-  const p = B.purchasePlan(plan({ target: 1000, targetDate: '2026-10-16' }), weekly, TODAY); // 3 paychecks
+  const p = B.purchasePlan(plan({ target: 1000, targetDate: '2026-10-16' }), weekly, TODAY); // the 09-25 check you are in + 3 more
   assert.equal(p.mode, 'date');
-  assert.equal(p.paychecksLeft, 3);
-  assert.equal(p.perPaycheck, 333.34);
+  assert.equal(p.paychecksLeft, 4);
+  assert.equal(p.perPaycheck, 250);
   assert.equal(p.readyBy, '2026-10-16');
   const q = B.purchasePlan(
     plan({ target: 1000, saved: 100, startSaved: 100, targetDate: '2026-11-13' }),
     weekly,
     TODAY,
-  ); // 7 paychecks
-  assert.equal(q.paychecksLeft, 7);
-  assert.equal(q.perPaycheck, 128.58); // 900 / 7 = 128.571...
+  ); // 8 paychecks
+  assert.equal(q.paychecksLeft, 8);
+  assert.equal(q.perPaycheck, 112.5);
+  const r = B.purchasePlan(
+    plan({ target: 1000, saved: 100, startSaved: 100, targetDate: '2026-11-06' }),
+    weekly,
+    TODAY,
+  ); // 7 paychecks: 900 / 7 = 128.571...
+  assert.equal(r.paychecksLeft, 7);
+  assert.equal(r.perPaycheck, 128.58);
 });
 
 test('by a date with no paychecks left says so and needs the whole amount', () => {
-  const p = B.purchasePlan(plan({ targetDate: '2026-10-01' }), weekly, TODAY);
+  const p = B.purchasePlan(plan({ targetDate: '2026-09-28' }), weekly, TODAY); // not after today
   assert.equal(p.noPaychecks, true);
   assert.equal(p.paychecksLeft, 0);
   assert.equal(p.readyBy, null);
   assert.equal(p.perPaycheck, 400);
+  // Before the next payday the check you are in still counts, until something is recorded for it.
+  const one = B.purchasePlan(plan({ targetDate: '2026-10-01' }), weekly, TODAY);
+  assert.equal(one.noPaychecks, false);
+  assert.equal(one.paychecksLeft, 1);
+  assert.equal(one.perPaycheck, 400);
+  const rec = plan({ targetDate: '2026-10-01' });
+  B.recordContribution(rec, '2026-09-25', 100);
+  const after = B.purchasePlan(rec, weekly, TODAY);
+  assert.equal(after.noPaychecks, true);
+  assert.equal(after.perPaycheck, 300);
 });
 
 test('a fixed amount works out the paychecks and the payday it is reached', () => {
   const p = B.purchasePlan(plan({ target: 1000, perPaycheck: 110 }), weekly, TODAY);
   assert.equal(p.mode, 'fixed');
   assert.equal(p.paychecksLeft, 10); // 1000 / 110 = 9.09
-  assert.equal(p.readyBy, '2026-12-04'); // 10-02 is the first, so the tenth is 9 weeks later
+  assert.equal(p.readyBy, '2026-11-27'); // the check you are in is the first, 10-02 the second, so the tenth is 8 weeks after 10-02
+  assert.equal(p.shiftDays, 0);
   assert.equal(p.perPaycheck, 110);
   const none = B.purchasePlan(plan({ perPaycheck: 0 }), weekly, TODAY);
   assert.equal(none.paychecksLeft, null);
@@ -77,21 +95,22 @@ test('a fixed amount works out the paychecks and the payday it is reached', () =
 });
 
 test('the amount is worked out again each payday: falling behind raises it, getting ahead lowers it', () => {
-  const g = plan({ target: 400, targetDate: '2026-10-23' }); // made 09-28: 4 paychecks, 100 each
-  assert.equal(B.purchasePlan(g, weekly, TODAY).perPaycheck, 100);
-  const day = '2026-10-09'; // two paydays have passed, two are left
+  const g = plan({ target: 400, targetDate: '2026-10-23' }); // made 09-28: the check in hand + 4 more = 5 paychecks, 80 each
+  assert.equal(B.purchasePlan(g, weekly, TODAY).perPaycheck, 80);
+  const day = '2026-10-09'; // the 10-09 check is in hand, two more are left
   const behind = B.purchasePlan({ ...g, saved: 0 }, weekly, day);
-  assert.equal(behind.paychecksLeft, 2);
-  assert.equal(behind.perPaycheck, 200);
+  assert.equal(behind.paychecksLeft, 3);
+  assert.equal(behind.perPaycheck, 133.34); // 400 / 3
   assert.equal(behind.onTrack, false);
-  assert.equal(behind.behind, 200);
-  const even = B.purchasePlan({ ...g, saved: 200 }, weekly, day);
-  assert.equal(even.perPaycheck, 100);
+  assert.equal(behind.behind, 160); // two checks of 80 have gone by (10-02 and the one in hand is not counted yet)
+  const even = B.purchasePlan({ ...g, saved: 160 }, weekly, day);
+  assert.equal(even.perPaycheck, 80);
   assert.equal(even.onTrack, true);
   assert.equal(even.behind, 0);
   const ahead = B.purchasePlan({ ...g, saved: 300 }, weekly, day);
-  assert.equal(ahead.perPaycheck, 50);
+  assert.equal(ahead.perPaycheck, 33.34); // 100 / 3
   assert.equal(ahead.onTrack, true);
+  assert.equal(ahead.ahead, 140);
 });
 
 test('on track / behind for a fixed amount, counted from paychecks since it was made', () => {
@@ -170,15 +189,15 @@ test('migrateBudget keeps old goals as they were and cleans plan fields', () => 
 test('safe to spend subtracts the current per-paycheck amount of a plan until it is ticked; a bought plan is left out', () => {
   const budget = B.migrateBudget({ goals: [plan({ target: 400, targetDate: '2026-10-23' })] });
   const r = B.safeToSpend(budget, weekly, [], TODAY, { cashOnHand: 1000 });
-  assert.equal(r.goalsTotal, 100);
-  assert.equal(r.goals[0].due, 100);
+  assert.equal(r.goalsTotal, 80);
+  assert.equal(r.goals[0].due, 80);
   const behind = B.safeToSpend(budget, weekly, [], '2026-10-09', { cashOnHand: 1000 }); // nothing saved, two paychecks left
-  assert.equal(behind.goalsTotal, 200);
-  budget.goalsDone = { [B.goalKey('p1', r.payday)]: true };
+  assert.equal(behind.goalsTotal, 133.34);
+  B.recordContribution(budget.goals[0], B.recordPayday(weekly, TODAY), 0);
   const ticked = B.safeToSpend(budget, weekly, [], TODAY, { cashOnHand: 1000 });
   assert.equal(ticked.goalsTotal, 0);
-  assert.equal(ticked.after.goalsTotal, 100); // the next paycheck still sets it aside
-  budget.goalsDone = {};
+  assert.equal(ticked.after.goalsTotal, 100); // the next paycheck still sets it aside (400 over the 4 left)
+  delete budget.goals[0].contributions;
   budget.goals[0].boughtAt = '2026-10-01';
   const bought = B.safeToSpend(budget, weekly, [], TODAY, { cashOnHand: 1000 });
   assert.equal(bought.goalsTotal, 0);

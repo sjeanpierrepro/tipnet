@@ -365,7 +365,10 @@ test('paydayInfo never hangs on a missing or broken start date; a restore leaves
     assert.equal(typeof r.date, 'string');
   }
   const restored = S.decodeBackup(S.encodeBackup({ profile: {}, nights: [] }));
-  assert.match(restored.profile.periodStart, /^\d{4}-\d{2}-\d{2}$/);
+  // a real profile never gets an invented start date: it stays blank, and TipNet is not set up until Setup has it
+  assert.equal(restored.profile.periodStart, '');
+  assert.equal(S.isSetUp(restored), false);
+  assert.equal(typeof B.paydayInfo(restored.profile, '2026-09-29').date, 'string');
 });
 
 /* ---------- review fixes ---------- */
@@ -570,7 +573,7 @@ test('goals: a goal ticked for this payday is not subtracted; the next paycheck 
   const r0 = B.safeToSpend(b, P(), [], TODAY, { cashOnHand: 500 });
   assert.equal(r0.goalsTotal, 40);
   assert.equal(r0.safe, 460);
-  b.goalsDone = { [B.goalKey('g1', r0.payday)]: true };
+  B.recordContribution(b.goals[0], B.recordPayday(P(), TODAY), 0);
   const r1 = B.safeToSpend(b, P(), [], TODAY, { cashOnHand: 500 });
   assert.equal(r1.goalsTotal, 0);
   assert.equal(r1.goals[0].done, true);
@@ -581,8 +584,12 @@ test('goals: a goal ticked for this payday is not subtracted; the next paycheck 
   assert.equal(later.goalsTotal, 40);
 });
 
-test('migrateBudget: old data without goalsDone stays valid; bad goalsDone keys are dropped', () => {
-  assert.equal(B.migrateBudget({ goals: [] }).goalsDone, undefined);
-  const m = B.migrateBudget({ goalsDone: { 'g1@2026-10-05': true, junk: true, 'g2@2026-10-05': false } });
-  assert.deepEqual(m.goalsDone, { 'g1@2026-10-05': true });
+test('migrateBudget: old goalsDone ticks are dropped and saved is left alone', () => {
+  const m = B.migrateBudget({
+    goals: [{ id: 'g1', name: 'Fund', target: 1000, saved: 120, perPaycheck: 40 }],
+    goalsDone: { 'g1@2026-10-05': true, junk: true },
+  });
+  assert.equal('goalsDone' in m, false);
+  assert.equal(m.goals[0].saved, 120);
+  assert.equal('contributions' in m.goals[0], false);
 });

@@ -13,8 +13,11 @@
 //   income:     [{id, name, amount, freq, nextDate, days?}]    money that does not go through TipNet (a second job, gig work, benefits...), entered once.
 //                 freq: 'weekly'|'biweekly'|'twiceMonthly'|'monthly'|'once'. nextDate: the next (or first) date it arrives; it never arrives before it.
 //                 days: the day(s) of the month for monthly ([d]) and twiceMonthly ([d1, d2]). Absent when there is none.
-//   goalsDone:  {"<goalId>@<payday>": true}                    goals ticked "set aside for this paycheck" (keyed by goal and the payday it was
-//                                                                ticked for, so it wears off by itself when the next payday comes)
+//   a goal may also carry contributions: [{payday (ISO date of the check it came from, or null for extra money), amount (>= 0),
+//                 planned? (the amount asked for at the time), recordedAt (ISO date and time)}], newest last, at most 200. goal.saved includes them.
+//                 One per payday per goal. Once one exists for the current check, that goal is no longer set aside from the money you have
+//                 until the next payday. (The old goalsDone ticks are dropped on load; saved is never changed by that.)
+//                 Any goal may have createdAt and startSaved (the schedule it is measured against).
 //   balance:    {amount, asOf} (absent if none)     money you said you had, and when (ISO date and time)
 // Everything here is an estimate. It is a planning aid, not financial advice.
 import {
@@ -103,11 +106,81 @@ export function convertPaidKeys(paid, bills, profile) {
 export const hasOldPaidKeys = (budget) =>
   Object.keys((budget && budget.paidBills) || {}).some((k) => OLD_KEY.test(k));
 
-/* ---------- goals set aside for a paycheck ---------- */
-/** The key a "Set aside for this paycheck" tick is stored under: the goal and the payday it was ticked for. */
-export const goalKey = (goalId, paydayISO) => goalId + '@' + paydayISO;
-export const isGoalDone = (budget, goalId, paydayISO) =>
-  !!(budget.goalsDone && budget.goalsDone[goalKey(goalId, paydayISO)]);
+/* ---------- what you put toward a goal (contributions) ---------- */
+export const MAX_CONTRIBUTIONS = 200;
+export const contributionsOf = (goal) =>
+  goal && Array.isArray(goal.contributions) ? goal.contributions : [];
+/** The payday a contribution made today belongs to: the most recent payday on or before today, or the next payday if there is none yet. */
+export function recordPayday(profile, today = todayISO()) {
+  const np = paydayInfo(profile, today);
+  if (!Number.isFinite(np.periodIndex)) return np.date;
+  const d = addDays(periodRange(profile, np.periodIndex - 1).end, payDelayOf(profile));
+  return d <= today ? d : np.date;
+}
+/** Index of the contribution recorded for that payday, or -1. */
+export const contributionIndex = (goal, paydayISO) =>
+  paydayISO ? contributionsOf(goal).findIndex((c) => c.payday === paydayISO) : -1;
+/** True when an amount is recorded for this goal from that payday's check (it is then not set aside until the next payday). */
+export const isGoalDone = (goal, paydayISO) => contributionIndex(goal, paydayISO) >= 0;
+
+const setSaved = (goal, savedC) => {
+  goal.saved = fromCents(Math.max(0, savedC));
+};
+const amountOf = (v) => {
+  const raw = typeof v === 'string' ? v.trim() : v;
+  const n = raw === '' || raw === null || raw === undefined ? NaN : Number(raw);
+  return Number.isFinite(n) && n >= 0 ? toCents(n) : null;
+};
+/**
+ * Record what was put toward a goal. paydayISO is the check it came from, or null for extra money any time.
+ * One per payday: recording again for the same payday edits it, and saved moves by the difference.
+ * Returns {ok:false} for a bad or negative amount, else {ok:true, edited, index}.
+ */
+export function recordContribution(goal, paydayISO, amount, opts = {}) {
+  const amtC = amountOf(amount);
+  if (amtC === null) return { ok: false };
+  const list = (goal.contributions = contributionsOf(goal));
+  const at = contributionIndex(goal, paydayISO);
+  const when = opts.recordedAt || new Date().toISOString();
+  if (at >= 0) {
+    setSaved(goal, toCents(num(goal.saved)) - toCents(list[at].amount) + amtC);
+    list[at].amount = fromCents(amtC);
+    list[at].recordedAt = when;
+    return { ok: true, edited: true, index: at };
+  }
+  const entry = { payday: paydayISO || null, amount: fromCents(amtC) };
+  if (opts.planned !== undefined && opts.planned !== null) entry.planned = fromCents(cents(opts.planned));
+  entry.recordedAt = when;
+  list.push(entry);
+  while (list.length > MAX_CONTRIBUTIONS) list.shift();
+  setSaved(goal, toCents(num(goal.saved)) + amtC);
+  return { ok: true, edited: false, index: list.length - 1 };
+}
+/** Change one history entry's amount; saved moves by the difference. {ok:false} if the index or amount is bad. */
+export function editContribution(goal, index, amount) {
+  const list = contributionsOf(goal);
+  const amtC = amountOf(amount);
+  if (!list[index] || amtC === null) return { ok: false };
+  setSaved(goal, toCents(num(goal.saved)) - toCents(list[index].amount) + amtC);
+  list[index].amount = fromCents(amtC);
+  return { ok: true };
+}
+/** Remove one history entry; saved goes down by its amount. Returns what undo needs: {ok, entry, index, savedBefore}. */
+export function removeContribution(goal, index) {
+  const list = contributionsOf(goal);
+  if (!list[index]) return { ok: false };
+  const savedBefore = goal.saved;
+  const [entry] = list.splice(index, 1);
+  setSaved(goal, toCents(num(goal.saved)) - toCents(entry.amount));
+  if (!list.length) delete goal.contributions;
+  return { ok: true, entry, index, savedBefore };
+}
+/** Put a removed entry back exactly where it was, with saved as it was. */
+export function restoreContribution(goal, undo) {
+  const list = (goal.contributions = contributionsOf(goal));
+  list.splice(Math.min(undo.index, list.length), 0, undo.entry);
+  goal.saved = undo.savedBefore;
+}
 
 /* ---------- saved balance ---------- */
 /** Keeps a balance only if it has a real amount and a real date-time. */
@@ -177,11 +250,30 @@ export function migrateBudget(x, profile) {
     if (g.kind === 'purchase') {
       goal.kind = 'purchase';
       if (isDateStr(g.targetDate)) goal.targetDate = g.targetDate;
-      if (isDateStr(g.createdAt)) goal.createdAt = g.createdAt;
-      if (g.startSaved !== undefined && g.startSaved !== null && g.startSaved !== '')
-        goal.startSaved = money(g.startSaved);
       if (isDateStr(g.boughtAt)) goal.boughtAt = g.boughtAt;
     }
+    if (isDateStr(g.createdAt)) goal.createdAt = g.createdAt;
+    if (g.startSaved !== undefined && g.startSaved !== null && g.startSaved !== '')
+      goal.startSaved = money(g.startSaved);
+    // What was put toward it: bad dates and negative or unreadable amounts are dropped; one per payday; the newest MAX_CONTRIBUTIONS are kept.
+    const hist = [];
+    const seen = new Set();
+    list(g.contributions).forEach((c) => {
+      const amt = Number(c.amount);
+      if (!(c.payday === null || isDateStr(c.payday)) || !Number.isFinite(amt) || amt < 0) return;
+      if (c.payday) {
+        if (seen.has(c.payday)) return;
+        seen.add(c.payday);
+      }
+      const e = { payday: c.payday, amount: money(amt) };
+      const pl = Number(c.planned);
+      if (c.planned !== undefined && c.planned !== null && Number.isFinite(pl) && pl >= 0)
+        e.planned = money(pl);
+      const okAt = typeof c.recordedAt === 'string' && Number.isFinite(Date.parse(c.recordedAt));
+      e.recordedAt = okAt ? c.recordedAt : (c.payday || '1970-01-01') + 'T12:00:00.000Z';
+      hist.push(e);
+    });
+    if (hist.length) goal.contributions = hist.slice(-MAX_CONTRIBUTIONS);
     return goal;
   });
   out.spends = list(x.spends)
@@ -203,12 +295,7 @@ export function migrateBudget(x, profile) {
     });
     if (profile && hasOldPaidKeys(out)) out.paidBills = convertPaidKeys(out.paidBills, out.bills, profile);
   }
-  // Old data has no goalsDone: it stays valid (nothing ticked), and the field only appears once a tick exists. Keys look like "<goalId>@<YYYY-MM-DD>".
-  if (x.goalsDone && typeof x.goalsDone === 'object' && !Array.isArray(x.goalsDone)) {
-    Object.keys(x.goalsDone).forEach((k) => {
-      if (x.goalsDone[k] === true && /@\d{4}-\d{2}-\d{2}$/.test(k)) (out.goalsDone ||= {})[k] = true;
-    });
-  }
+  // Old "set aside for this paycheck" ticks (goalsDone) are dropped: they only meant "done for that payday", and saved is not changed.
   // Other income: a source with a bad frequency or date is dropped; everything else is cleaned. The field only appears once one exists.
   list(x.income).forEach((s, i) => {
     if (!INCOME_FREQS.includes(s.freq) || !isDateStr(s.nextDate)) return;
@@ -522,18 +609,44 @@ export const paychecksUntil = (profile, dateISO, today = todayISO()) =>
   Number.isFinite(parseISO(dateISO)) ? paydaysBetween(profile, today, dateISO).length : 0;
 
 /**
- * Where a big-purchase plan stands today. Everything is an estimate.
+ * The paychecks still available to put money from, oldest first, as dates. They are the paydays after today up to throughISO (or the first
+ * `max`), and the check you are in the middle of counts too (dated today) until something is recorded for it.
+ */
+function checkSlots(profile, today, throughISO, recorded, max = 1500) {
+  const rp = recordPayday(profile, today);
+  const upcoming = paydaysBetween(profile, today, throughISO, max + 1);
+  let slots;
+  if (rp <= today) slots = recorded ? upcoming : [today, ...upcoming];
+  else slots = recorded ? upcoming.slice(1) : upcoming;
+  return slots;
+}
+/** Paychecks that have arrived from when a goal was made up to today (the first one counts if it had already arrived when it was made). */
+function checksSince(profile, made, today) {
+  return (recordPayday(profile, made) <= made ? 1 : 0) + paydaysBetween(profile, made, today).length;
+}
+
+/**
+ * Where a goal (a plain savings goal or a big-purchase plan) stands today. Everything is an estimate.
+ * The check you are in (the most recent payday) counts as one of the paychecks left until something is recorded for it.
  * Mode "by a date" (targetDate): what is needed each paycheck is worked out again from what is still missing and the paychecks
- * still to come, so falling behind raises it and getting ahead lowers it. Mode "fixed" (no targetDate): perPaycheck stays as set.
+ * still to come, so falling behind raises it and getting ahead lowers it. Otherwise (no targetDate) perPaycheck stays as set and the
+ * ready-by date moves instead.
  * Returns {mode:'date'|'fixed', cost, saved, remaining, pct, ready, perPaycheck, paychecksLeft (null when it cannot be worked out),
- *  readyBy (date of the payday that finishes it, or null), noPaychecks (true when a dated plan has none left), elapsed (paydays since it was made),
- *  expected (saved you should have by now), behind (0 when on track), onTrack}
+ *  readyBy (date of the paycheck that finishes it, or null), noPaychecks (true when a dated plan has none left), elapsed (paychecks since it was made),
+ *  expected (saved you should have by now; only with createdAt), behind (0 when not behind), ahead (0 when not ahead), onTrack (false only when behind),
+ *  hasSchedule (createdAt known), payday (the current check), recorded (amount recorded for it or null),
+ *  perBefore (date plans: what was needed before this check was recorded, or null), perChange (perPaycheck - perBefore, cents-exact, or null),
+ *  readyByWas (when it was first planned to be ready, or null), shiftDays (readyBy - readyByWas in days, or null)}
  */
 export function purchasePlan(goal, profile, today = todayISO()) {
   const costC = cents(goal.target),
     savedC = cents(goal.saved);
   const remC = Math.max(0, costC - savedC);
   const dated = isDateStr(goal.targetDate);
+  const payday = recordPayday(profile, today);
+  const cur = contributionIndex(goal, payday);
+  const recorded = cur >= 0;
+  const curC = recorded ? cents(contributionsOf(goal)[cur].amount) : 0;
   const out = {
     mode: dated ? 'date' : 'fixed',
     cost: fromCents(costC),
@@ -548,7 +661,15 @@ export function purchasePlan(goal, profile, today = todayISO()) {
     elapsed: 0,
     expected: fromCents(savedC),
     behind: 0,
+    ahead: 0,
     onTrack: true,
+    hasSchedule: false,
+    payday,
+    recorded: recorded ? fromCents(curC) : null,
+    perBefore: null,
+    perChange: null,
+    readyByWas: null,
+    shiftDays: null,
   };
   if (remC === 0) {
     out.paychecksLeft = 0;
@@ -558,14 +679,21 @@ export function purchasePlan(goal, profile, today = todayISO()) {
   const startC = Math.min(costC, goal.startSaved === undefined ? savedC : cents(goal.startSaved));
   const made = isDateStr(goal.createdAt) ? goal.createdAt : null;
   if (dated) {
-    const days = paydaysBetween(profile, today, goal.targetDate);
-    const n = days.length;
+    const live = goal.targetDate > today;
+    const slots = live ? checkSlots(profile, today, goal.targetDate, recorded) : [];
+    const n = slots.length;
     out.paychecksLeft = n;
     out.noPaychecks = n === 0;
     out.perPaycheck = fromCents(n > 0 ? Math.ceil(remC / n) : remC);
-    out.readyBy = n > 0 ? days[n - 1] : null;
+    out.readyBy = n > 0 ? slots[n - 1] : null;
+    if (recorded && live) {
+      // What this paycheck would have been before the amount was recorded (same maths, one more check, the recorded money still to go).
+      const before = Math.ceil((remC + curC) / (n + 1));
+      out.perBefore = fromCents(before);
+      out.perChange = fromCents(toCents(out.perPaycheck) - before);
+    }
     if (made) {
-      const total = paydaysBetween(profile, made, goal.targetDate).length;
+      const total = checkSlots(profile, made, goal.targetDate, false, 1500).length;
       const need = Math.max(0, costC - startC);
       planC = total > 0 ? Math.ceil(need / total) : need;
     }
@@ -575,16 +703,29 @@ export function purchasePlan(goal, profile, today = todayISO()) {
     if (per > 0) {
       const n = Math.ceil(remC / per);
       out.paychecksLeft = n;
-      out.readyBy = paydaysBetween(profile, today, null, n)[n - 1] || null;
+      out.readyBy = checkSlots(profile, today, null, recorded, n)[n - 1] || null;
+      if (made) {
+        const n0 = Math.ceil(Math.max(0, costC - startC) / per);
+        if (n0 > 0) {
+          const was = checkSlots(profile, made, null, false, n0)[n0 - 1] || null;
+          if (was && out.readyBy) {
+            out.readyByWas = was;
+            out.shiftDays = dayDiff(was, out.readyBy);
+          }
+        }
+      }
     }
     planC = per;
   }
   if (made && planC != null) {
-    const elapsed = paydaysBetween(profile, made, today).length;
+    out.hasSchedule = true;
+    // Checks that have come since it was made. The one you are in is not expected yet while nothing is recorded for it.
+    const elapsed = Math.max(0, checksSince(profile, made, today) - (recorded ? 0 : 1));
     out.elapsed = elapsed;
     const expC = Math.min(costC, startC + elapsed * planC);
     out.expected = fromCents(expC);
     out.behind = fromCents(Math.max(0, expC - savedC));
+    out.ahead = fromCents(Math.max(0, savedC - expC));
     out.onTrack = expC - savedC <= 0;
   }
   return out;
@@ -601,7 +742,7 @@ export function planShare(perPaycheck, typicalCheck) {
 /* ---------- safe to spend ---------- */
 /**
  * Money to put toward goals this paycheck (never more than a goal still needs), in cents.
- * done: the goal is ticked "set aside for this paycheck" for this payday, so it is no longer taken out of the money you have now.
+ * done: an amount is recorded for the current check (payday), so it is no longer taken out of the money you have now.
  */
 function goalPieces(budget, payday, profile, today) {
   return (budget.goals || [])
@@ -609,7 +750,7 @@ function goalPieces(budget, payday, profile, today) {
     .map((g) => {
       const remC = Math.max(0, toCents(num(g.target)) - toCents(num(g.saved)));
       const per = isPlan(g) ? toCents(purchasePlan(g, profile, today).perPaycheck) : cents(g.perPaycheck);
-      return { id: g.id, name: g.name, amountC: Math.min(per, remC), done: isGoalDone(budget, g.id, payday) };
+      return { id: g.id, name: g.name, amountC: Math.min(per, remC), done: isGoalDone(g, payday) };
     });
 }
 
@@ -620,7 +761,7 @@ function goalPieces(budget, payday, profile, today) {
  * options.index: an indexNights() result to reuse.
  * Money from the check is NOT counted until payday. Category money is set aside by the day: for each month the days until
  * payday touch, min(what is left of that month's allowance, monthly / days in that month x the days in the window in that month).
- * Goals ticked done for this payday (isGoalDone) are not subtracted from the money you have now; the next paycheck still counts them.
+ * Goals with an amount recorded for the current check (isGoalDone) are not subtracted from the money you have now; the next paycheck still counts them.
  * Paid bills are looked up by paidKey(bill id, due date).
  * Returns {payday, daysAway, income:{source:'entered'|'balance'|'cash', amount, cash, spent (logged since the balance / this period; 0 for 'entered')}, bills:[...], billsTotal,
  *  goals:[{id,name,amount (0 once done),due (full amount),done}], goalsTotal (goals not done only), categories:[{id,name,remaining,reserved}], categoriesTotal,
@@ -661,7 +802,7 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
   const bills = unpaid(lastPayday(profile, today), addDays(payday, -1));
   const billsC = sumC(bills, (b) => toCents(num(b.amount)));
 
-  const goals = goalPieces(budget, payday, profile, today);
+  const goals = goalPieces(budget, recordPayday(profile, today), profile, today);
   const goalsAllC = sumC(goals, (g) => g.amountC); // what the next paycheck sets aside
   const goalsC = sumC(
     goals.filter((g) => !g.done),

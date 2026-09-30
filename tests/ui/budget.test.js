@@ -1,7 +1,7 @@
 import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { boot, realState } from './harness.js';
-import { exampleBudget, safeToSpend, goalKey, paydayInfo } from '../../app/js/budget.js';
+import { exampleBudget, safeToSpend, recordPayday } from '../../app/js/budget.js';
 import { addDays, todayISO } from '../../app/js/math.js';
 import { flush } from '../../app/js/storage.js';
 
@@ -132,6 +132,10 @@ test('budget: has a page heading, and the goal Amount field uses the app field s
     assert.equal(page.$('h1', page.app).textContent, 'Budget');
     const amount = page.$('input[aria-label="Amount to add to Emergency fund"]');
     assert.ok(amount.classList.contains('input'), 'uses the shared .input style (44 px tall)');
+    assert.ok(
+      page.$('input.input[aria-label^="Amount saved for Emergency fund from the"]'),
+      'the check amount field too',
+    );
   } finally {
     await page.close();
   }
@@ -174,7 +178,7 @@ test('budget: month end sets aside a day-based allowance and explains it', async
   }
 });
 
-test('budget: the goal tick stops the goal coming out of your money, and Add to saved does the same', async () => {
+test('budget: recording what you put toward a goal stops it coming out of your money; extra money does not', async () => {
   const page = await boot({
     url: DEV,
     seed: realState((S) => {
@@ -188,27 +192,28 @@ test('budget: the goal tick stops the goal coming out of your money, and Add to 
   });
   try {
     page.tab('budget');
-    const payday = paydayInfo(page.state().profile, todayISO()).date;
-    const tick = () => page.$('input[data-focus-key="goal-done-g1"]');
-    assert.equal(tick().checked, false);
+    const payday = recordPayday(page.state().profile, todayISO());
+    const field = () => page.$('input[data-focus-key="goal-rec-g1"]');
     assert.equal(safeToSpend(page.state().budget, page.state().profile, [], todayISO()).goalsTotal, 40);
-    page.click(tick());
-    assert.equal(page.state().budget.goalsDone[goalKey('g1', payday)], true);
+    page.type(field(), '25');
+    page.click(page.$('button[data-focus-key="goal-rec-save-g1"]'));
+    const g = () => page.state().budget.goals[0];
+    assert.equal(g().saved, 25);
+    assert.equal(g().contributions[0].payday, payday);
+    assert.equal(g().contributions[0].planned, 40);
     assert.equal(safeToSpend(page.state().budget, page.state().profile, [], todayISO()).goalsTotal, 0);
-    assert.equal(tick().checked, true);
     await flush();
     assert.equal(
-      JSON.parse(page.win.localStorage.getItem('tipnet.v2')).budget.goalsDone[goalKey('g1', payday)],
-      true,
+      JSON.parse(page.win.localStorage.getItem('tipnet.v2')).budget.goals[0].contributions[0].amount,
+      25,
       'saved to storage',
     );
-    page.click(tick()); // untick
-    assert.equal(page.state().budget.goalsDone[goalKey('g1', payday)], undefined);
-    // Add to saved ticks it too
+    // Extra money adds to saved but is not for this check
     page.type(page.$('input[data-focus-key="goal-add-g1"]'), '40');
     page.click(page.button('Add to saved'));
-    assert.equal(page.state().budget.goals[0].saved, 40);
-    assert.equal(page.state().budget.goalsDone[goalKey('g1', payday)], true);
+    assert.equal(g().saved, 65);
+    assert.equal(g().contributions[1].payday, null);
+    assert.equal(g().contributions.length, 2);
   } finally {
     await page.close();
   }

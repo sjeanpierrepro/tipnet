@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { boot, realState } from './harness.js';
-import { exampleBudget, goalKey, paydayInfo, safeToSpend } from '../../app/js/budget.js';
+import { exampleBudget, recordPayday, safeToSpend } from '../../app/js/budget.js';
 import { addDays, todayISO } from '../../app/js/math.js';
 
 const DEV = 'http://localhost/?unlock=dev';
@@ -63,7 +63,7 @@ test('plans: create one by a date, with the numbers shown in plain words', async
     assert.ok(row);
     assert.match(page.text(row), /On track/);
     assert.match(page.text(row), /\$400\.00 saved of \$2,400\.00/);
-    assert.match(page.text(row), /paychecks left/);
+    assert.match(page.text(row), /a paycheck for [0-9]+ paychecks/);
     assert.ok(page.$('[aria-label="Car down payment progress"]', row), 'progress bar named for the plan');
     assert.ok(page.byLabel('Edit plan Car down payment'));
     assert.ok(page.byLabel('Delete plan Car down payment'));
@@ -113,7 +113,7 @@ test('plans: the realism line compares to a typical check, and a big share gets 
   }
 });
 
-test('plans: the set-aside tick and Add to saved work, and safe to spend counts the plan until ticked', async () => {
+test('plans: the amount entry and Add to saved work, and safe to spend counts the plan until an amount is recorded', async () => {
   const page = await boot({
     url: DEV,
     seed: seed([plan({ targetDate: addDays(todayISO(), 100) })]),
@@ -121,12 +121,13 @@ test('plans: the set-aside tick and Add to saved work, and safe to spend counts 
   try {
     page.tab('budget');
     const S = page.state();
-    const payday = paydayInfo(S.profile, todayISO()).date;
+    const payday = recordPayday(S.profile, todayISO());
     const due = safeToSpend(S.budget, S.profile, [], todayISO()).goalsTotal;
     assert.ok(due > 0);
-    page.click(key(page, 'goal-done-p1'));
-    assert.equal(page.state().budget.goalsDone[goalKey('p1', payday)], true);
-    assert.equal(safeToSpend(S.budget, S.profile, [], todayISO()).goalsTotal, 0);
+    page.type(key(page, 'goal-rec-p1'), '0');
+    page.click(key(page, 'goal-rec-save-p1'));
+    assert.equal(page.state().budget.goals[0].contributions[0].payday, payday);
+    assert.equal(safeToSpend(page.state().budget, page.state().profile, [], todayISO()).goalsTotal, 0);
     page.type(key(page, 'goal-add-p1'), '300');
     page.click(page.button('Add to saved'));
     assert.equal(page.state().budget.goals[0].saved, 300);
