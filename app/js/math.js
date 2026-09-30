@@ -267,6 +267,16 @@ export function payAmount(night, t, i) {
 export function basePay(night, p) {
   return basePayWith(night, termsOf(night, p, 1));
 }
+/**
+ * Tips-only entry: the stored total for a night where `tips` (cash + card) was typed. Adds the hourly and per-shift pay for
+ * the night's amounts (its snapshot's rates when it has one), rounded to cents exactly as computeNight rounds base pay.
+ * Flat "(on top)" amounts are not part of total, as always.
+ */
+export const totalFromTips = (tips, night, p) =>
+  fromCents(toCents(num(tips)) + toCents(basePay(night, p).pay));
+/** The reverse: the tips inside a stored night's total (can be below 0 for an old night typed below its hourly pay). */
+export const tipsFromTotal = (night, p) =>
+  fromCents(toCents(num(night.total)) - toCents(basePay(night, p).pay));
 function basePayWith(night, T) {
   let pay = 0,
     hours = 0,

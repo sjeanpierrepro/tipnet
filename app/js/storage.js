@@ -11,13 +11,18 @@ const STORE = 'kv';
 const STATE_KEY = 'state';
 
 /* ---------- state shape ---------- */
-/** settings: {theme:'auto'|'light'|'dark', lastTab, csvMapping, setupDone, entitlement?}. budget: see budget.js */
+/**
+ * settings: {theme:'auto'|'light'|'dark', lastTab, csvMapping, setupDone, guideSkipped?, noDeductions?, entitlement?}. budget: see budget.js
+ * profile.entryMode: 'tips' (the number typed each night is cash + card tips; TipNet adds the hourly/per-shift pay) or
+ * 'total' (tips plus that pay). Either way a stored night's `total` is everything made, so the math never reads entryMode.
+ */
+export const ENTRY_MODES = ['tips', 'total'];
 export function seedState() {
   return {
     schemaVersion: SCHEMA_VERSION,
     profileExample: true,
     nightsExample: true,
-    profile: exampleProfile(),
+    profile: { ...exampleProfile(), entryMode: 'tips' },
     nights: exampleNights(),
     calib: [],
     budget: emptyBudget(),
@@ -187,6 +192,8 @@ function cleanSettings(x) {
     out.csvMapping = m;
   }
   if (s.setupDone !== undefined) out.setupDone = !!s.setupDone;
+  if (s.guideSkipped === true) out.guideSkipped = true; // "Skip guided setup": the full Setup page, not set up until the basics are in
+  if (s.noDeductions === true) out.noDeductions = true; // "My paystub has no deductions", ticked on the full Setup page
   // "Late nights" rule: shifts logged before this hour count as the night before (0 = off). Kept only when it's a whole hour 0-12.
   if (Number.isInteger(s.dayCutoffHour) && s.dayCutoffHour >= 0 && s.dayCutoffHour <= 12)
     out.dayCutoffHour = s.dayCutoffHour;
@@ -278,6 +285,13 @@ function migrateUnsafe(input) {
     basis: text(to.basis, 'before') || 'before',
     from: text(to.from, 'cash') || 'cash',
   };
+  // Existing users keep the meaning of their nightly number: anyone with real nights or their own profile typed totals.
+  const realNights = !S.nightsExample && rawNights.length > 0;
+  out.entryMode = ENTRY_MODES.includes(p.entryMode)
+    ? p.entryMode
+    : realNights || !S.profileExample
+      ? 'total'
+      : 'tips';
   const nights = lockFinishedNights(out, cleanNights(rawNights)).nights;
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -289,6 +303,33 @@ function migrateUnsafe(input) {
     budget: migrateBudget(S.budget, out), // old states and old backup codes have none: they get an empty budget; the profile converts old "Paid" ticks
     settings: cleanSettings(S.settings),
   };
+}
+
+/* ---------- set up or not ---------- */
+/** Real nights: saved by the user (or imported / restored), not the example ones. */
+export const hasRealNights = (S) => !!S && !S.nightsExample && Array.isArray(S.nights) && S.nights.length > 0;
+/** The paystub basics an estimate needs: gross pay, a main rate, and a deduction (or "no deductions" ticked). */
+export function hasBasics(p, settings) {
+  if (!p) return false;
+  const main = (p.payTypes || [])[0];
+  return (
+    num(p.gross) > 0 &&
+    !!main &&
+    num(main.rate) > 0 &&
+    ((p.deductions || []).some((d) => num(d.amount) > 0) || !!(settings && settings.noDeductions))
+  );
+}
+/**
+ * Set up = TipNet can estimate this person's real take-home: they have real nights (saved, imported or restored),
+ * or finished the guided setup, or (after "Skip guided setup", or a restored code without that flag) entered the
+ * paystub basics themselves. The example paystub never counts, so no night is ever saved against example taxes.
+ */
+export function isSetUp(S) {
+  if (!S || !S.profile) return false;
+  if (hasRealNights(S)) return true;
+  if (S.profileExample) return false;
+  if (S.settings && S.settings.setupDone) return true;
+  return hasBasics(S.profile, S.settings);
 }
 
 /* ---------- backup codes: base64 of the JSON state, UTF-8 safe ---------- */

@@ -28,10 +28,10 @@ export function businessDate(now = new Date(), cutoffHour = DEFAULT_CUTOFF_HOUR)
 }
 
 /**
- * Check the optional cash amount against tonight's total.
+ * Check the optional cash amount against tonight's total (tips: true when the box holds only the tips, in tips mode).
  * Returns {status: 'none'|'ok'|'negative'|'over', message}. Only 'ok' cash is used for the check split and saved.
  */
-export function checkCash(totalStr, cashStr) {
+export function checkCash(totalStr, cashStr, { tips = false } = {}) {
   const raw = String(cashStr == null ? '' : cashStr).replace(/[^0-9.-]/g, '');
   if (raw === '' || raw === '-' || raw === '.') return { status: 'none', message: '' };
   const cash = parseFloat(raw);
@@ -45,7 +45,9 @@ export function checkCash(totalStr, cashStr) {
   if (Number.isFinite(total) && total > 0 && cash > total + 0.005) {
     return {
       status: 'over',
-      message: 'Cash is more than what you made tonight. Check the number. The cash amount won’t be saved.',
+      message: tips
+        ? 'Cash is more than the tips you entered. Check the number. The cash amount won’t be saved.'
+        : 'Cash is more than what you made tonight. Check the number. The cash amount won’t be saved.',
     };
   }
   return { status: 'ok', message: '' };
