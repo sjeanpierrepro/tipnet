@@ -11,7 +11,9 @@ import {
   periodRange,
   shiftsPerPeriod,
   exampleProfile,
-  PAY_PRESETS,
+  JOB_PRESETS,
+  OTHER_PAY_PRESETS,
+  payKind,
   DEDUCTION_PRESETS,
   findPayPreset,
   findDeductionPreset,
@@ -56,6 +58,40 @@ export function reset() {
   noDeductions = false;
   restoreRequest.open = false;
 }
+/**
+ * The guided flow is kept in the saved state (settings.guidedDraft = {step, noDeductions, profile?}), so a reload in the
+ * middle of setup comes back to the same step with what was typed. profile is the blank copy being filled in (only while
+ * the real profile is still the example). Cleared by Finish and Skip.
+ */
+function keepGuided(S) {
+  if (!guidedActive) return;
+  const g = { step: guidedStep };
+  if (noDeductions) g.noDeductions = true;
+  if (gProfile) g.profile = gProfile;
+  S.settings.guidedDraft = g;
+  save();
+}
+/** After a reload: pick the guided flow up where it was. */
+function resumeGuided(S) {
+  const g = S.settings && S.settings.guidedDraft;
+  if (guidedActive || gProfile || !g || typeof g !== 'object' || isSetUp(S) || S.settings.guideSkipped)
+    return;
+  guidedActive = true;
+  guidedStep = [0, 1, 2].includes(g.step) ? g.step : 0;
+  noDeductions = g.noDeductions === true;
+  const gp = g.profile;
+  if (
+    S.profileExample &&
+    gp &&
+    typeof gp === 'object' &&
+    Array.isArray(gp.payTypes) &&
+    gp.payTypes.length &&
+    Array.isArray(gp.deductions) &&
+    gp.tipout &&
+    typeof gp.tipout === 'object'
+  )
+    gProfile = gp;
+}
 
 function blankProfile() {
   const b = exampleProfile();
@@ -66,6 +102,8 @@ function blankProfile() {
   b.deductions.forEach((d) => {
     d.amount = 0;
   });
+  // Just the main job to start; "+ Add a job" adds the others.
+  b.payTypes = b.payTypes.slice(0, 1);
   b.payTypes.forEach((t) => {
     t.rate = 0;
     t.usual = 0;
@@ -86,8 +124,8 @@ function focusNear(host, at, addId) {
   if (t) t.focus();
 }
 
-/** Grouped <select> for presets. */
-function presetSelect(presets, current, id) {
+/** Grouped <select> for presets. A key not in the list shows as `fallback`. */
+function presetSelect(presets, current, id, fallback = 'other') {
   const s = el('select', { id });
   const groups = [];
   presets.forEach((pr) => {
@@ -108,7 +146,7 @@ function presetSelect(presets, current, id) {
     ),
   );
   s.value = current;
-  if (s.value !== current) s.value = 'other';
+  if (s.value !== current) s.value = fallback;
   return s;
 }
 
@@ -138,8 +176,9 @@ function makeCtx(blank = false) {
     touch(resetRate) {
       if (blank) {
         live.forEach((f) => f());
+        keepGuided(S); // guided on the example: only the draft is saved until Finish
         return;
-      } // guided on the example: nothing is saved until Finish
+      }
       S.profileExample = false;
       if (resetRate) S.profile.rateOverride = null;
       saved.textContent = 'Saving…';
@@ -541,8 +580,10 @@ function dedCard(ctx) {
   noDed.checked = ctx.blank ? noDeductions : !!S.settings.noDeductions;
   const dedErr = el('p', { class: 'field-error', hidden: true, role: 'alert' });
   noDed.addEventListener('change', () => {
-    if (ctx.blank) noDeductions = noDed.checked;
-    else {
+    if (ctx.blank) {
+      noDeductions = noDed.checked;
+      keepGuided(S);
+    } else {
       if (noDed.checked) S.settings.noDeductions = true;
       else delete S.settings.noDeductions;
       ctx.touch(false);
@@ -619,154 +660,237 @@ function entryModeField(ctx) {
   );
 }
 
+/** Job presets whose row needs its own name (a general or "other" kind has no telling name of its own). */
+const NAMED_JOB_KEYS = ['otherjob', 'other', 'hourly', 'shift'];
+
+/**
+ * "Your jobs and pay": one row per job (preset, name when needed, rate, per hour/per shift). The first job is the main
+ * job (preselected on Tonight, can't be removed). Below, "Other pay" keeps the extra kinds: overtime, holiday,
+ * differential, PTO (per hour) and flat amounts on top. Rows are sorted by payKind(), so nothing is stored to say which
+ * is which, and old profiles show up where they belong.
+ */
 function payCard(ctx) {
   const { p, ph } = ctx;
   const phOf = (t) => (ph ? ph.payTypes.find((x) => x.id === t.id) : null);
   const rateFields = [];
-  const host = el('div', { class: 'stack' });
-  const draw = () => {
-    clear(host);
-    rateFields.length = 0;
-    p.payTypes.forEach((t, i) => {
-      const preset = findPayPreset(t.k);
-      const sel = presetSelect(PAY_PRESETS, t.k, 'pk-' + t.id);
-      const nm = el('input', {
-        type: 'text',
-        value: t.name || '',
-        placeholder: 'What your stub calls it',
-        autocomplete: 'off',
-        id: 'pn-' + t.id,
-      });
-      const unit = select(
-        [
-          ['hr', 'Per hour'],
-          ['shift', 'Per shift'],
-        ].concat(i === 0 ? [] : [['amt', 'Flat amount']]),
-        t.unit,
-        { id: 'pu-' + t.id },
-      );
-      const kids = [
-        el('div', { style: 'grid-column:1/-1' }, field(i === 0 ? 'Main pay type' : 'Pay type', sel)),
-        el('div', { style: 'grid-column:1/-1' }, field('Name', nm)),
-      ];
-      const grid = [];
-      if (t.unit !== 'amt') {
-        const rt = moneyInput({
-          value: t.rate ? String(t.rate) : '',
-          placeholder: phOf(t) && phOf(t).rate ? eg(phOf(t).rate) : '0.00',
-          id: 'pr-' + t.id,
-        });
-        const fr = field('Rate ($)', rt);
-        const us = moneyInput({
-          value: t.usual ? String(t.usual) : '',
-          placeholder: phOf(t) && phOf(t).usual ? eg(phOf(t).usual) : '0',
-          id: 'pq-' + t.id,
-        });
-        const flabel = i === 0 ? 'Usual per night' : 'Default per night';
-        rt.addEventListener('input', () => {
-          t.rate = numOf(rt.value);
-          fr.setError(i === 0 && t.rate <= 0 ? 'Enter the rate from your stub.' : '');
-          ctx.touch(false);
-        });
-        us.addEventListener('input', () => {
-          t.usual = numOf(us.value);
-          ctx.touch(false);
-        });
-        if (i === 0 && !(t.rate > 0) && !ctx.blank) fr.setError('Enter the rate from your stub.');
-        if (i === 0) rateFields.push({ fr, rt });
-        grid.push(fr, field(flabel, us));
-      } else {
-        kids.push(
-          el(
-            'p',
-            { class: 'hint', style: 'grid-column:1/-1;margin:0' },
-            'You type the dollar amount on the night it applies. Flat amounts are added on top of what you made.',
-          ),
-        );
-      }
-      kids.push(el('div', { class: 'grid-2', style: 'grid-column:1/-1' }, field('Paid', unit), ...grid));
-      if (preset && preset.notes)
-        kids.push(el('p', { class: 'hint', style: 'grid-column:1/-1;margin:0' }, preset.notes));
-      if (i > 0) {
-        const rm = el(
-          'button',
-          {
-            type: 'button',
-            class: 'btn btn-secondary btn-small',
-            'aria-label': 'Remove ' + (t.name || 'pay type'),
-          },
-          'Remove',
-        );
-        rm.addEventListener('click', () => {
-          const at = p.payTypes.indexOf(t);
-          p.payTypes = p.payTypes.filter((x) => x !== t);
+  const jobsHost = el('div', { class: 'stack' });
+  const otherHost = el('div', { class: 'stack' });
+  const mainRate = () => num(p.payTypes[0] && p.payTypes[0].rate);
+  const refocus = (id) => {
+    const f = document.getElementById(id);
+    if (f) f.focus();
+  };
+
+  const removeButton = (t, i, host, addId, what) => {
+    const rm = el(
+      'button',
+      {
+        type: 'button',
+        class: 'btn btn-secondary btn-small',
+        'aria-label': 'Remove ' + (t.name || what),
+      },
+      'Remove',
+    );
+    rm.addEventListener('click', () => {
+      const at = p.payTypes.indexOf(t);
+      const near = Array.from(host.querySelectorAll('button[aria-label^="Remove"]')).indexOf(rm);
+      p.payTypes = p.payTypes.filter((x) => x !== t);
+      ctx.touch(false);
+      draw();
+      focusNear(host, Math.max(0, near - 1), addId);
+      toast('Removed ' + (t.name || what) + '.', {
+        undo: () => {
+          if (p.payTypes.includes(t)) return;
+          p.payTypes.splice(Math.min(at, p.payTypes.length), 0, t);
           ctx.touch(false);
           draw();
-          focusNear(host, i - 1, 'pt-add');
-          toast('Removed ' + (t.name || 'pay type') + '.', {
-            undo: () => {
-              if (p.payTypes.includes(t)) return;
-              p.payTypes.splice(Math.min(at, p.payTypes.length), 0, t);
-              ctx.touch(false);
-              draw();
-              focusNear(host, i - 1, 'pt-add');
-            },
-          });
-        });
-        kids.push(el('div', { style: 'grid-column:1/-1' }, rm));
-      }
-      sel.addEventListener('change', () => {
-        p.payTypes[i] = applyPayPreset(t, sel.value, i > 0 ? p.payTypes[0].rate : 0);
-        if (i === 0 && p.payTypes[0].unit === 'amt') p.payTypes[0].unit = 'hr'; // the main type is never a flat amount
-        ctx.touch(false);
-        draw();
-        const f = document.getElementById('pk-' + t.id);
-        if (f) f.focus();
+          focusNear(host, Math.max(0, near - 1), addId);
+        },
       });
-      nm.addEventListener('input', () => {
-        t.name = nm.value;
-        ctx.touch(false);
-      });
-      unit.addEventListener('change', () => {
-        t.unit = unit.value;
-        if (t.unit === 'amt') {
-          t.rate = 0;
-          t.usual = 0;
-        }
-        ctx.touch(false);
-        draw();
-        const f = document.getElementById('pu-' + t.id);
-        if (f) f.focus();
-      });
-      host.append(el('div', { class: 'repeat-row', style: 'grid-template-columns:minmax(0,1fr)' }, kids));
     });
+    return el('div', { style: 'grid-column:1/-1' }, rm);
   };
-  draw();
-  const add = el(
+
+  const rateField = (t, i, label) => {
+    const rt = moneyInput({
+      value: t.rate ? String(t.rate) : '',
+      placeholder: phOf(t) && phOf(t).rate ? eg(phOf(t).rate) : '0.00',
+      id: 'pr-' + t.id,
+    });
+    const fr = field(label, rt);
+    rt.addEventListener('input', () => {
+      const was = num(t.rate);
+      t.rate = numOf(rt.value);
+      if (i === 0) {
+        fr.setError(t.rate <= 0 ? 'Enter the rate from your stub.' : '');
+        // Overtime follows the main job (1.5x) while it still matches the old main rate or is empty.
+        p.payTypes.forEach((o) => {
+          if (o.k !== 'ot' || !(num(o.rate) === 0 || Math.abs(num(o.rate) - was * 1.5) < 0.006)) return;
+          o.rate = +(t.rate * 1.5).toFixed(2);
+          const box = document.getElementById('pr-' + o.id);
+          if (box) box.value = o.rate ? String(o.rate) : '';
+        });
+      }
+      ctx.touch(false);
+    });
+    if (i === 0 && !(t.rate > 0) && !ctx.blank) fr.setError('Enter the rate from your stub.');
+    if (i === 0) rateFields.push({ fr, rt });
+    return fr;
+  };
+
+  const nameField = (t, label, placeholder) => {
+    const nm = el('input', {
+      type: 'text',
+      value: t.name || '',
+      placeholder,
+      autocomplete: 'off',
+      id: 'pn-' + t.id,
+    });
+    nm.addEventListener('input', () => {
+      t.name = nm.value;
+      ctx.touch(false);
+    });
+    return el('div', { style: 'grid-column:1/-1' }, field(label, nm));
+  };
+
+  const jobRow = (t, i) => {
+    const main = i === 0;
+    const preset = findPayPreset(t.k);
+    const sel = presetSelect(JOB_PRESETS, t.k, 'pk-' + t.id, 'otherjob');
+    const kids = [el('div', { style: 'grid-column:1/-1' }, field(main ? 'Main job' : 'Job', sel))];
+    const showName = NAMED_JOB_KEYS.includes(sel.value) || !preset || (!!t.name && t.name !== preset.name);
+    if (showName) kids.push(nameField(t, 'Job name', 'e.g. Cook'));
+    const unit = select(
+      [
+        ['hr', 'Per hour'],
+        ['shift', 'Per shift'],
+      ],
+      t.unit === 'shift' ? 'shift' : 'hr',
+      { id: 'pu-' + t.id },
+    );
+    kids.push(
+      el(
+        'div',
+        { class: 'grid-2', style: 'grid-column:1/-1' },
+        rateField(t, i, 'Rate ($)'),
+        field('Paid', unit),
+      ),
+    );
+    if (main)
+      kids.push(
+        el(
+          'p',
+          { class: 'hint', style: 'grid-column:1/-1;margin:0' },
+          'Your main job is picked for you on Tonight. You can switch it there on nights you work something else.',
+        ),
+      );
+    else kids.push(removeButton(t, i, jobsHost, 'pt-add', 'job'));
+    sel.addEventListener('change', () => {
+      p.payTypes[i] = applyPayPreset(t, sel.value, mainRate());
+      ctx.touch(false);
+      draw();
+      refocus('pk-' + t.id);
+    });
+    unit.addEventListener('change', () => {
+      t.unit = unit.value;
+      ctx.touch(false);
+      draw();
+      refocus('pu-' + t.id);
+    });
+    return el('div', { class: 'repeat-row', style: 'grid-template-columns:minmax(0,1fr)' }, kids);
+  };
+
+  const otherRow = (t, i) => {
+    const preset = findPayPreset(t.k);
+    const sel = presetSelect(OTHER_PAY_PRESETS, t.k, 'pk-' + t.id, 'other');
+    const kids = [el('div', { style: 'grid-column:1/-1' }, field('Other pay', sel))];
+    if (sel.value === 'other' || !preset) kids.push(nameField(t, 'Name', 'What your stub calls it'));
+    if (t.unit !== 'amt')
+      kids.push(
+        el(
+          'div',
+          { class: 'grid-2', style: 'grid-column:1/-1' },
+          rateField(t, i, t.unit === 'shift' ? 'Rate per shift ($)' : 'Rate per hour ($)'),
+        ),
+      );
+    else
+      kids.push(
+        el(
+          'p',
+          { class: 'hint', style: 'grid-column:1/-1;margin:0' },
+          'You type the dollar amount on the night it applies (Tonight, “+ Add other pay”). It is added on top of what you made.',
+        ),
+      );
+    if (preset && preset.notes)
+      kids.push(el('p', { class: 'hint', style: 'grid-column:1/-1;margin:0' }, preset.notes));
+    kids.push(removeButton(t, i, otherHost, 'op-add', 'other pay'));
+    sel.addEventListener('change', () => {
+      p.payTypes[i] = applyPayPreset(t, sel.value, mainRate());
+      ctx.touch(false);
+      draw();
+      refocus('pk-' + t.id);
+    });
+    return el('div', { class: 'repeat-row', style: 'grid-template-columns:minmax(0,1fr)' }, kids);
+  };
+
+  const addJob = el(
     'button',
     { type: 'button', class: 'btn btn-secondary btn-small', id: 'pt-add' },
-    '+ Add pay type',
+    '+ Add a job',
   );
-  add.addEventListener('click', () => {
+  addJob.addEventListener('click', () => {
     const id = 'p' + Date.now();
-    p.payTypes.push({ id, k: 'other', name: '', rate: 0, unit: 'hr', usual: 0 });
+    p.payTypes.push({ id, k: 'otherjob', name: '', rate: 0, unit: 'hr', usual: 0 });
     ctx.touch(false);
     draw();
-    const f = document.getElementById('pk-' + id);
-    if (f) f.focus();
+    refocus('pk-' + id);
   });
+  const addOther = el(
+    'button',
+    { type: 'button', class: 'btn btn-secondary btn-small', id: 'op-add' },
+    '+ Add other pay',
+  );
+  addOther.addEventListener('click', () => {
+    const id = 'p' + Date.now();
+    p.payTypes.push(applyPayPreset({ id, rate: 0, usual: 0 }, 'ot', mainRate()));
+    ctx.touch(false);
+    draw();
+    refocus('pk-' + id);
+  });
+
+  const draw = () => {
+    clear(jobsHost);
+    clear(otherHost);
+    rateFields.length = 0;
+    p.payTypes.forEach((t, i) => {
+      if (payKind(t, i) === 'job') jobsHost.append(jobRow(t, i));
+      else otherHost.append(otherRow(t, i));
+    });
+    if (!otherHost.firstChild)
+      otherHost.append(el('p', { class: 'hint', id: 'op-none' }, 'No other pay yet.'));
+  };
+  draw();
   const card = el(
     'section',
     { class: 'card stack' },
-    el('h2', null, 'Rates of pay'),
+    el('h2', null, 'Your jobs and pay'),
     el(
       'p',
       { class: 'note' },
-      'Add a row for each kind of pay on your stub. The first row is your main rate and fills in on every night automatically. Flat amounts, like a bonus, are added on top.',
+      'Add every job you do where you work and what it pays. On Tonight you pick the job and type your hours; the rate fills in by itself.',
     ),
     entryModeField(ctx),
-    host,
-    el('div', null, add),
+    el('h3', null, 'Jobs'),
+    jobsHost,
+    el('div', null, addJob),
+    el('h3', null, 'Other pay'),
+    el(
+      'p',
+      { class: 'hint' },
+      'Extra pay on top of a job, like overtime, holiday pay or a bonus. On Tonight it stays out of the way until you tap “+ Add other pay”.',
+    ),
+    otherHost,
+    el('div', null, addOther),
   );
   card.validate = () => {
     const main = p.payTypes[0];
@@ -973,6 +1097,7 @@ function guided(root, ctx) {
             class: 'btn btn-secondary',
             onclick: () => {
               guidedStep--;
+              keepGuided(S);
               bus.rerender();
               window.scrollTo(0, 0);
             },
@@ -990,6 +1115,7 @@ function guided(root, ctx) {
     }
     if (guidedStep < 2) {
       guidedStep++;
+      keepGuided(S);
       bus.rerender();
       window.scrollTo(0, 0);
       return;
@@ -1013,6 +1139,7 @@ function guided(root, ctx) {
     noDeductions = false;
     S.settings.setupDone = true;
     delete S.settings.guideSkipped;
+    delete S.settings.guidedDraft;
     S.profileExample = false;
     guidedActive = false;
     save();
@@ -1041,6 +1168,7 @@ function guided(root, ctx) {
         }
         if (noDeductions) S.settings.noDeductions = true;
         S.settings.guideSkipped = true;
+        delete S.settings.guidedDraft;
         guidedActive = false;
         gProfile = null;
         noDeductions = false;
@@ -1152,6 +1280,7 @@ function notReadyNote(ctx) {
 /* ============ full setup ============ */
 export function render(root) {
   const S0 = getState();
+  resumeGuided(S0);
   if (gProfile && !S0.profileExample) gProfile = null;
   // The guided flow is for anyone not set up yet, unless they chose "Skip guided setup".
   const inGuided = !isSetUp(S0) && !S0.settings.guideSkipped && (S0.profileExample || guidedActive);

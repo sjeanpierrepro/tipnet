@@ -11,8 +11,11 @@ import {
   snapshotFor,
   periodRange,
   totalFromTips,
+  hasTips,
+  round2,
   num,
 } from '../math.js';
+import { businessDate, cutoffFromSettings } from '../inputs.js';
 import { isSetUp } from '../storage.js';
 import {
   el,
@@ -34,7 +37,15 @@ import {
   getState,
   keepFocus,
 } from './common.js';
-import { nightFields, draftFromNight, storedNight, tipsMode, entryProblem } from './tonight.js';
+import {
+  nightFields,
+  draftFromNight,
+  storedNight,
+  tipsMode,
+  entryCheck,
+  showEntryProblem,
+  jobsText,
+} from './tonight.js';
 
 /** Pay periods shown at first; "Show older" adds this many more each time. */
 export const PAGE = 6;
@@ -59,7 +70,10 @@ export function reset() {
 }
 
 function nightSub(n, c, p) {
-  const bits = ['made ' + money(c.total)];
+  const bits = [];
+  const worked = jobsText(n, p);
+  if (worked) bits.push(worked);
+  bits.push('made ' + money(c.total));
   if (tipsMode(p)) bits.push('tips ' + money(c.tips));
   if (c.tipout) bits.push(money(c.tipout) + ' tip-out');
   else if ((n.snap ? n.snap.tipout.on : p.tipout.on) && !n.barback) bits.push('no barback');
@@ -129,11 +143,16 @@ function editor(S, n) {
       });
       out.snap = n.snap;
     } else if (n.snap && recalc) out.snap = snapshotFor(p, shiftsFor(out.date));
-    if (tipsMode(p)) {
+    // Tips and hours untouched and no recalculation: the stored total (and typed tips) stay exactly as they were.
+    const untouched = !recalc && JSON.stringify([d.total, d.pay]) === typedAtOpen;
+    if (untouched && (tipsMode(p) || hasTips(n))) {
+      out.total = num(n.total);
+      if (hasTips(n)) out.tips = n.tips;
+      else delete out.tips;
+    } else if (tipsMode(p)) {
       // Tips back to a stored total, with the pay this night is shown with (its snapshot, the new one, or today's Setup).
-      // Tips and hours untouched and no recalculation: the stored total stays exactly as it was.
-      if (!recalc && JSON.stringify([d.total, d.pay]) === typedAtOpen) out.total = num(n.total);
-      else out.total = totalFromTips(numOf(d.total), out, p);
+      out.tips = round2(numOf(d.total));
+      out.total = totalFromTips(out.tips, out, p);
     }
     return out;
   };
@@ -142,8 +161,15 @@ function editor(S, n) {
     const c = computeNight(night, p, shiftsFor(night.date));
     preview.textContent = 'Estimated take-home for this night: ' + money(c.net) + '.';
   };
+  // A locked night shows the rates it keeps, unless "Recalculate with current Setup" is ticked.
+  const rateOf = (t) => {
+    if (!n.snap || recalc) return num(t.rate);
+    const s = (n.snap.pay || []).find((x) => String(x.id) === String(t.id));
+    return s ? num(s.rate) : num(t.rate);
+  };
   const f = nightFields(p, d, {
     key: 'edit-' + n.id,
+    rateOf,
     onInput: () => {
       f.setTotalError('');
       upd();
@@ -165,6 +191,7 @@ function editor(S, n) {
     const cb = el('input', { type: 'checkbox', id: 'edit-' + n.id + '-recalc' });
     cb.addEventListener('change', () => {
       recalc = cb.checked;
+      f.refresh();
       upd();
     });
     lockNote = el(
@@ -219,12 +246,11 @@ function editor(S, n) {
   );
   form.addEventListener('submit', (e) => {
     e.preventDefault();
-    const missing = entryProblem(p, d, 'that night');
-    if (missing) {
-      f.setTotalError(missing);
-      f.totalInput.focus();
-      return;
-    }
+    const prob = entryCheck(p, d, {
+      when: 'that night',
+      today: businessDate(new Date(), cutoffFromSettings(S.settings)),
+    });
+    if (prob) return showEntryProblem(f, prob);
     const i = S.nights.findIndex((x) => x.id === n.id);
     if (i >= 0) S.nights[i] = build();
     save();
@@ -579,7 +605,12 @@ function calibCard(S, idxs, today) {
     const idx = Number(sel.value);
     calActual = actual.value;
     // One adjustment per pay period: an earlier comparison of this period is replaced, measured from the rate before it.
-    const prev = S.calib.find((c) => c.idx === idx) || null;
+    // Matched by the period's dates, so moving the start date in Setup (which renumbers periods) can't adjust the same
+    // dates twice. Only old entries saved without dates fall back to the period number.
+    const rg = periodRange(p, idx);
+    const prev =
+      S.calib.find((c) => (c.start && c.end ? c.start === rg.start && c.end === rg.end : c.idx === idx)) ||
+      null;
     // Only the most recent comparison can be replaced: redoing an older one would throw away the later ones.
     if (prev && S.calib.indexOf(prev) !== S.calib.length - 1)
       return show(

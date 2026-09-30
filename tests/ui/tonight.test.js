@@ -10,15 +10,21 @@ const seed = () =>
 const totalInput = (page) => page.must(page.$('[data-focus-key="night-total"]'), 'total field');
 const cashInput = (page) => page.must(page.$('[data-focus-key="night-cash"]'), 'cash field');
 const submit = (page) => page.click(page.$('form button[type=submit]'));
+const hoursInput = (page) => page.must(page.$('[data-focus-key="night-pay-p1"]'), 'hours field');
 
 for (const [name, cash, msg] of [
   ['negative', '-5', /can.t be a negative/],
-  ['more than the total', '200', /more than what you made/],
+  [
+    'more than the tips in the total',
+    '40',
+    /more than the tips in what you made tonight \(the total minus \$72\.00 of hourly pay\)/,
+  ],
 ]) {
   test('tonight: cash ' + name + ' shows a message and the cash is not saved', async () => {
     const page = await boot({ seed: seed() });
     try {
       page.type(totalInput(page), '100');
+      page.type(hoursInput(page), '6');
       page.type(cashInput(page), cash);
       assert.match(page.text(), msg);
       submit(page);
@@ -49,6 +55,7 @@ test('tonight: Enter in the total field saves the night', async () => {
   try {
     const input = totalInput(page);
     page.type(input, '250');
+    page.type(hoursInput(page), '6');
     page.key(input, 'Enter'); // happy-dom performs the browser's implicit form submission
     assert.equal(page.state().nights.length, 1);
     assert.equal(page.state().nights[0].total, 250);
@@ -178,10 +185,13 @@ test('tonight: after saving, focus moves to the total field (click and Enter)', 
   const page = await boot({ seed: seed() });
   try {
     page.type(totalInput(page), '100');
+    page.type(hoursInput(page), '6');
     submit(page);
     assert.equal(page.doc.activeElement, totalInput(page));
+    assert.equal(hoursInput(page).value, '', 'hours are cleared after saving, never remembered');
     const input = totalInput(page);
     page.type(input, '120');
+    page.type(hoursInput(page), '6');
     page.key(input, 'Enter');
     assert.equal(page.state().nights.length, 1, 'same date asks first, so nothing new saved');
     assert.equal(page.doc.activeElement.getAttribute('data-focus-key'), 'dup-add');
@@ -192,17 +202,19 @@ test('tonight: after saving, focus moves to the total field (click and Enter)', 
 
 test('tonight: same date asks; Add, Replace and Separate each work', async () => {
   for (const [btn, expect] of [
-    ['dup-add', { n: 1, total: 250, cash: 30 }],
-    ['dup-replace', { n: 1, total: 150, cash: 10 }],
-    ['dup-separate', { n: 2, total: 100, cash: 20 }],
+    ['dup-add', { n: 1, total: 250, cash: 30, hours: 10 }],
+    ['dup-replace', { n: 1, total: 150, cash: 10, hours: 4 }],
+    ['dup-separate', { n: 2, total: 100, cash: 20, hours: 6 }],
   ]) {
     const page = await boot({ seed: seed() });
     try {
       page.type(totalInput(page), '100');
       page.type(cashInput(page), '20');
+      page.type(hoursInput(page), '6');
       submit(page);
       page.type(totalInput(page), '150');
       page.type(cashInput(page), '10');
+      page.type(hoursInput(page), '4');
       submit(page);
       assert.equal(page.state().nights.length, 1, 'not saved until you choose');
       assert.equal(page.doc.activeElement.getAttribute('data-focus-key'), 'dup-add', 'default focus');
@@ -211,6 +223,7 @@ test('tonight: same date asks; Add, Replace and Separate each work', async () =>
       assert.equal(n.length, expect.n);
       assert.equal(n[0].total, expect.total);
       assert.equal(n[0].cash, expect.cash);
+      assert.equal(n[0].pay.p1, expect.hours);
       assert.equal(page.doc.activeElement, totalInput(page));
     } finally {
       await page.close();
@@ -235,10 +248,13 @@ test('tonight: strip leaves out example nights once the profile is real', async 
   }
 });
 
-test('tonight: has headings', async () => {
+test('tonight: has a visible h1 "Tonight" like the other tabs, and section headings', async () => {
   const page = await boot({ seed: seed() });
   try {
-    assert.ok(page.doc.querySelectorAll('h2').length >= 2);
+    const h1 = page.$('h1', page.app);
+    assert.equal(h1.textContent, 'Tonight');
+    assert.ok(!h1.classList.contains('sr-only'));
+    assert.ok(page.doc.querySelectorAll('h2').length >= 1);
   } finally {
     await page.close();
   }

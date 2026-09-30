@@ -207,3 +207,38 @@ test('check my accuracy: Pay periods has a heading and a night note is shown and
     await page.close();
   }
 });
+
+test('check my accuracy: matched by the period dates, so moving the start date in Setup cannot adjust the same dates twice', async () => {
+  const page = await boot({ seed: seed(2) });
+  try {
+    page.tab('periods');
+    const S0 = page.state();
+    const pred = calibrate(S0.profile, S0.nights, 1, 1, today).pred;
+    const actual = String(Math.round(pred * 0.9));
+    page.type(page.$('#cal-actual'), actual);
+    page.click(page.$('#cal-run'));
+    page.click(page.$('#cal-apply'));
+    const first = page.state().calib[0];
+    const r1 = page.state().profile.rateOverride;
+    // Setup: the start date moves back one period, same schedule. The compared dates are now period 2.
+    const p = page.state().profile;
+    p.periodStart = addDays(p.periodStart, -14);
+    p.periodEnd = addDays(p.periodEnd, -14);
+    page.tab('tonight');
+    page.tab('periods');
+    const sel = page.$('#cal-period');
+    assert.equal(sel.value, '2', 'the newest finished period has the same dates as before');
+    page.type(page.$('#cal-actual'), actual);
+    page.click(page.$('#cal-run'));
+    assert.match(page.text(), /You already compared this pay period/);
+    assert.match(page.$('#cal-apply').textContent, /Replace my earlier comparison for this pay period/);
+    page.click(page.$('#cal-apply'));
+    const S = page.state();
+    assert.equal(S.calib.length, 1, 'replaced, not stacked');
+    assert.equal(S.calib[0].start, first.start);
+    assert.equal(S.calib[0].end, first.end);
+    assert.ok(Math.abs(S.profile.rateOverride - r1) < 1e-12, 'no compounding');
+  } finally {
+    await page.close();
+  }
+});

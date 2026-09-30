@@ -90,7 +90,7 @@ test('guided setup: "My paystub has no deductions" lets step 2 pass', async () =
     cb.checked = true;
     page.change(cb);
     next(page);
-    assert.match(page.text(), /Rates of pay/);
+    assert.match(page.text(), /Your jobs and pay/);
     page.type(page.$('input[placeholder="e.g. 12"]', page.app), '11');
     page.click(page.button('Finish setup'));
     assert.equal(page.state().profileExample, false);
@@ -116,6 +116,7 @@ test('guided setup: after Finish, Tonight estimates use the typed numbers', asyn
     page.click(page.button('Finish setup'));
     page.tab('tonight');
     page.type(page.$('[data-focus-key="night-total"]', page.app), '500');
+    page.type(page.$('[data-focus-key="night-pay-p1"]', page.app), '8');
     const hero = page.$('.result .hero').textContent;
     assert.notEqual(hero, example);
     // 10% rate on the tax-like line: the tax row shows 10.0%

@@ -130,7 +130,7 @@ test('after Finish: Tonight asks for tips, $400 + 8 h x $12 saves 496 and shows 
     assert.equal(S.profile.entryMode, 'tips');
     assert.equal(S.settings.setupDone, true);
     assert.match(page.text(), /Tips you made tonight/);
-    assert.match(page.text(), /Cash tips \+ card tips\. TipNet adds your hourly pay for the hours below\./);
+    assert.match(page.text(), /Cash tips \+ card tips\. TipNet adds the pay for the jobs below\./);
     page.type(page.$('[data-focus-key="night-total"]'), '400');
     page.type(page.$('[data-focus-key="night-pay-p1"]'), '8');
     const hero = page.$('.result .hero').textContent;

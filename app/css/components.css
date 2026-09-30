@@ -850,3 +850,27 @@ fieldset.field > legend {
 .banner-example p {
   flex: none;
 }
+
+/* ---------- jobs worked tonight (Tonight and the night editor) ---------- */
+.job-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.job-row .spread {
+  flex-wrap: wrap;
+}
+.job-row .job-rate {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 380px) {
+  /* keep the job and its hours side by side on small phones: the hours box is short */
+  .job-row .grid-2 {
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  }
+}

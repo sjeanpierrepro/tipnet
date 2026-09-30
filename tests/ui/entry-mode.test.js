@@ -32,7 +32,7 @@ test('tips mode: labels, hint and breakdown; the saved night stores tips + hourl
   const page = await boot({ seed: tipsState() });
   try {
     assert.match(page.text(), /Tips you made tonight/);
-    assert.match(page.text(), /Cash tips \+ card tips\. TipNet adds your hourly pay for the hours below\./);
+    assert.match(page.text(), /Cash tips \+ card tips\. TipNet adds the pay for the jobs below\./);
     page.type(box(page), '350');
     page.type(hours(page), '6:30');
     page.type(cash(page), '120');
@@ -52,15 +52,55 @@ test('tips mode: labels, hint and breakdown; the saved night stores tips + hourl
   }
 });
 
-test('tips mode: blank hours use the usual hours, in the preview and the saved night alike', async () => {
+test('hours are typed each night: empty at first, never the usual amount, nothing remembered after saving', async () => {
   const page = await boot({ seed: tipsState() });
   try {
+    assert.equal(hours(page).value, '', 'empty, although the profile still has a usual amount');
     page.type(box(page), '200');
-    assert.match(page.text(), /Made tonight\$284\.00/); // 200 + 7 usual hours x $12
+    assert.doesNotMatch(page.text(), /Made tonight/, 'no numbers before the hours are in');
+    assert.match(page.text(), /Add tonight’s hours to see your take-home\./);
+    page.type(hours(page), '8');
+    assert.match(page.text(), /Made tonight\$296\.00/); // 200 + 8 h x $12
     const hero = page.$('.result .hero').textContent;
     submit(page);
-    assert.equal(page.state().nights[0].total, 284);
-    assert.ok(page.$('p.hint[role=status]').textContent.includes(hero));
+    assert.equal(page.state().nights[0].total, 296);
+    assert.equal(page.state().nights[0].tips, 200, 'the typed tips are kept on the night');
+    assert.ok(page.$('p.hint[role=status]').textContent.includes(hero), 'preview == saved');
+    assert.equal(hours(page).value, '', 'the next night starts empty again');
+  } finally {
+    await page.close();
+  }
+});
+
+for (const [mode, st] of [
+  ['tips', tipsState],
+  ['total', totalState],
+]) {
+  test(mode + ' mode: hours are required to save (0 is fine when typed)', async () => {
+    const page = await boot({ seed: st() });
+    try {
+      page.type(box(page), '200');
+      submit(page);
+      assert.match(page.text(), /Enter the hours you worked tonight\./);
+      assert.equal(page.state().nights.length, 0);
+      assert.equal(page.doc.activeElement, hours(page), 'focus goes to the hours');
+      page.type(hours(page), '0');
+      submit(page);
+      assert.equal(page.state().nights.length, 1);
+      assert.equal(page.state().nights[0].pay.p1, 0);
+    } finally {
+      await page.close();
+    }
+  });
+}
+
+test('total mode: base pay is labelled while the hours are not entered yet', async () => {
+  const page = await boot({ seed: totalState() });
+  try {
+    page.type(box(page), '300');
+    assert.match(page.text(), /of which base pay \(hours not entered yet\)/);
+    page.type(hours(page), '8');
+    assert.doesNotMatch(page.text(), /hours not entered yet/);
   } finally {
     await page.close();
   }
@@ -100,7 +140,7 @@ test('tips mode with an after-tip-out basis says so in the hint', async () => {
   try {
     assert.match(
       page.text(),
-      /Cash tips \+ card tips, after paying the barback\. TipNet adds your hourly pay for the hours below\./,
+      /Cash tips \+ card tips, after paying the barback\. TipNet adds the pay for the jobs below\./,
     );
   } finally {
     await page.close();
@@ -254,7 +294,7 @@ test('Pay periods rows: "made $X", plus "tips $Y" in tips mode only', async () =
     try {
       page.tab('periods');
       const row = page.$('.list-row .hint').textContent;
-      assert.match(row, /^made \$496\.00/);
+      assert.match(row, /^Bartender 8 h · made \$496\.00/);
       if (tips) assert.match(row, /tips \$400\.00/);
       else assert.doesNotMatch(row, /tips \$/);
     } finally {
