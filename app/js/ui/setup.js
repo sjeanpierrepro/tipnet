@@ -161,7 +161,7 @@ function dedCard(ctx) {
       'Out of every ', el('b', null, '$100'), ' you make, about ', el('b', null, money(s.taxPer100)), ' goes to taxes and you keep ', el('b', null, money(s.keepPer100)), '. ',
       'Deductions that stay the same total ', el('b', null, money(s.fixed)), ' a check, or ', el('b', null, money(s.fixedPerShift)), ' per shift, based on ', s.shiftSourceText,
       s.shiftSource === 'entered' ? '' : ' (' + s.shifts.toFixed(1).replace(/\.0$/, '') + ' shifts)', '. ',
-      'Pay periods run ', el('b', null, s.calendar === 'semimonthly' ? 'twice a month (e.g. the 1st–15th and 16th–end)' : s.calendar === 'monthly' ? 'once a month, on the calendar' : s.periodLength + ' days'), s.fromDates ? ' from your dates' : '', '.',
+      'Pay periods run ', el('b', null, s.calendar === 'semimonthly' ? semiLabel(p.periodStart).replace('Twice a month (', 'twice a month (the ') : s.calendar === 'monthly' ? 'once a month, on the calendar' : s.periodLength + ' days'), s.fromDates ? ' from your dates' : '', '.',
       s.adjusted ? el('span', { class: 'hint' }, ' Your tax rate is adjusted from your real paychecks (' + pct(s.r) + ').') : '');
   };
   const lines = new Map();

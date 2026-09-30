@@ -1,7 +1,7 @@
 /* TipNet service worker. Bump VERSION on every release so clients fetch a fresh shell.
    It does NOT skipWaiting on its own: the page shows "Update available: Refresh" and
    posts {type:'SKIP_WAITING'} (or the string 'SKIP_WAITING') when the user agrees. */
-const VERSION = 'tipnet-v13';
+const VERSION = 'tipnet-v14';
 
 const SHELL = [
   './',
@@ -76,8 +76,8 @@ self.addEventListener('fetch', (event) => {
       const timer = setTimeout(() => cached().then((hit) => { if (hit) finish(hit); }), 4000);
       fetch(req, { cache: 'no-cache' })
         .then((res) => {
-          if (res && res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(req, copy)); }
-          finish(res);
+          if (res && res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(req, copy)); finish(res); }
+          else cached().then((hit) => finish(hit || res)); // host error (404/5xx): keep booting from the cached copy
         })
         .catch(() => cached().then((hit) => finish(hit || Response.error())));
     }));

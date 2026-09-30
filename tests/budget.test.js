@@ -299,3 +299,14 @@ test('paydayInfo: short periods with a long pay delay pick the earliest check st
   assert.equal(r.payday, '2026-10-06');
   assert.equal(r.after.projectedCheck, null);
 });
+
+test('paydayInfo never hangs on a missing or broken start date; restore repairs it', async () => {
+  const B = await import('../app/js/budget.js');
+  const S = await import('../app/js/storage.js');
+  for (const bad of [{}, { periodStart: 'garbage', freq: 14 }, { periodStart: '', freq: 'semimonthly', payDelay: 21 }]) {
+    const r = B.paydayInfo(bad, '2026-09-29');
+    assert.equal(typeof r.date, 'string');
+  }
+  const restored = S.decodeBackup(S.encodeBackup({ profile: {}, nights: [] }));
+  assert.match(restored.profile.periodStart, /^\d{4}-\d{2}-\d{2}$/);
+});

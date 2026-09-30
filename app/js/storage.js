@@ -1,6 +1,6 @@
 // TipNet persistence: state shape, migration, backup codes, IndexedDB + localStorage.
 // The pure helpers (seedState, migrate, encodeBackup, decodeBackup) work in Node with no browser APIs.
-import { exampleProfile, exampleNights, num } from './math.js';
+import { exampleProfile, exampleNights, num, parseISO, todayISO } from './math.js';
 import { emptyBudget, migrateBudget } from './budget.js';
 
 export const SCHEMA_VERSION = 2;
@@ -51,6 +51,8 @@ export function migrate(input) {
     p.payTypes = [{ id: 'p1', name: 'Main rate', rate: num(p.hourly), unit: 'hr', usual: num(p.hours) || 7 }];
     S.nights.forEach((n) => { if (!n.pay) n.pay = { p1: num(n.hours) }; });
   }
+  // A missing or broken start date would leave every pay period undefined; fall back to today.
+  if (typeof p.periodStart !== 'string' || !Number.isFinite(parseISO(p.periodStart))) p.periodStart = todayISO();
   if (p.periodEnd === undefined) p.periodEnd = '';
   // Older prototype: fixed set of deduction fields instead of a deductions list.
   if (!p.deductions) {

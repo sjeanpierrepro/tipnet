@@ -93,12 +93,16 @@ export function paydayInfo(profile, today = todayISO()) {
   // Paydays only move forward with k. Step back to the earliest period whose check has not arrived yet
   // (short periods with a long delay can have several checks still to come), then return that one.
   let k0 = periodIndex(profile, today);
-  while (payOf(k0 - 1) > today) k0--;
-  for (let k = k0; ; k++) {
+  const none = { date: today, daysAway: 0, periodIndex: 0, periodStart: today, periodEnd: today };
+  if (!Number.isFinite(k0)) return none; // no valid start date
+  // Both loops are capped so bad data can never freeze the screen (real schedules need only a few steps).
+  for (let i = 0; i < 400 && payOf(k0 - 1) > today; i++) k0--;
+  for (let k = k0; k < k0 + 400; k++) {
     const r = periodRange(profile, k);
     const date = addDays(r.end, delay);
     if (date > today) return { date, daysAway: dayDiff(today, date), periodIndex: k, periodStart: r.start, periodEnd: r.end };
   }
+  return none;
 }
 /** {date, daysAway} of the next payday. */
 export function nextPayday(profile, today = todayISO()) {

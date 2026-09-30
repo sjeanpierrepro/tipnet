@@ -80,3 +80,4 @@
 - revalidate stores 'invalid' (locked) when the provider answers valid:false but the key status is still active (for example an instance removed on the dashboard).
 - The Bills card lists bills through the end of the Next paycheck window, so it never omits a bill that card counts.
 - sw.js VERSION bumped to tipnet-v13.
+- A backup or saved state with a missing/broken pay period start date is repaired to today on load; payday search loops are capped so bad data can never freeze the Budget tab. billing-config.js falls back to the cached copy when the host returns an error, not just when offline.

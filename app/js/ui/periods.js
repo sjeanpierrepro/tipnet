@@ -67,7 +67,7 @@ function nightRow(S, n, shifts) {
 function group(S, idx) {
   const p = S.profile, today = todayISO();
   const t = periodTotals(p, S.nights, idx, today);
-  const shifts = shiftsPerPeriod(p, S.nights, today).n;
+  const shifts = shiftsPerPeriod(p, S.nights, today, idx).n;
   const rows = t.ns.map((n) => nightRow(S, n, shifts));
   const editingRow = rows.length && t.ns.some((n) => n.id === editingId);
   return el('section', { class: 'stack-sm' },
