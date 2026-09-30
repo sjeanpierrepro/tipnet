@@ -5,5 +5,8 @@
   "type": "module",
   "scripts": {
     "test": "node --test"
+  },
+  "devDependencies": {
+    "happy-dom": "20.14.5"
   }
 }

@@ -18,6 +18,12 @@ function nightSub(n, c, p) {
   return bits.join(' · ');
 }
 
+/**
+ * Focus follows the editor: Edit (opening) lands on the editor's first field, and Save/Cancel (closing) land back on
+ * Edit. Those controls are never on screen together, so they can share one data-focus-key (see keepFocus in common.js).
+ */
+const editKey = (n) => 'edit-' + n.id + '-total';
+
 function editor(S, n) {
   const p = S.profile;
   const d = draftFromNight(n, p);
@@ -26,9 +32,9 @@ function editor(S, n) {
     const c = computeNight(storedNight(d, p, n.id), p, shiftsPerPeriod(p, S.nights, todayISO(), periodIndex(p, d.date || n.date)).n);
     preview.textContent = 'Estimated take-home for this night: ' + money(c.net) + '.';
   };
-  const f = nightFields(p, d, { onInput: () => { f.setTotalError(''); upd(); } });
-  const saveBtn = el('button', { type: 'submit', class: 'btn btn-small' }, 'Save changes');
-  const cancel = el('button', { type: 'button', class: 'btn btn-secondary btn-small', onclick: () => { editingId = null; bus.rerender(); } }, 'Cancel');
+  const f = nightFields(p, d, { key: 'edit-' + n.id, onInput: () => { f.setTotalError(''); upd(); } });
+  const saveBtn = el('button', { type: 'submit', class: 'btn btn-small', 'data-focus-key': editKey(n) }, 'Save changes');
+  const cancel = el('button', { type: 'button', class: 'btn btn-secondary btn-small', 'data-focus-key': editKey(n), onclick: () => { editingId = null; bus.rerender(); } }, 'Cancel');
   const form = el('form', { class: 'card stack', novalidate: true }, el('div', { class: 'card-title' }, 'Edit night'), f.root, preview, el('div', { class: 'cluster' }, saveBtn, cancel));
   form.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -60,7 +66,7 @@ function nightRow(S, n, shifts) {
     el('div', { class: 'main' }, el('div', null, fmtDate(n.date)), el('div', { class: 'hint' }, nightSub(n, c, p))),
     el('div', { class: 'amount' }, money0(c.net)),
     el('div', { class: 'row-actions' },
-      el('button', { type: 'button', class: 'btn btn-secondary btn-small', 'aria-label': 'Edit night ' + fmtDate(n.date), onclick: () => { editingId = n.id; bus.rerender(); } }, 'Edit'),
+      el('button', { type: 'button', class: 'btn btn-secondary btn-small', 'aria-label': 'Edit night ' + fmtDate(n.date), 'data-focus-key': editKey(n), onclick: () => { editingId = n.id; bus.rerender(); } }, 'Edit'),
       del));
 }
 
