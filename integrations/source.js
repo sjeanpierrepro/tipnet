@@ -1,5 +1,5 @@
 // Data source seam. See README.md in this folder. No network calls here.
-import { parseCSV, buildNights } from '../csv.js';
+import { parseCSV, buildNights } from '../app/js/csv.js';
 
 /**
  * A night source: { id: string, label: string, fetchNights(range) -> Promise<night[]> }

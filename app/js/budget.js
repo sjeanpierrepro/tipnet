@@ -322,13 +322,22 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
   const goals = goalPieces(budget);
   const goalsC = sumC(goals, (g) => g.amountC);
 
-  // Category money still to spend, scaled to the days left until payday.
+  // Category money to set aside, day by day from today to the day before payday. Days left in this month share what is
+  // left of this month's allowance; days in later months each take that month's full allowance / days in that month.
   const y = +today.slice(0, 4), m = +today.slice(5, 7), d = +today.slice(8, 10);
-  const daysLeft = daysInMonth(y, m) - d + 1;
-  const share = Math.min(1, daysAway / daysLeft);
+  const monthDaysLeft = daysInMonth(y, m) - d + 1;
+  const thisMonthDays = Math.min(daysAway, monthDaysLeft);
+  const later = []; // {n days, dim days in that month} for each later month in the window
+  for (let left = daysAway - thisMonthDays, mm = m, yy = y; left > 0;) {
+    mm++; if (mm > 12) { mm = 1; yy++; }
+    const dim = daysInMonth(yy, mm), n = Math.min(left, dim);
+    later.push({ n, dim }); left -= n;
+  }
   const cats = categoryStatus(budget, today.slice(0, 7)).map((c) => {
-    const remC = Math.max(0, toCents(c.remaining));
-    return { id: c.id, name: c.name, remaining: fromCents(remC), reservedC: Math.round(remC * share) };
+    const remC = Math.max(0, toCents(c.remaining)), monthlyC = toCents(c.monthly);
+    let reservedC = Math.round(remC * thisMonthDays / monthDaysLeft);
+    for (const L of later) reservedC += Math.round(monthlyC * L.n / L.dim);
+    return { id: c.id, name: c.name, remaining: fromCents(remC), reservedC };
   });
   const catsC = sumC(cats, (c) => c.reservedC);
 

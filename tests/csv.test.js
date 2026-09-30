@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseCSV, parseMoney, parseDate, buildNights, dedupeNights, mergeNights, guessMapping, listEmployees, MAPPING_PRESETS, namesToMapping, mappingToNames } from '../app/js/csv.js';
-import { csvSource, toastSource } from '../app/js/integrations/source.js';
+import { csvSource, toastSource } from '../integrations/source.js';
 
 test('parseCSV: quotes, escaped quotes, commas and newlines in quotes, BOM, CRLF', () => {
   const t = '﻿Date,Note,Amt\r\n9/26,"Hello, ""world""",$1.50\r\n9/27,"line1\nline2",2\r\n';

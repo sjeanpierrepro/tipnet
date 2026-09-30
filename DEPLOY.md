@@ -28,7 +28,7 @@ If you need to set up a fresh GitHub repository (you should not need this):
 **Easiest: GitHub Desktop** (https://desktop.github.com)
 1. Install GitHub Desktop and sign in with your GitHub account.
 2. **File > Add local repository...**
-3. Choose `C:\Users\jusst\tipnet` and click **Add repository**. (It is already a git repository, so you do not need to create one.)
+3. Choose the tipnet folder on your computer and click **Add repository**. (It is already a git repository, so you do not need to create one.)
 4. Click **Publish repository** (top bar).
 5. Keep the name `tipnet`. **Uncheck "Keep this code private"** (GitHub Pages is free only for public repositories).
 6. Click **Publish repository**.

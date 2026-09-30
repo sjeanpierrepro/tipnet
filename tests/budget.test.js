@@ -91,17 +91,17 @@ test('goal progress', () => {
 test('safe to spend: hand-computed example', () => {
   // Cash on hand 2000. Bills in this period (09-21..10-04): only rent, due 10-01 = 1200.
   // Goal this paycheck = 40. Categories left in September: groceries 400, gas 160-85.50 = 74.50, fun 150.
-  // Payday 10-05 is 7 days away and September has 3 days left, so the whole amount is reserved: 624.50.
-  // Safe = 2000 - 1200 - 40 - 624.50 = 135.50, or 19.36 a day.
+  // Payday 10-05 is 7 days away: 3 September days take all of September's 624.50, and Oct 1-4 take 4/31 of the 710 monthly total (91.61).
+  // Reserved 716.11. Safe = 2000 - 1200 - 40 - 716.11 = 43.89, or 6.27 a day.
   const r = B.safeToSpend(budgetWithSpends(), P(), M.exampleNights(TODAY), TODAY, { cashOnHand: 2000 });
   assert.equal(r.income.source, 'entered');
   assert.equal(r.income.amount, 2000);
   assert.equal(r.billsTotal, 1200);
   assert.deepEqual(dates(r.bills), ['b1@2026-10-01']);
   assert.equal(r.goalsTotal, 40);
-  assert.equal(r.categoriesTotal, 624.5);
-  assert.equal(r.safe, 135.5);
-  assert.equal(r.perDay, 19.36);
+  assert.equal(r.categoriesTotal, 716.11);
+  assert.equal(r.safe, 43.89);
+  assert.equal(r.perDay, 6.27);
   assert.equal(r.daysAway, 7);
   // After payday: next period 10-05..10-18 has phone (10-15) = 65.
   const t = M.periodTotals(P(), M.exampleNights(TODAY), 0, TODAY);
@@ -123,7 +123,7 @@ test('paid bills are excluded', () => {
   b.paidBills = { 'b1@2026-10-01': true };
   const r = B.safeToSpend(b, P(), M.exampleNights(TODAY), TODAY, { cashOnHand: 2000 });
   assert.equal(r.billsTotal, 0);
-  assert.equal(r.safe, 1335.5);
+  assert.equal(r.safe, 1243.89);
 });
 
 test('category money is pro-rated when payday is before month end', () => {
@@ -396,4 +396,32 @@ test('spends keep a valid loggedAt through migrate', () => {
   const m = B.migrateBudget({ spends: [{ date: '2026-09-01', amount: 1, loggedAt: '2026-09-01T10:00:00.000Z' }, { date: '2026-09-02', amount: 1, loggedAt: 'nope' }] });
   assert.equal(m.spends[0].loggedAt, '2026-09-01T10:00:00.000Z');
   assert.equal('loggedAt' in m.spends[1], false);
+});
+
+test('category money: a window that crosses a month end reserves this month\'s rest plus next month per day', () => {
+  // Payday 2026-10-05, today 09-28: 3 days left in September, then Oct 1-4.
+  const b = { ...B.emptyBudget(), categories: [{ id: 'c', name: 'Fun', monthly: 310 }], spends: [{ id: 's', date: '2026-09-10', amount: 100, categoryId: 'c' }] };
+  const r = B.safeToSpend(b, P(), [], TODAY, { cashOnHand: 1000 });
+  assert.equal(r.daysAway, 7);
+  assert.equal(r.categories[0].reserved, 210 + 40); // all 210 left in Sep (3 of 3 days) + 310 x 4/31
+  // The day before, one more September day is in the window and the reserve barely moves (no month-end cliff).
+  const r2 = B.safeToSpend(b, P(), [], '2026-09-27', { cashOnHand: 1000 });
+  assert.equal(r2.categories[0].reserved, 210 + 40);
+  const r3 = B.safeToSpend(b, P(), [], '2026-09-29', { cashOnHand: 1000 });
+  assert.equal(r3.categories[0].reserved, 210 + 40);
+});
+
+test('category money: a window spanning two month boundaries', () => {
+  // 60-day period: today 09-25, payday 11-19. Window = 6 Sep days + all 31 Oct days + 18 Nov days.
+  const p = { freq: 60, periodStart: '2026-09-20', shifts: 6, payTypes: [], deductions: [] };
+  const b = { ...B.emptyBudget(), categories: [{ id: 'c', name: 'Fun', monthly: 310 }] };
+  const r = B.safeToSpend(b, p, [], '2026-09-25', { cashOnHand: 5000 });
+  assert.equal(r.daysAway, 55);
+  assert.equal(r.categories[0].reserved, 310 + 310 + 186); // Sep rest + full Oct + 310 x 18/30
+});
+
+test('category money: an overspent category reserves 0 this month but still next month\'s days', () => {
+  const b = { ...B.emptyBudget(), categories: [{ id: 'c', name: 'Fun', monthly: 310 }], spends: [{ id: 's', date: '2026-09-10', amount: 400, categoryId: 'c' }] };
+  const r = B.safeToSpend(b, P(), [], TODAY, { cashOnHand: 1000 });
+  assert.equal(r.categories[0].reserved, 40); // 0 for September, 310 x 4/31 for Oct 1-4
 });

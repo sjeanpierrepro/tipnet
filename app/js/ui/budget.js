@@ -172,9 +172,24 @@ function entityForm(kind, item) {
 /** A collapsible "Add ..." form that stays closed until wanted. */
 const addBox = (kind, label) => el('details', { class: 'card', open: !!addOpen[kind], ontoggle: (e) => { addOpen[kind] = e.target.open; } }, el('summary', null, label), el('div', { style: 'padding-top:var(--s-2)' }, entityForm(kind, null)));
 
+/** One polite live region (kept outside the re-rendered screen) so the armed "Delete?" state is spoken. */
+function announce(text) {
+  let r = document.getElementById('budget-live');
+  if (!r) { r = el('div', { id: 'budget-live', class: 'sr-only', role: 'status', 'aria-live': 'polite' }); document.body.append(r); }
+  r.textContent = text;
+}
 function removeBtn(label, onConfirm) {
   const b = el('button', { type: 'button', class: 'btn btn-danger btn-small', 'aria-label': label });
-  return arm(b, { label: 'Delete', armedLabel: 'Delete?', onConfirm });
+  const armed = 'Confirm d' + label.slice(1); // "Delete bill Rent" -> "Confirm delete bill Rent"
+  const sync = () => {
+    const on = b.getAttribute('data-armed') === 'true';
+    b.setAttribute('aria-label', on ? armed : label);
+    if (on) announce(armed + '. Press again to delete.');
+  };
+  arm(b, { label: 'Delete', armedLabel: 'Delete?', onConfirm });
+  if (typeof MutationObserver === 'function') new MutationObserver(sync).observe(b, { attributes: true, attributeFilter: ['data-armed'] });
+  else b.addEventListener('click', sync);
+  return b;
 }
 const editBtn = (kind, id, label) => el('button', { type: 'button', class: 'btn btn-secondary btn-small', 'aria-label': label, 'data-focus-key': 'ef-' + kind + '-' + id + '-name', onclick: () => { editing = { kind, id }; bus.rerender(); } }, 'Edit');
 const isEditing = (kind, id) => editing && editing.kind === kind && editing.id === id;

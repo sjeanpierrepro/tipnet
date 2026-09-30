@@ -77,3 +77,15 @@ for (const [kind, name, list] of [['category', 'Groceries', 'categories'], ['goa
     } finally { await page.close(); }
   });
 }
+
+test('budget: an armed Delete button is renamed and announced', async () => {
+  const page = await boot({ url: DEV, seed: seed() });
+  try {
+    page.tab('budget');
+    const del = page.byLabel('Delete Groceries');
+    page.click(del);
+    await Promise.resolve(); await Promise.resolve();
+    assert.equal(del.getAttribute('aria-label'), 'Confirm delete Groceries');
+    assert.match(page.$('#budget-live').textContent, /Confirm delete Groceries/);
+  } finally { await page.close(); }
+});
