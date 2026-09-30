@@ -6,6 +6,8 @@ const VERSION = 'tipnet-v18';
 const SHELL = [
   './',
   'index.html',
+  'privacy.html',
+  'terms.html',
   'manifest.webmanifest',
   'js/theme-boot.js',
   'css/fonts.css',
