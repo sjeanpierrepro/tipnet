@@ -40,7 +40,13 @@ test('checkCash: none, ok, negative, over', () => {
   assert.equal(over.status, 'over');
   assert.match(over.message, /Cash is more than what you made tonight\. Check the number\./);
 });
-const prof = { payTypes: [{ id: 'p1', k: 'hourly', name: 'Hourly', unit: 'hr', rate: 5, usual: 8 }], deductions: [{ id: 'd1', k: 'tax', name: 'Taxes', amount: 20, mode: 'pct' }], gross: 100, shifts: 1, tipout: { on: false } };
+const prof = {
+  payTypes: [{ id: 'p1', k: 'hourly', name: 'Hourly', unit: 'hr', rate: 5, usual: 8 }],
+  deductions: [{ id: 'd1', k: 'tax', name: 'Taxes', amount: 20, mode: 'pct' }],
+  gross: 100,
+  shifts: 1,
+  tipout: { on: false },
+};
 test('negativeCheckReason only blames taxes when taxes cause it', () => {
   const n = { total: 100, cash: 90, pay: { p1: 8 }, barback: true };
   const ok = computeNight({ ...n, cash: 20 }, prof, 1);

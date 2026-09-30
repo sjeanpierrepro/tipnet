@@ -42,64 +42,121 @@ const validDate = (v) => typeof v === 'string' && Number.isFinite(parseISO(v));
 /** Ids must be unique and non-empty. Bad or repeated ids get a fresh one. */
 function uniqueId(v, seen, prefix, i) {
   let id = (typeof v === 'string' && v) || (typeof v === 'number' && Number.isFinite(v) ? v : '');
-  while (id === '' || seen.has(id)) id = prefix + (i++) + '_' + seen.size;
+  while (id === '' || seen.has(id)) id = prefix + i++ + '_' + seen.size;
   seen.add(id);
   return id;
 }
 function cleanPayTypes(list) {
   const seen = new Set();
-  const out = (Array.isArray(list) ? list : []).filter(isObj).slice(0, 30).map((t, i) => {
-    const unit = ['hr', 'shift', 'amt'].includes(t.unit) ? t.unit : 'hr';
-    const o = { id: uniqueId(t.id, seen, 'p', i + 1), name: text(t.name), rate: numOr0(t.rate), unit: i === 0 && unit === 'amt' ? 'hr' : unit, usual: numOr0(t.usual) };
-    o.k = typeof t.k === 'string' && t.k ? t.k.slice(0, 40) : (i === 0 ? 'hourly' : 'other');
-    if (t.supp) o.supp = 1;
-    if (t.diff) o.diff = true;
-    return o;
-  });
+  const out = (Array.isArray(list) ? list : [])
+    .filter(isObj)
+    .slice(0, 30)
+    .map((t, i) => {
+      const unit = ['hr', 'shift', 'amt'].includes(t.unit) ? t.unit : 'hr';
+      const o = {
+        id: uniqueId(t.id, seen, 'p', i + 1),
+        name: text(t.name),
+        rate: numOr0(t.rate),
+        unit: i === 0 && unit === 'amt' ? 'hr' : unit,
+        usual: numOr0(t.usual),
+      };
+      o.k = typeof t.k === 'string' && t.k ? t.k.slice(0, 40) : i === 0 ? 'hourly' : 'other';
+      if (t.supp) o.supp = 1;
+      if (t.diff) o.diff = true;
+      return o;
+    });
   if (!out.length) out.push({ id: 'p1', name: 'Main rate', rate: 0, unit: 'hr', usual: 7, k: 'hourly' });
   return out;
 }
 function cleanDeductions(list) {
   const seen = new Set();
-  return (Array.isArray(list) ? list : []).filter(isObj).slice(0, 50).map((d, i) => ({
-    id: uniqueId(d.id, seen, 'd', i + 1), k: typeof d.k === 'string' && d.k ? d.k.slice(0, 40) : 'other',
-    name: text(d.name), amount: numOr0(d.amount), mode: d.mode === 'fixed' ? 'fixed' : 'pct',
-  }));
+  return (Array.isArray(list) ? list : [])
+    .filter(isObj)
+    .slice(0, 50)
+    .map((d, i) => ({
+      id: uniqueId(d.id, seen, 'd', i + 1),
+      k: typeof d.k === 'string' && d.k ? d.k.slice(0, 40) : 'other',
+      name: text(d.name),
+      amount: numOr0(d.amount),
+      mode: d.mode === 'fixed' ? 'fixed' : 'pct',
+    }));
 }
 const finiteIn = (v, lo, hi) => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
 /** A night's locked Setup numbers (see snapshotFor in math.js). Anything malformed is dropped (the night is then unlocked). */
 function cleanSnap(s) {
-  if (!isObj(s) || !finiteIn(s.r, 0, 1) || !finiteIn(s.rf, 0, 1) || !finiteIn(s.fixed, 0, 1e7) || !finiteIn(s.n, 0.01, 1000) || !Array.isArray(s.pay)) return null;
-  const pay = s.pay.filter((t) => isObj(t) && (typeof t.id === 'string' || typeof t.id === 'number')).slice(0, 30).map((t, i) => {
-    const o = { id: t.id, rate: numOr0(t.rate), unit: ['hr', 'shift', 'amt'].includes(t.unit) ? t.unit : 'hr' };
-    if (i === 0) o.usual = numOr0(t.usual);
-    if (t.supp) o.supp = 1;
-    if (t.diff) o.diff = 1;
-    return o;
-  });
+  if (
+    !isObj(s) ||
+    !finiteIn(s.r, 0, 1) ||
+    !finiteIn(s.rf, 0, 1) ||
+    !finiteIn(s.fixed, 0, 1e7) ||
+    !finiteIn(s.n, 0.01, 1000) ||
+    !Array.isArray(s.pay)
+  )
+    return null;
+  const pay = s.pay
+    .filter((t) => isObj(t) && (typeof t.id === 'string' || typeof t.id === 'number'))
+    .slice(0, 30)
+    .map((t, i) => {
+      const o = {
+        id: t.id,
+        rate: numOr0(t.rate),
+        unit: ['hr', 'shift', 'amt'].includes(t.unit) ? t.unit : 'hr',
+      };
+      if (i === 0) o.usual = numOr0(t.usual);
+      if (t.supp) o.supp = 1;
+      if (t.diff) o.diff = 1;
+      return o;
+    });
   const to = isObj(s.tipout) ? s.tipout : {};
   return {
-    v: 1, r: s.r, rf: s.rf, fixed: s.fixed, n: s.n, pay,
-    tipout: { on: !!to.on, mode: to.mode === 'flat' ? 'flat' : 'pct', value: numOr0(to.value), basis: text(to.basis, 'before') || 'before', from: text(to.from, 'cash') || 'cash' },
+    v: 1,
+    r: s.r,
+    rf: s.rf,
+    fixed: s.fixed,
+    n: s.n,
+    pay,
+    tipout: {
+      on: !!to.on,
+      mode: to.mode === 'flat' ? 'flat' : 'pct',
+      value: numOr0(to.value),
+      basis: text(to.basis, 'before') || 'before',
+      from: text(to.from, 'cash') || 'cash',
+    },
   };
 }
 function cleanNights(list) {
   const seen = new Set();
-  return (Array.isArray(list) ? list : []).filter((n) => isObj(n) && validDate(n.date)).map((n, i) => {
-    const pay = {};
-    if (isObj(n.pay)) {
-      Object.keys(n.pay).forEach((k) => {
-        const v = n.pay[k];
-        if ((typeof v === 'number' || (typeof v === 'string' && v.trim() !== '')) && Number.isFinite(parseFloat(v))) pay[k] = num(v);
-      });
-    }
-    const hasCash = (typeof n.cash === 'number' || typeof n.cash === 'string') && n.cash !== '' && Number.isFinite(parseFloat(n.cash));
-    const o = { id: uniqueId(n.id, seen, 'n', i + 1), date: n.date, total: numOr0(n.total), cash: hasCash ? num(n.cash) : null, pay, barback: n.barback === undefined ? true : !!n.barback };
-    if (typeof n.note === 'string' && n.note) o.note = n.note.slice(0, 500);
-    const snap = cleanSnap(n.snap);
-    if (snap) o.snap = snap;
-    return o;
-  });
+  return (Array.isArray(list) ? list : [])
+    .filter((n) => isObj(n) && validDate(n.date))
+    .map((n, i) => {
+      const pay = {};
+      if (isObj(n.pay)) {
+        Object.keys(n.pay).forEach((k) => {
+          const v = n.pay[k];
+          if (
+            (typeof v === 'number' || (typeof v === 'string' && v.trim() !== '')) &&
+            Number.isFinite(parseFloat(v))
+          )
+            pay[k] = num(v);
+        });
+      }
+      const hasCash =
+        (typeof n.cash === 'number' || typeof n.cash === 'string') &&
+        n.cash !== '' &&
+        Number.isFinite(parseFloat(n.cash));
+      const o = {
+        id: uniqueId(n.id, seen, 'n', i + 1),
+        date: n.date,
+        total: numOr0(n.total),
+        cash: hasCash ? num(n.cash) : null,
+        pay,
+        barback: n.barback === undefined ? true : !!n.barback,
+      };
+      if (typeof n.note === 'string' && n.note) o.note = n.note.slice(0, 500);
+      const snap = cleanSnap(n.snap);
+      if (snap) o.snap = snap;
+      return o;
+    });
 }
 function cleanSettings(x) {
   const s = isObj(x) ? x : {};
@@ -110,16 +167,23 @@ function cleanSettings(x) {
   };
   if (isObj(s.csvMapping)) {
     const m = {};
-    Object.keys(s.csvMapping).forEach((k) => { const v = s.csvMapping[k]; if (v === null || ['string', 'number', 'boolean'].includes(typeof v)) m[k] = v; });
+    Object.keys(s.csvMapping).forEach((k) => {
+      const v = s.csvMapping[k];
+      if (v === null || ['string', 'number', 'boolean'].includes(typeof v)) m[k] = v;
+    });
     out.csvMapping = m;
   }
   if (s.setupDone !== undefined) out.setupDone = !!s.setupDone;
   // "Late nights" rule: shifts logged before this hour count as the night before (0 = off). Kept only when it's a whole hour 0-12.
-  if (Number.isInteger(s.dayCutoffHour) && s.dayCutoffHour >= 0 && s.dayCutoffHour <= 12) out.dayCutoffHour = s.dayCutoffHour;
+  if (Number.isInteger(s.dayCutoffHour) && s.dayCutoffHour >= 0 && s.dayCutoffHour <= 12)
+    out.dayCutoffHour = s.dayCutoffHour;
   // The license entitlement is device-only. decodeBackup strips it before migrate; here we only keep its known plain fields.
   if (isObj(s.entitlement)) {
     const e = {};
-    ['plan', 'key', 'instanceId', 'status', 'validatedAt', 'expiresAt'].forEach((k) => { const v = s.entitlement[k]; if (v === null || typeof v === 'string' || typeof v === 'number') e[k] = v; });
+    ['plan', 'key', 'instanceId', 'status', 'validatedAt', 'expiresAt'].forEach((k) => {
+      const v = s.entitlement[k];
+      if (v === null || typeof v === 'string' || typeof v === 'number') e[k] = v;
+    });
     out.entitlement = e;
   }
   return out;
@@ -131,27 +195,42 @@ function cleanSettings(x) {
  * safe shape (bad rows are dropped) so the math and screens can always render the result.
  */
 export function migrate(input) {
-  try { return migrateUnsafe(input); } catch (e) { return seedState(); }
+  try {
+    return migrateUnsafe(input);
+  } catch (e) {
+    return seedState();
+  }
 }
 function migrateUnsafe(input) {
   let S;
-  try { S = isObj(input) ? clone(input) : null; } catch (e) { S = null; }
+  try {
+    S = isObj(input) ? clone(input) : null;
+  } catch (e) {
+    S = null;
+  }
   if (!S || !isObj(S.profile)) return seedState();
   const p = S.profile;
   const rawNights = Array.isArray(S.nights) ? S.nights.filter(isObj) : [];
   // Oldest prototype: single hourly rate and hours instead of payTypes.
   if (!Array.isArray(p.payTypes)) {
     p.payTypes = [{ id: 'p1', name: 'Main rate', rate: num(p.hourly), unit: 'hr', usual: num(p.hours) || 7 }];
-    rawNights.forEach((n) => { if (!isObj(n.pay)) n.pay = { p1: num(n.hours) }; });
+    rawNights.forEach((n) => {
+      if (!isObj(n.pay)) n.pay = { p1: num(n.hours) };
+    });
   }
   // Older prototype: fixed set of deduction fields instead of a deductions list.
   if (!Array.isArray(p.deductions)) {
     const d = [];
     let n = 1;
-    [['fed', 'Federal income tax', p.fed, 'pct'], ['state', 'State / local tax', p.other, 'pct'],
-      ['ss', 'Social Security', p.ss, 'pct'], ['med', 'Medicare', p.med, 'pct'],
-      ['other', 'Benefits and fixed deductions', p.fixed, 'fixed']]
-      .forEach(([k, name, a, mode]) => { if (num(a)) d.push({ id: 'd' + (n++), k, name, amount: num(a), mode }); });
+    [
+      ['fed', 'Federal income tax', p.fed, 'pct'],
+      ['state', 'State / local tax', p.other, 'pct'],
+      ['ss', 'Social Security', p.ss, 'pct'],
+      ['med', 'Medicare', p.med, 'pct'],
+      ['other', 'Benefits and fixed deductions', p.fixed, 'fixed'],
+    ].forEach(([k, name, a, mode]) => {
+      if (num(a)) d.push({ id: 'd' + n++, k, name, amount: num(a), mode });
+    });
     p.deductions = d;
   }
   const out = {};
@@ -161,18 +240,31 @@ function migrateUnsafe(input) {
   out.gross = Math.max(0, numOr0(p.gross));
   out.shifts = Math.max(0, Math.round(numOr0(p.shifts)));
   const ro = p.rateOverride;
-  out.rateOverride = (typeof ro === 'number' && Number.isFinite(ro) && ro >= 0 && ro <= 1) ? ro : null;
+  out.rateOverride = typeof ro === 'number' && Number.isFinite(ro) && ro >= 0 && ro <= 1 ? ro : null;
   // freq: fixed day counts 7/14/15/30 or the calendar modes 'semimonthly'/'monthly'; anything else falls back to 14.
   let freq = p.freq;
   if (typeof freq === 'string' && /^[0-9]+$/.test(freq)) freq = Number(freq);
   out.freq = [7, 14, 15, 30, 'semimonthly', 'monthly'].includes(freq) ? freq : 14;
   // payDelay: whole days after the period end that the check arrives (0-21). Absent/blank stays absent (treated as 1).
   const pd = p.payDelay;
-  if (!(pd === undefined || pd === null || pd === '' || typeof pd === 'boolean' || !Number.isFinite(Number(pd)))) out.payDelay = Math.min(21, Math.max(0, Math.round(Number(pd))));
+  if (!(
+    pd === undefined ||
+    pd === null ||
+    pd === '' ||
+    typeof pd === 'boolean' ||
+    !Number.isFinite(Number(pd))
+  ))
+    out.payDelay = Math.min(21, Math.max(0, Math.round(Number(pd))));
   out.deductions = cleanDeductions(p.deductions);
   out.payTypes = cleanPayTypes(p.payTypes);
   const to = isObj(p.tipout) ? p.tipout : {};
-  out.tipout = { on: !!to.on, mode: to.mode === 'flat' ? 'flat' : 'pct', value: numOr0(to.value), basis: text(to.basis, 'before') || 'before', from: text(to.from, 'cash') || 'cash' };
+  out.tipout = {
+    on: !!to.on,
+    mode: to.mode === 'flat' ? 'flat' : 'pct',
+    value: numOr0(to.value),
+    basis: text(to.basis, 'before') || 'before',
+    from: text(to.from, 'cash') || 'cash',
+  };
   const nights = lockFinishedNights(out, cleanNights(rawNights)).nights;
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -180,8 +272,15 @@ function migrateUnsafe(input) {
     nightsExample: !!S.nightsExample,
     profile: out,
     nights,
-    calib: (Array.isArray(S.calib) ? S.calib : []).filter(isObj).slice(-50)
-      .map((c) => ({ label: text(c.label), pred: numOr0(c.pred), actual: numOr0(c.actual), err: numOr0(c.err) })),
+    calib: (Array.isArray(S.calib) ? S.calib : [])
+      .filter(isObj)
+      .slice(-50)
+      .map((c) => ({
+        label: text(c.label),
+        pred: numOr0(c.pred),
+        actual: numOr0(c.actual),
+        err: numOr0(c.err),
+      })),
     budget: migrateBudget(S.budget, out), // old states and old backup codes have none: they get an empty budget; the profile converts old "Paid" ticks
     settings: cleanSettings(S.settings),
   };
@@ -191,7 +290,8 @@ function migrateUnsafe(input) {
 function toB64(str) {
   const bytes = new TextEncoder().encode(str);
   let bin = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  for (let i = 0; i < bytes.length; i += 0x8000)
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
   return btoa(bin);
 }
 function fromB64(b64) {
@@ -219,7 +319,7 @@ export function decodeBackup(code) {
     delete out.settings.entitlement;
     return out;
   } catch (e) {
-    throw new Error('bad-backup');
+    throw new Error('bad-backup', { cause: e });
   }
 }
 
@@ -233,11 +333,19 @@ function openDB() {
     try {
       if (typeof indexedDB === 'undefined' || !indexedDB) return resolve(null);
       const req = indexedDB.open(DB_NAME, 1);
-      req.onupgradeneeded = () => { try { req.result.createObjectStore(STORE); } catch (e) { /* ignore */ } };
+      req.onupgradeneeded = () => {
+        try {
+          req.result.createObjectStore(STORE);
+        } catch (e) {
+          /* ignore */
+        }
+      };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => resolve(null);
       req.onblocked = () => resolve(null);
-    } catch (e) { resolve(null); }
+    } catch (e) {
+      resolve(null);
+    }
   });
   return dbPromise;
 }
@@ -247,7 +355,9 @@ function idbGet(db) {
       const r = db.transaction(STORE, 'readonly').objectStore(STORE).get(STATE_KEY);
       r.onsuccess = () => resolve(r.result === undefined ? null : r.result);
       r.onerror = () => resolve(null);
-    } catch (e) { resolve(null); }
+    } catch (e) {
+      resolve(null);
+    }
   });
 }
 function idbPut(db, value) {
@@ -258,14 +368,26 @@ function idbPut(db, value) {
       tx.oncomplete = () => resolve(true);
       tx.onerror = () => resolve(false);
       tx.onabort = () => resolve(false);
-    } catch (e) { resolve(false); }
+    } catch (e) {
+      resolve(false);
+    }
   });
 }
 function lsGet(key) {
-  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : null; } catch (e) { return null; }
+  try {
+    const v = localStorage.getItem(key);
+    return v ? JSON.parse(v) : null;
+  } catch (e) {
+    return null;
+  }
 }
 function lsSet(key, value) {
-  try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch (e) { return false; }
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch (e) {
+    return false;
+  }
 }
 
 /** Time a saved copy was written (ms), or 0 if unknown. */
@@ -289,7 +411,9 @@ export async function load() {
   try {
     const db = await openDB();
     if (db) idbRaw = await idbGet(db);
-  } catch (e) { idbRaw = null; }
+  } catch (e) {
+    idbRaw = null;
+  }
   let raw = pickNewest(idbRaw, lsGet(LS_KEY));
   if (!raw) raw = lsGet(LEGACY_KEY);
   cache = migrate(raw);
@@ -329,12 +453,20 @@ let timer = null;
 export function scheduleSave(delay = 400) {
   try {
     if (timer) clearTimeout(timer);
-    timer = setTimeout(() => { timer = null; flush(); }, delay);
-  } catch (e) { /* ignore */ }
+    timer = setTimeout(() => {
+      timer = null;
+      flush();
+    }, delay);
+  } catch (e) {
+    /* ignore */
+  }
 }
 /** Write now. Resolves true if something durable was written. */
 export async function flush() {
-  if (timer) { clearTimeout(timer); timer = null; }
+  if (timer) {
+    clearTimeout(timer);
+    timer = null;
+  }
   if (!cache) return false;
   let ok = false;
   try {
@@ -343,7 +475,9 @@ export async function flush() {
     if (db) ok = await idbPut(db, snapshot);
     if (!ok) ok = lsSet(LS_KEY, snapshot);
     else lsSet(LS_KEY, snapshot); // belt and braces: keeps a fallback copy
-  } catch (e) { ok = false; }
+  } catch (e) {
+    ok = false;
+  }
   return ok;
 }
 /** Ask the browser not to evict our data. Safe to call repeatedly. */
@@ -353,8 +487,12 @@ export async function requestPersist() {
       if (navigator.storage.persisted && (await navigator.storage.persisted())) return true;
       return await navigator.storage.persist();
     }
-  } catch (e) { /* ignore */ }
+  } catch (e) {
+    /* ignore */
+  }
   return false;
 }
 /** Test/dev helper: drop the cache without touching disk. */
-export function _resetCache() { cache = null; }
+export function _resetCache() {
+  cache = null;
+}

@@ -1,14 +1,34 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isUnlocked, needsRevalidate, maskKey, parseLemonSqueezy, lemonSqueezyProvider, activateKey, revalidate, devEntitlement, isDevHost, getProvider, GRACE_MS } from '../app/js/billing.js';
+import {
+  isUnlocked,
+  needsRevalidate,
+  maskKey,
+  parseLemonSqueezy,
+  lemonSqueezyProvider,
+  activateKey,
+  revalidate,
+  devEntitlement,
+  isDevHost,
+  getProvider,
+  GRACE_MS,
+} from '../app/js/billing.js';
 
 const NOW = Date.parse('2026-10-01T12:00:00Z');
 const DAY = 24 * 3600 * 1000;
-const ent = (o = {}) => ({ plan: 'monthly', key: 'AAAA-BBBB-CCCC-1234', instanceId: 'i1', status: 'active', validatedAt: new Date(NOW - DAY / 2).toISOString(), ...o });
+const ent = (o = {}) => ({
+  plan: 'monthly',
+  key: 'AAAA-BBBB-CCCC-1234',
+  instanceId: 'i1',
+  status: 'active',
+  validatedAt: new Date(NOW - DAY / 2).toISOString(),
+  ...o,
+});
 const json = (body) => async () => ({ json: async () => body });
 
 const ON = { provider: 'lemonsqueezy' };
-const un = (e, now = NOW, opts = {}) => isUnlocked(e, now, { config: ON, loc: { hostname: 'tipnet.example' }, ...opts });
+const un = (e, now = NOW, opts = {}) =>
+  isUnlocked(e, now, { config: ON, loc: { hostname: 'tipnet.example' }, ...opts });
 
 test('isUnlocked rules', () => {
   assert.equal(un(null), false);
@@ -25,7 +45,10 @@ test('isUnlocked rules', () => {
 test('needsRevalidate', () => {
   assert.equal(needsRevalidate(ent(), NOW, true), false);
   assert.equal(needsRevalidate(ent({ validatedAt: new Date(NOW - 2 * DAY).toISOString() }), NOW, true), true);
-  assert.equal(needsRevalidate(ent({ validatedAt: new Date(NOW - 2 * DAY).toISOString() }), NOW, false), false);
+  assert.equal(
+    needsRevalidate(ent({ validatedAt: new Date(NOW - 2 * DAY).toISOString() }), NOW, false),
+    false,
+  );
   assert.equal(needsRevalidate({ plan: 'dev' }, NOW, true), false);
 });
 
@@ -35,10 +58,21 @@ test('maskKey', () => {
 });
 
 test('parseLemonSqueezy', () => {
-  const ok = parseLemonSqueezy({ activated: true, license_key: { status: 'active', expires_at: '2027-01-01T00:00:00Z' }, instance: { id: 'abc' }, meta: { product_id: 5 } });
+  const ok = parseLemonSqueezy({
+    activated: true,
+    license_key: { status: 'active', expires_at: '2027-01-01T00:00:00Z' },
+    instance: { id: 'abc' },
+    meta: { product_id: 5 },
+  });
   assert.deepEqual(ok, { ok: true, status: 'active', expiresAt: '2027-01-01T00:00:00Z', instanceId: 'abc' });
-  assert.equal(parseLemonSqueezy({ valid: true, license_key: { status: 'active' }, meta: { product_id: 5 } }, [9]).ok, false);
-  assert.equal(parseLemonSqueezy({ valid: true, license_key: { status: 'active' }, meta: { product_id: 5 } }, [5]).ok, true);
+  assert.equal(
+    parseLemonSqueezy({ valid: true, license_key: { status: 'active' }, meta: { product_id: 5 } }, [9]).ok,
+    false,
+  );
+  assert.equal(
+    parseLemonSqueezy({ valid: true, license_key: { status: 'active' }, meta: { product_id: 5 } }, [5]).ok,
+    true,
+  );
   assert.equal(parseLemonSqueezy({ valid: false, license_key: { status: 'expired' } }).ok, false);
   assert.match(parseLemonSqueezy({ valid: false, error: 'license_key not found.' }).error, /not found/);
   assert.equal(parseLemonSqueezy(null).ok, false);
@@ -46,7 +80,14 @@ test('parseLemonSqueezy', () => {
 
 test('provider sends form-encoded request to Lemon Squeezy only', async () => {
   const calls = [];
-  const p = lemonSqueezyProvider({ fetch: async (url, init) => { calls.push([url, init]); return { json: async () => ({ activated: true, license_key: { status: 'active' }, instance: { id: 'z' } }) }; } });
+  const p = lemonSqueezyProvider({
+    fetch: async (url, init) => {
+      calls.push([url, init]);
+      return {
+        json: async () => ({ activated: true, license_key: { status: 'active' }, instance: { id: 'z' } }),
+      };
+    },
+  });
   const r = await p.activate('KEY', 'dev1');
   assert.equal(r.ok, true);
   assert.equal(calls[0][0], 'https://api.lemonsqueezy.com/v1/licenses/activate');
@@ -56,12 +97,18 @@ test('provider sends form-encoded request to Lemon Squeezy only', async () => {
 });
 
 test('network failure is reported as status network', async () => {
-  const p = lemonSqueezyProvider({ fetch: async () => { throw new Error('offline'); } });
+  const p = lemonSqueezyProvider({
+    fetch: async () => {
+      throw new Error('offline');
+    },
+  });
   assert.equal((await p.validate('K', 'i')).status, 'network');
 });
 
 test('activateKey and revalidate', async () => {
-  const p = lemonSqueezyProvider({ fetch: json({ activated: true, valid: true, license_key: { status: 'active' }, instance: { id: 'i9' } }) });
+  const p = lemonSqueezyProvider({
+    fetch: json({ activated: true, valid: true, license_key: { status: 'active' }, instance: { id: 'i9' } }),
+  });
   const a = await activateKey(' KEY-1 ', { provider: p, plan: 'yearly', now: NOW });
   assert.equal(a.ok, true);
   assert.equal(a.entitlement.key, 'KEY-1');
@@ -73,7 +120,11 @@ test('activateKey and revalidate', async () => {
   const r = await revalidate(stale, { provider: p, now: NOW, online: true });
   assert.equal(r.validatedAt, new Date(NOW).toISOString());
   assert.equal(await revalidate(ent(), { provider: p, now: NOW, online: true }), null);
-  const off = lemonSqueezyProvider({ fetch: async () => { throw new Error('x'); } });
+  const off = lemonSqueezyProvider({
+    fetch: async () => {
+      throw new Error('x');
+    },
+  });
   assert.equal(await revalidate(stale, { provider: off, now: NOW, online: true }), null);
   const dead = lemonSqueezyProvider({ fetch: json({ valid: false, license_key: { status: 'disabled' } }) });
   assert.equal((await revalidate(stale, { provider: dead, now: NOW, online: true })).status, 'disabled');
@@ -94,20 +145,44 @@ test('getProvider is null until configured', () => {
 test('a server error or rate limit never locks anyone', async () => {
   const stale = ent({ validatedAt: new Date(NOW - 2 * DAY).toISOString() });
   for (const status of [500, 503, 429]) {
-    const p = lemonSqueezyProvider({ fetch: async () => ({ status, json: async () => ({ error: 'Server Error' }) }) });
+    const p = lemonSqueezyProvider({
+      fetch: async () => ({ status, json: async () => ({ error: 'Server Error' }) }),
+    });
     assert.equal((await p.validate('K', 'i')).status, 'network');
     assert.equal(await revalidate(stale, { provider: p, now: NOW, online: true }), null);
   }
   // a definite "not found" (404 with JSON) does lock
-  const gone = lemonSqueezyProvider({ fetch: async () => ({ status: 404, json: async () => ({ valid: false, error: 'license_key not found.', license_key: null }) }) });
+  const gone = lemonSqueezyProvider({
+    fetch: async () => ({
+      status: 404,
+      json: async () => ({ valid: false, error: 'license_key not found.', license_key: null }),
+    }),
+  });
   assert.equal(un(await revalidate(stale, { provider: gone, now: NOW, online: true })), false);
 });
 
 test('plan comes from the variant name when the caller does not give one', async () => {
-  const body = (v) => ({ activated: true, license_key: { status: 'active' }, instance: { id: 'i' }, meta: { variant_name: v } });
-  assert.equal((await activateKey('K', { provider: lemonSqueezyProvider({ fetch: json(body('Yearly')) }) })).entitlement.plan, 'yearly');
-  assert.equal((await activateKey('K', { provider: lemonSqueezyProvider({ fetch: json(body('Monthly')) }) })).entitlement.plan, 'monthly');
-  assert.equal((await activateKey('K', { provider: lemonSqueezyProvider({ fetch: json(body('Default')) }) })).entitlement.plan, null);
+  const body = (v) => ({
+    activated: true,
+    license_key: { status: 'active' },
+    instance: { id: 'i' },
+    meta: { variant_name: v },
+  });
+  assert.equal(
+    (await activateKey('K', { provider: lemonSqueezyProvider({ fetch: json(body('Yearly')) }) })).entitlement
+      .plan,
+    'yearly',
+  );
+  assert.equal(
+    (await activateKey('K', { provider: lemonSqueezyProvider({ fetch: json(body('Monthly')) }) })).entitlement
+      .plan,
+    'monthly',
+  );
+  assert.equal(
+    (await activateKey('K', { provider: lemonSqueezyProvider({ fetch: json(body('Default')) }) })).entitlement
+      .plan,
+    null,
+  );
 });
 
 test('isDevHost', () => {
@@ -119,7 +194,16 @@ test('isDevHost', () => {
 test('revalidate: valid:false locks even when the key status is still active', async () => {
   const stale = ent({ validatedAt: new Date(NOW - 2 * DAY).toISOString() });
   // this device's instance was removed: the key is active but the answer is valid:false
-  const noInstance = lemonSqueezyProvider({ fetch: async () => ({ status: 404, json: async () => ({ valid: false, error: 'license_key instance not found.', license_key: { status: 'active' } }) }) });
+  const noInstance = lemonSqueezyProvider({
+    fetch: async () => ({
+      status: 404,
+      json: async () => ({
+        valid: false,
+        error: 'license_key instance not found.',
+        license_key: { status: 'active' },
+      }),
+    }),
+  });
   const r = await revalidate(stale, { provider: noInstance, now: NOW, online: true });
   assert.equal(r.status, 'invalid');
   assert.equal(un(r), false);

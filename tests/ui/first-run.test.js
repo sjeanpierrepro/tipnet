@@ -10,7 +10,11 @@ test('first run: example banner, example estimate, first real night clears examp
     assert.match(page.text(), /You are looking at example numbers/);
     const hero = page.$('.result .hero').textContent;
     const S = page.state();
-    const ex = computeNight({ id: 'x', date: S.nights[0].date, total: 585, cash: 210, pay: { p1: 8 }, barback: true }, S.profile, shiftsPerPeriod(S.profile, []).n);
+    const ex = computeNight(
+      { id: 'x', date: S.nights[0].date, total: 585, cash: 210, pay: { p1: 8 }, barback: true },
+      S.profile,
+      shiftsPerPeriod(S.profile, []).n,
+    );
     assert.equal(hero, money(ex.net), 'hero shows the example estimate');
     assert.equal(S.nights.length, 4);
     assert.equal(S.nightsExample, true);
@@ -23,5 +27,7 @@ test('first run: example banner, example estimate, first real night clears examp
     assert.equal(S2.nightsExample, false);
     assert.equal(S2.nights[0].total, 585);
     assert.doesNotMatch(page.text(), /nights listed are examples/);
-  } finally { await page.close(); }
+  } finally {
+    await page.close();
+  }
 });

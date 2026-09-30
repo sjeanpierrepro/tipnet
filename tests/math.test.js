@@ -135,8 +135,12 @@ test('shift fallback order: entered, then history, then 4 a week', () => {
   p.periodStart = '2026-09-07';
   p.periodEnd = '2026-09-20';
   const nights = [
-    { date: '2026-09-08' }, { date: '2026-09-09' }, { date: '2026-09-10' }, { date: '2026-09-11' },
-    { date: '2026-09-21' }, { date: '2026-09-22' },
+    { date: '2026-09-08' },
+    { date: '2026-09-09' },
+    { date: '2026-09-10' },
+    { date: '2026-09-11' },
+    { date: '2026-09-21' },
+    { date: '2026-09-22' },
   ];
   const r = M.shiftsPerPeriod(p, nights, '2026-10-30');
   assert.equal(r.source, 'history');
@@ -226,10 +230,14 @@ test('calibration math', () => {
   const nights = N();
   const c = M.calibrate(p, nights, 0, 800, AFTER);
   assert.equal(c.ok, true);
-  let T = 0, C = 0, pred = 0;
+  let T = 0,
+    C = 0,
+    pred = 0;
   nights.forEach((n) => {
     const x = M.computeNight(n, p, 10);
-    T += x.kept + x.extra; C += x.cashInHand; pred += x.onCheck + x.fixedPerShift;
+    T += x.kept + x.extra;
+    C += x.cashInHand;
+    pred += x.onCheck + x.fixedPerShift;
   });
   pred -= 60;
   near(c.pred, pred);
@@ -258,7 +266,8 @@ test('calibration clamps r_new at 0.02 and 0.45', () => {
 
 test('calibration refuses when cash is missing and counts the nights', () => {
   const nights = N();
-  nights[0].cash = null; nights[2].cash = '';
+  nights[0].cash = null;
+  nights[2].cash = '';
   const c = M.calibrate(P(), nights, 0, 800, AFTER);
   assert.equal(c.ok, false);
   assert.equal(c.reason, 'missingCash');
@@ -298,7 +307,10 @@ test('summary numbers for the Setup box', () => {
 test('presets: groups, defaults, flags', () => {
   const groups = [...new Set(M.PRESETS.pay.map((x) => x.g))];
   assert.deepEqual(groups, ['Hourly', 'Per shift', 'Flat amount', 'Other']);
-  assert.deepEqual([...new Set(M.PRESETS.deductions.map((x) => x.g))], ['Taxes', 'Benefits', 'Retirement', 'Other']);
+  assert.deepEqual(
+    [...new Set(M.PRESETS.deductions.map((x) => x.g))],
+    ['Taxes', 'Benefits', 'Retirement', 'Other'],
+  );
   assert.equal(M.findPayPreset('bonus').supp, 1);
   assert.equal(M.findPayPreset('commission').supp, 1);
   assert.ok(!M.findPayPreset('autograt').supp);
@@ -319,13 +331,19 @@ test('applyPayPreset only autofills the rate for Overtime (1.5x main rate)', () 
     if (pr.k === 'ot') assert.equal(out.rate, 30, 'overtime is 1.5x the main rate');
     else assert.equal(out.rate, 0, pr.k + ' must not autofill a rate');
   });
-  assert.deepEqual(M.PAY_PRESETS.filter((pr) => pr.rateMultiplier).map((pr) => pr.k), ['ot']);
+  assert.deepEqual(
+    M.PAY_PRESETS.filter((pr) => pr.rateMultiplier).map((pr) => pr.k),
+    ['ot'],
+  );
   // No main rate yet: overtime stays as typed.
   assert.equal(M.applyPayPreset({ id: 'x', rate: 5 }, 'ot', 0).rate, 5);
 });
 
 test('fill Social Security + Medicare from gross', () => {
-  const p = { gross: 2000, deductions: [{ id: 'd1', k: 'ss', name: 'Social Security', amount: 1, mode: 'pct' }] };
+  const p = {
+    gross: 2000,
+    deductions: [{ id: 'd1', k: 'ss', name: 'Social Security', amount: 1, mode: 'pct' }],
+  };
   const d = M.fillFica(p);
   assert.equal(d.find((x) => x.k === 'ss').amount, 124);
   assert.equal(d.find((x) => x.k === 'med').amount, 29);
@@ -349,14 +367,28 @@ test('regression: calibration counts non-numeric cash as missing (not silently $
 });
 
 /* ---------- calendar periods: twice a month (15) and once a month (30) ---------- */
-const range = (p, i) => { const r = M.periodRange(p, i); return r.start + '..' + r.end; };
+const range = (p, i) => {
+  const r = M.periodRange(p, i);
+  return r.start + '..' + r.end;
+};
 
 test('semimonthly 1/16 across Jan, Feb, Mar, incl. leap-year Feb 2028', () => {
   const p = { freq: 'semimonthly', periodStart: '2028-01-01', periodEnd: '2028-01-15' };
-  assert.deepEqual([0, 1, 2, 3, 4, 5].map((i) => range(p, i)), [
-    '2028-01-01..2028-01-15', '2028-01-16..2028-01-31', '2028-02-01..2028-02-15',
-    '2028-02-16..2028-02-29', '2028-03-01..2028-03-15', '2028-03-16..2028-03-31']);
-  assert.deepEqual([1, 3].map((i) => M.periodLength(p, i)), [16, 14]);
+  assert.deepEqual(
+    [0, 1, 2, 3, 4, 5].map((i) => range(p, i)),
+    [
+      '2028-01-01..2028-01-15',
+      '2028-01-16..2028-01-31',
+      '2028-02-01..2028-02-15',
+      '2028-02-16..2028-02-29',
+      '2028-03-01..2028-03-15',
+      '2028-03-16..2028-03-31',
+    ],
+  );
+  assert.deepEqual(
+    [1, 3].map((i) => M.periodLength(p, i)),
+    [16, 14],
+  );
   const q = { freq: 'semimonthly', periodStart: '2027-02-01' }; // non-leap: second half is 13 days
   assert.equal(range(q, 1), '2027-02-16..2027-02-28');
   assert.equal(M.periodLength(q, 1), 13);
@@ -368,14 +400,28 @@ test('semimonthly 1/16 across Jan, Feb, Mar, incl. leap-year Feb 2028', () => {
 
 test('semimonthly anchors 5/20, 16 and a clamped 31', () => {
   const a = { freq: 'semimonthly', periodStart: '2026-09-05' };
-  assert.deepEqual([0, 1, 2].map((i) => range(a, i)), ['2026-09-05..2026-09-19', '2026-09-20..2026-10-04', '2026-10-05..2026-10-19']);
+  assert.deepEqual(
+    [0, 1, 2].map((i) => range(a, i)),
+    ['2026-09-05..2026-09-19', '2026-09-20..2026-10-04', '2026-10-05..2026-10-19'],
+  );
   const b = { freq: 'semimonthly', periodStart: '2026-09-16', periodEnd: '2026-09-20' }; // typed end date is ignored
-  assert.deepEqual([0, 1, 2].map((i) => range(b, i)), ['2026-09-16..2026-09-30', '2026-10-01..2026-10-15', '2026-10-16..2026-10-31']);
+  assert.deepEqual(
+    [0, 1, 2].map((i) => range(b, i)),
+    ['2026-09-16..2026-09-30', '2026-10-01..2026-10-15', '2026-10-16..2026-10-31'],
+  );
   assert.equal(M.lengthFromDates(b), false);
   assert.equal(M.periodIndex(b, '2026-10-15'), 1);
   const c = { freq: 'semimonthly', periodStart: '2026-01-31' }; // 31 / 16, clamped in short months
-  assert.deepEqual([0, 1, 2, 3, 4].map((i) => range(c, i)), [
-    '2026-01-31..2026-02-15', '2026-02-16..2026-02-27', '2026-02-28..2026-03-15', '2026-03-16..2026-03-30', '2026-03-31..2026-04-15']);
+  assert.deepEqual(
+    [0, 1, 2, 3, 4].map((i) => range(c, i)),
+    [
+      '2026-01-31..2026-02-15',
+      '2026-02-16..2026-02-27',
+      '2026-02-28..2026-03-15',
+      '2026-03-16..2026-03-30',
+      '2026-03-31..2026-04-15',
+    ],
+  );
   assert.equal(M.periodIndex(c, '2026-02-28'), 2);
   assert.equal(M.periodIndex(c, '2026-02-27'), 1);
 });
@@ -389,7 +435,8 @@ test('calendar periods work for dates before the start (negative indexes)', () =
   const q = { freq: 'semimonthly', periodStart: '2026-03-01' };
   assert.equal(range(q, -1), '2026-02-16..2026-02-28');
   assert.equal(range(q, -2), '2026-02-01..2026-02-15');
-  for (let i = -30; i <= 30; i++) { // indexes and ranges round-trip and tile with no gaps
+  for (let i = -30; i <= 30; i++) {
+    // indexes and ranges round-trip and tile with no gaps
     const r = M.periodRange(q, i);
     assert.equal(M.periodIndex(q, r.start), i);
     assert.equal(M.periodIndex(q, r.end), i);
@@ -399,12 +446,17 @@ test('calendar periods work for dates before the start (negative indexes)', () =
 
 test('monthly (30) follows the calendar, anchor 31 clamps', () => {
   const p = { freq: 'monthly', periodStart: '2026-01-31', periodEnd: '2026-02-01' };
-  assert.deepEqual([0, 1, 2, 3].map((i) => range(p, i)), [
-    '2026-01-31..2026-02-27', '2026-02-28..2026-03-30', '2026-03-31..2026-04-29', '2026-04-30..2026-05-30']);
+  assert.deepEqual(
+    [0, 1, 2, 3].map((i) => range(p, i)),
+    ['2026-01-31..2026-02-27', '2026-02-28..2026-03-30', '2026-03-31..2026-04-29', '2026-04-30..2026-05-30'],
+  );
   assert.equal(M.periodIndex(p, '2026-02-28'), 1);
   assert.equal(range(p, -1), '2025-12-31..2026-01-30');
   const q = { freq: 'monthly', periodStart: '2026-09-01' };
-  assert.deepEqual([0, 1].map((i) => M.periodLength(q, i)), [30, 31]);
+  assert.deepEqual(
+    [0, 1].map((i) => M.periodLength(q, i)),
+    [30, 31],
+  );
   assert.equal(range(q, -1), '2026-08-01..2026-08-31');
 });
 
@@ -419,10 +471,21 @@ test('weekly and biweekly stay fixed, including across DST', () => {
 });
 
 test('final-period fixed adjustment with unequal half lengths', () => {
-  const p = { freq: 'semimonthly', periodStart: '2027-02-01', shifts: 7, gross: 1000,
+  const p = {
+    freq: 'semimonthly',
+    periodStart: '2027-02-01',
+    shifts: 7,
+    gross: 1000,
     payTypes: [{ id: 'p1', k: 'hourly', name: 'Bar', rate: 10, unit: 'hr', usual: 1 }],
-    deductions: [{ id: 'd1', k: 'health', name: 'Health', amount: 50, mode: 'fixed' }] };
-  const nights = ['2027-02-17', '2027-02-20', '2027-02-25'].map((date, i) => ({ id: i, date, total: 100, cash: 50, pay: { p1: 1 } }));
+    deductions: [{ id: 'd1', k: 'health', name: 'Health', amount: 50, mode: 'fixed' }],
+  };
+  const nights = ['2027-02-17', '2027-02-20', '2027-02-25'].map((date, i) => ({
+    id: i,
+    date,
+    total: 100,
+    cash: 50,
+    pay: { p1: 1 },
+  }));
   // period 1 = Feb 16-28 (13 days), 7 shifts: 50/7 per shift does not divide evenly; once final the fixed total settles to exactly $50
   const t = M.periodTotals(p, nights, 1, '2027-03-05');
   assert.equal(t.exact, true);
@@ -434,8 +497,8 @@ test('final-period fixed adjustment with unequal half lengths', () => {
 
 test('shifts default follows the length of that half', () => {
   const p = { freq: 'semimonthly', periodStart: '2027-02-01', shifts: 0 };
-  assert.equal(M.shiftsPerPeriod(p, [], '2027-02-05').n, 9);   // 15 days -> 8.57
-  assert.equal(M.shiftsPerPeriod(p, [], '2027-02-20').n, 7);   // 13 days -> 7.43
+  assert.equal(M.shiftsPerPeriod(p, [], '2027-02-05').n, 9); // 15 days -> 8.57
+  assert.equal(M.shiftsPerPeriod(p, [], '2027-02-20').n, 7); // 13 days -> 7.43
   assert.equal(M.shiftsPerPeriod(p, [], '2027-02-20', 0).n, 9); // explicit index wins
   assert.equal(M.summary(p, [], '2027-02-20').periodLength, 13);
   assert.equal(M.summary(p, [], '2027-02-20').calendar, 'semimonthly');
@@ -446,8 +509,14 @@ test('isFinal and nightsInPeriod use the calendar halves', () => {
   assert.equal(M.isFinal(p, 0, '2026-09-16'), true);
   assert.equal(M.isFinal(p, 0, '2026-09-15'), false);
   const ns = [{ date: '2026-09-15' }, { date: '2026-09-16' }, { date: '2026-08-31' }];
-  assert.deepEqual(M.nightsInPeriod(p, ns, 0).map((n) => n.date), ['2026-09-15']);
-  assert.deepEqual(M.nightsInPeriod(p, ns, -1).map((n) => n.date), ['2026-08-31']);
+  assert.deepEqual(
+    M.nightsInPeriod(p, ns, 0).map((n) => n.date),
+    ['2026-09-15'],
+  );
+  assert.deepEqual(
+    M.nightsInPeriod(p, ns, -1).map((n) => n.date),
+    ['2026-08-31'],
+  );
 });
 
 test('fixed 15 and 30 stay fixed-length; num(freq) is never used for the string modes', () => {
@@ -477,7 +546,10 @@ test('the accuracy screen defaults to the newest FINISHED period', async () => {
   const { defaultCalibPeriod } = await import('../app/js/ui/periods.js');
   const finished = (i) => M.isFinal(P(), i, TODAY);
   assert.equal(defaultCalibPeriod([0, -1, -2], finished), -1); // period 0 is in progress: skip it
-  assert.equal(defaultCalibPeriod([0, -1, -2], (i) => M.isFinal(P(), i, AFTER)), 0); // once it ends it is the newest finished
+  assert.equal(
+    defaultCalibPeriod([0, -1, -2], (i) => M.isFinal(P(), i, AFTER)),
+    0,
+  ); // once it ends it is the newest finished
   assert.equal(defaultCalibPeriod([0], finished), 0); // nothing finished: still pick something (the screen disables Compare)
   assert.equal(defaultCalibPeriod([], finished), null);
 });
@@ -497,16 +569,23 @@ test('dates outside years 1000-9998 are rejected, so calendar periods never loop
 });
 
 test('example data follows today: a live pay period, same example money', () => {
-  const p = M.exampleProfile('2031-03-12'), ns = M.exampleNights('2031-03-12');
+  const p = M.exampleProfile('2031-03-12'),
+    ns = M.exampleNights('2031-03-12');
   assert.equal(p.periodStart, '2031-03-05');
   assert.equal(p.periodEnd, '2031-03-18');
   assert.equal(M.periodIndex(p, '2031-03-12'), 0);
-  assert.deepEqual(ns.map((n) => n.date), ['2031-03-05', '2031-03-08', '2031-03-10', '2031-03-11']);
+  assert.deepEqual(
+    ns.map((n) => n.date),
+    ['2031-03-05', '2031-03-08', '2031-03-10', '2031-03-11'],
+  );
   assert.ok(ns.every((n) => M.periodIndex(p, n.date) === 0));
   const c = M.computeNight(ns[2], p, 10);
-  assert.equal(c.total, 585); assert.equal(c.hours, 8); assert.equal(c.cashInHand + c.fromCash, 210);
+  assert.equal(c.total, 585);
+  assert.equal(c.hours, 8);
+  assert.equal(c.cashInHand + c.fromCash, 210);
   const today = M.todayISO();
-  const q = M.exampleProfile(), qn = M.exampleNights();
+  const q = M.exampleProfile(),
+    qn = M.exampleNights();
   assert.equal(M.periodIndex(q, today), 0);
   assert.ok(qn.every((n) => n.date <= today && M.periodIndex(q, n.date) === 0));
   assert.equal(M.isFinal(q, 0, today), false);
@@ -514,12 +593,20 @@ test('example data follows today: a live pay period, same example money', () => 
 
 test('indexNights matches a plain filter, oldest first, and handles the edit preview call', () => {
   const p = P();
-  const nights = [...N(), { id: 9, date: '2026-10-06' }, { id: 10, date: '2026-09-01' }, { id: 11, date: 'bad' }];
+  const nights = [
+    ...N(),
+    { id: 9, date: '2026-10-06' },
+    { id: 10, date: '2026-09-01' },
+    { id: 11, date: 'bad' },
+  ];
   const ix = M.indexNights(p, nights);
   [-3, -2, -1, 0, 1, 2].forEach((i) => {
     assert.deepEqual(M.nightsInPeriod(p, nights, i, ix), M.nightsInPeriod(p, nights, i));
   });
-  assert.deepEqual(M.nightsInPeriod(p, nights, 0, ix).map((n) => n.id), [1, 2, 3, 4]);
+  assert.deepEqual(
+    M.nightsInPeriod(p, nights, 0, ix).map((n) => n.id),
+    [1, 2, 3, 4],
+  );
   // shiftsPerPeriod with and without an index agree, and a passed idx only matters for the default guess
   const q = { ...P(), shifts: '' };
   assert.deepEqual(M.shiftsPerPeriod(q, nights, AFTER, 0, ix), M.shiftsPerPeriod(q, nights, AFTER));

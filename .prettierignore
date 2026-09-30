@@ -1,0 +1,6 @@
+node_modules
+archive
+app/fonts
+app/icons
+*.md
+package-lock.json

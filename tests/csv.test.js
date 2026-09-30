@@ -1,15 +1,35 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseCSV, parseMoney, parseDate, buildNights, dedupeNights, mergeNights, guessMapping, listEmployees, MAPPING_PRESETS, namesToMapping, mappingToNames } from '../app/js/csv.js';
+import {
+  parseCSV,
+  parseMoney,
+  parseDate,
+  buildNights,
+  dedupeNights,
+  mergeNights,
+  guessMapping,
+  listEmployees,
+  MAPPING_PRESETS,
+  namesToMapping,
+  mappingToNames,
+} from '../app/js/csv.js';
 import { csvSource, toastSource } from '../integrations/source.js';
 
 test('parseCSV: quotes, escaped quotes, commas and newlines in quotes, BOM, CRLF', () => {
   const t = '﻿Date,Note,Amt\r\n9/26,"Hello, ""world""",$1.50\r\n9/27,"line1\nline2",2\r\n';
-  assert.deepEqual(parseCSV(t), [['Date', 'Note', 'Amt'], ['9/26', 'Hello, "world"', '$1.50'], ['9/27', 'line1\nline2', '2']]);
+  assert.deepEqual(parseCSV(t), [
+    ['Date', 'Note', 'Amt'],
+    ['9/26', 'Hello, "world"', '$1.50'],
+    ['9/27', 'line1\nline2', '2'],
+  ]);
 });
 
 test('parseCSV: no trailing newline, blank lines, empty fields, lone CR', () => {
-  assert.deepEqual(parseCSV('a,b\n\n1,\n,2'), [['a', 'b'], ['1', ''], ['', '2']]);
+  assert.deepEqual(parseCSV('a,b\n\n1,\n,2'), [
+    ['a', 'b'],
+    ['1', ''],
+    ['', '2'],
+  ]);
   assert.deepEqual(parseCSV('a\rb'), [['a'], ['b']]);
   assert.deepEqual(parseCSV(''), []);
   assert.deepEqual(parseCSV('x,"",y'), [['x', '', 'y']]);
@@ -48,8 +68,10 @@ test('guessMapping and saved-mapping round trip', () => {
   assert.deepEqual(m, { date: 0, total: 5, cash: 2, card: 3, hours: 4, employee: 1 });
   const names = mappingToNames(HEAD, m);
   assert.equal(names.date, 'business date');
-  assert.deepEqual(namesToMapping(['Total', 'Business Date', 'Employee', 'Cash Tips', 'Card Tips', 'Hours'], names),
-    { date: 1, total: 0, cash: 3, card: 4, hours: 5, employee: 2 });
+  assert.deepEqual(
+    namesToMapping(['Total', 'Business Date', 'Employee', 'Cash Tips', 'Card Tips', 'Hours'], names),
+    { date: 1, total: 0, cash: 3, card: 4, hours: 5, employee: 2 },
+  );
   assert.ok(MAPPING_PRESETS.generic);
   assert.equal(MAPPING_PRESETS.toast, undefined);
 });
@@ -65,7 +87,10 @@ test('buildNights: total column, employee filter, cash', () => {
   assert.deepEqual(listEmployees(rows, m), ['Alex', 'Sam']);
   const { nights, skipped } = buildNights(rows, m, { employee: 'Sam', payId: 'p1' });
   assert.equal(nights.length, 2);
-  assert.deepEqual([nights[0].date, nights[0].total, nights[0].cash, nights[0].pay], ['2026-09-26', 390.5, 100, { p1: 8 }]);
+  assert.deepEqual(
+    [nights[0].date, nights[0].total, nights[0].cash, nights[0].pay],
+    ['2026-09-26', 390.5, 100, { p1: 8 }],
+  );
   assert.equal(nights[1].cash, null);
   assert.deepEqual(skipped, [{ row: 4, reason: 'date' }]);
   assert.equal(nights[0].barback, true);
@@ -73,7 +98,14 @@ test('buildNights: total column, employee filter, cash', () => {
 
 test('buildNights: total = cash + card + hours * rate when no total column', () => {
   const m = { date: 0, cash: 1, card: 2, hours: 3, total: null, employee: null };
-  const { nights, skipped } = buildNights([['9/26', '$100.10', '200.20', '8'], ['9/27', '', '', '']], m, { rate: 12, refYear: 2026 });
+  const { nights, skipped } = buildNights(
+    [
+      ['9/26', '$100.10', '200.20', '8'],
+      ['9/27', '', '', ''],
+    ],
+    m,
+    { rate: 12, refYear: 2026 },
+  );
   assert.equal(nights[0].total, 396.3);
   assert.equal(nights[0].date, '2026-09-26');
   assert.equal(skipped.length, 1);
@@ -82,15 +114,28 @@ test('buildNights: total = cash + card + hours * rate when no total column', () 
 
 test('buildNights sums several rows on the same date', () => {
   const m = { date: 0, total: 1, cash: 2, card: null, hours: null, employee: null };
-  const { nights } = buildNights([['2026-09-26', '100', '10'], ['2026-09-26', '50.25', '5']], m, {});
+  const { nights } = buildNights(
+    [
+      ['2026-09-26', '100', '10'],
+      ['2026-09-26', '50.25', '5'],
+    ],
+    m,
+    {},
+  );
   assert.equal(nights.length, 1);
   assert.equal(nights[0].total, 150.25);
   assert.equal(nights[0].cash, 15);
 });
 
 test('dedupe and merge', () => {
-  const existing = [{ id: 1, date: '2026-09-26', total: 100 }, { id: 2, date: '2026-09-27', total: 50 }];
-  const incoming = [{ id: 9, date: '2026-09-26', total: 999 }, { id: 10, date: '2026-09-28', total: 70 }];
+  const existing = [
+    { id: 1, date: '2026-09-26', total: 100 },
+    { id: 2, date: '2026-09-27', total: 50 },
+  ];
+  const incoming = [
+    { id: 9, date: '2026-09-26', total: 999 },
+    { id: 10, date: '2026-09-28', total: 70 },
+  ];
   const d = dedupeNights(incoming, existing);
   assert.equal(d.fresh.length, 1);
   assert.equal(d.duplicates.length, 1);
@@ -107,23 +152,39 @@ test('dedupe and merge', () => {
 });
 
 test('mergeNights overwrite keeps existing cash, other pay types and barback when the import lacks them', () => {
-  const existing = [{ id: 7, date: '2026-09-26', total: 100, cash: 40, pay: { p1: 6, p2: 2 }, barback: false }];
+  const existing = [
+    { id: 7, date: '2026-09-26', total: 100, cash: 40, pay: { p1: 6, p2: 2 }, barback: false },
+  ];
   const incoming = [{ id: 99, date: '2026-09-26', total: 250, cash: null, pay: { p1: 8 }, barback: true }];
   const o = mergeNights(existing, incoming, { overwrite: true }).nights[0];
-  assert.deepEqual(o, { id: 7, date: '2026-09-26', total: 250, cash: 40, pay: { p1: 8, p2: 2 }, barback: false });
+  assert.deepEqual(o, {
+    id: 7,
+    date: '2026-09-26',
+    total: 250,
+    cash: 40,
+    pay: { p1: 8, p2: 2 },
+    barback: false,
+  });
   const withCash = mergeNights(existing, [{ ...incoming[0], cash: 55 }], { overwrite: true }).nights[0];
   assert.equal(withCash.cash, 55);
-  const noCashAnywhere = mergeNights([{ ...existing[0], cash: null }], incoming, { overwrite: true }).nights[0];
+  const noCashAnywhere = mergeNights([{ ...existing[0], cash: null }], incoming, { overwrite: true })
+    .nights[0];
   assert.equal(noCashAnywhere.cash, null);
 });
 
 test('csvSource returns nights in range; toastSource throws', async () => {
   const text = 'Date,Total\n9/26/2026,100\n9/27/2026,200\n';
-  const src = csvSource({ text, mapping: { date: 0, total: 1, cash: null, card: null, hours: null, employee: null } });
+  const src = csvSource({
+    text,
+    mapping: { date: 0, total: 1, cash: null, card: null, hours: null, employee: null },
+  });
   assert.equal(src.id, 'csv');
   assert.equal((await src.fetchNights()).length, 2);
   const r = await src.fetchNights({ from: '2026-09-27' });
-  assert.deepEqual(r.map((n) => n.total), [200]);
+  assert.deepEqual(
+    r.map((n) => n.total),
+    [200],
+  );
   await assert.rejects(() => toastSource.fetchNights({}), /not available yet/);
   assert.equal(toastSource.id, 'toast');
 });
@@ -135,7 +196,11 @@ test('regression: hours in H:MM or "7h 30m" form are not read as 730', async () 
   assert.equal(parseHours('7h 30m'), 7.5);
   assert.equal(parseHours('8 hrs'), 8);
   assert.equal(parseHours(''), 0);
-  const { nights } = buildNights([['9/26/2026', '100', '7:30']], { date: 0, cash: 1, hours: 2 }, { payId: 'p1' });
+  const { nights } = buildNights(
+    [['9/26/2026', '100', '7:30']],
+    { date: 0, cash: 1, hours: 2 },
+    { payId: 'p1' },
+  );
   assert.deepEqual(nights[0].pay, { p1: 7.5 });
 });
 
@@ -151,13 +216,40 @@ test('buildNights skips rows with negative cash, card, total or hours', () => {
   const { nights, skipped } = buildNights(rows, m, { refYear: 2026 });
   assert.equal(nights.length, 1);
   assert.equal(nights[0].date, '2026-09-30');
-  assert.deepEqual(skipped.map((s) => [s.row, s.reason]), [[1, 'negative'], [2, 'negative'], [3, 'negative'], [4, 'negative']]);
+  assert.deepEqual(
+    skipped.map((s) => [s.row, s.reason]),
+    [
+      [1, 'negative'],
+      [2, 'negative'],
+      [3, 'negative'],
+      [4, 'negative'],
+    ],
+  );
 });
 
 test('parseMoney catches a minus sign after the currency symbol; negative hours with leading spaces are skipped', () => {
-  for (const [s, v] of [['$-3', -3], ['-$3', -3], ['($3)', -3], ['$ -3.50', -3.5], ['−$3', -3], ['$3', 3], ['3-', -3]]) assert.equal(parseMoney(s), v, s);
-  const rows = [['2026-09-01', ' -5', '100'], ['2026-09-02', ' (5)', '100'], ['2026-09-03', '5', '100']];
+  for (const [s, v] of [
+    ['$-3', -3],
+    ['-$3', -3],
+    ['($3)', -3],
+    ['$ -3.50', -3.5],
+    ['−$3', -3],
+    ['$3', 3],
+    ['3-', -3],
+  ])
+    assert.equal(parseMoney(s), v, s);
+  const rows = [
+    ['2026-09-01', ' -5', '100'],
+    ['2026-09-02', ' (5)', '100'],
+    ['2026-09-03', '5', '100'],
+  ];
   const { nights, skipped } = buildNights(rows, { date: 0, hours: 1, cash: 2 }, { rate: 12, payId: 'p1' });
-  assert.deepEqual(nights.map((n) => n.date), ['2026-09-03']);
-  assert.deepEqual(skipped.map((s) => s.reason), ['negative', 'negative']);
+  assert.deepEqual(
+    nights.map((n) => n.date),
+    ['2026-09-03'],
+  );
+  assert.deepEqual(
+    skipped.map((s) => s.reason),
+    ['negative', 'negative'],
+  );
 });

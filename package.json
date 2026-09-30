@@ -4,10 +4,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write ."
   },
   "devDependencies": {
-    "happy-dom": "20.14.5"
+    "@eslint/js": "10.0.1",
+    "eslint": "10.11.0",
+    "globals": "17.12.0",
+    "happy-dom": "20.14.5",
+    "prettier": "3.9.9"
   },
   "engines": {
     "node": ">=20"

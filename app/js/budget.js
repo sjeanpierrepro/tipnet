@@ -11,9 +11,22 @@
 //   balance:    {amount, asOf} (absent if none)     money you said you had, and when (ISO date and time)
 // Everything here is an estimate. It is a planning aid, not financial advice.
 import {
-  num, toCents, fromCents, round2, parseISO, addDays, dayDiff,
-  periodIndex, periodRange, isFinal, periodTotals, shiftsPerPeriod, todayISO, indexNights,
-  computeNight, periodFixed,
+  num,
+  toCents,
+  fromCents,
+  round2,
+  parseISO,
+  addDays,
+  dayDiff,
+  periodIndex,
+  periodRange,
+  isFinal,
+  periodTotals,
+  shiftsPerPeriod,
+  todayISO,
+  indexNights,
+  computeNight,
+  periodFixed,
 } from './math.js';
 
 /* ---------- small helpers ---------- */
@@ -62,7 +75,10 @@ export function convertPaidKeys(paid, bills, profile) {
   Object.keys(paid || {}).forEach((k) => {
     if (paid[k] !== true) return;
     const m = OLD_KEY.exec(k);
-    if (!m) { out[k] = true; return; }
+    if (!m) {
+      out[k] = true;
+      return;
+    }
     if (!ok) return;
     const bill = (bills || []).find((b) => b.id === m[2]);
     if (!bill) return;
@@ -73,14 +89,16 @@ export function convertPaidKeys(paid, bills, profile) {
   return out;
 }
 /** True when paidBills still holds old-style keys (so the caller knows to convert and save). */
-export const hasOldPaidKeys = (budget) => Object.keys((budget && budget.paidBills) || {}).some((k) => OLD_KEY.test(k));
+export const hasOldPaidKeys = (budget) =>
+  Object.keys((budget && budget.paidBills) || {}).some((k) => OLD_KEY.test(k));
 
 /* ---------- saved balance ---------- */
 /** Keeps a balance only if it has a real amount and a real date-time. */
 export function cleanBalance(b) {
   if (!b || typeof b !== 'object') return null;
   const amount = parseFloat(b.amount);
-  if (!Number.isFinite(amount) || typeof b.asOf !== 'string' || !Number.isFinite(Date.parse(b.asOf))) return null;
+  if (!Number.isFinite(amount) || typeof b.asOf !== 'string' || !Number.isFinite(Date.parse(b.asOf)))
+    return null;
   return { amount: round2(amount), asOf: b.asOf };
 }
 export const BALANCE_STALE_DAYS = 3;
@@ -93,9 +111,13 @@ export function balanceIsStale(balance, now = new Date()) {
 function spentSinceBalance(spends, balance, today) {
   const asOfDay = todayISO(new Date(balance.asOf));
   const at = Date.parse(balance.asOf);
-  return sumC((spends || []).filter((s) => s.date <= today && (s.loggedAt
-    ? s.date >= asOfDay && Date.parse(s.loggedAt) > at
-    : s.date > asOfDay)), (s) => toCents(num(s.amount)));
+  return sumC(
+    (spends || []).filter(
+      (s) =>
+        s.date <= today && (s.loggedAt ? s.date >= asOfDay && Date.parse(s.loggedAt) > at : s.date > asOfDay),
+    ),
+    (s) => toCents(num(s.amount)),
+  );
 }
 
 /**
@@ -109,25 +131,48 @@ export function migrateBudget(x, profile) {
   const list = (v) => (Array.isArray(v) ? v.filter((i) => i && typeof i === 'object') : []);
   const text = (v, d) => (typeof v === 'string' && v.trim() ? v.trim() : d);
   const money = (v) => fromCents(cents(v));
-  const id = (v, prefix, i) => (v !== undefined && v !== null && String(v) !== '' ? String(v) : prefix + (i + 1));
+  const id = (v, prefix, i) =>
+    v !== undefined && v !== null && String(v) !== '' ? String(v) : prefix + (i + 1);
   out.bills = list(x.bills).map((b, i) => {
     const day = Math.round(num(b.dueDay));
-    const bill = { id: id(b.id, 'b', i), name: text(b.name, 'Bill'), amount: money(b.amount), dueDay: Math.min(31, Math.max(1, day || 1)) };
+    const bill = {
+      id: id(b.id, 'b', i),
+      name: text(b.name, 'Bill'),
+      amount: money(b.amount),
+      dueDay: Math.min(31, Math.max(1, day || 1)),
+    };
     if (typeof b.category === 'string' && b.category) bill.category = b.category;
     return bill;
   });
-  out.categories = list(x.categories).map((c, i) => ({ id: id(c.id, 'c', i), name: text(c.name, 'Category'), monthly: money(c.monthly) }));
-  out.goals = list(x.goals).map((g, i) => ({
-    id: id(g.id, 'g', i), name: text(g.name, 'Goal'), target: money(g.target), saved: money(g.saved), perPaycheck: money(g.perPaycheck),
+  out.categories = list(x.categories).map((c, i) => ({
+    id: id(c.id, 'c', i),
+    name: text(c.name, 'Category'),
+    monthly: money(c.monthly),
   }));
-  out.spends = list(x.spends).filter((s) => Number.isFinite(parseISO(s.date))).map((s, i) => {
-    const sp = { id: id(s.id, 's', i), date: s.date, amount: money(s.amount), categoryId: s.categoryId == null ? '' : String(s.categoryId) };
-    if (typeof s.note === 'string' && s.note) sp.note = s.note;
-    if (typeof s.loggedAt === 'string' && Number.isFinite(Date.parse(s.loggedAt))) sp.loggedAt = s.loggedAt;
-    return sp;
-  });
+  out.goals = list(x.goals).map((g, i) => ({
+    id: id(g.id, 'g', i),
+    name: text(g.name, 'Goal'),
+    target: money(g.target),
+    saved: money(g.saved),
+    perPaycheck: money(g.perPaycheck),
+  }));
+  out.spends = list(x.spends)
+    .filter((s) => Number.isFinite(parseISO(s.date)))
+    .map((s, i) => {
+      const sp = {
+        id: id(s.id, 's', i),
+        date: s.date,
+        amount: money(s.amount),
+        categoryId: s.categoryId == null ? '' : String(s.categoryId),
+      };
+      if (typeof s.note === 'string' && s.note) sp.note = s.note;
+      if (typeof s.loggedAt === 'string' && Number.isFinite(Date.parse(s.loggedAt))) sp.loggedAt = s.loggedAt;
+      return sp;
+    });
   if (x.paidBills && typeof x.paidBills === 'object' && !Array.isArray(x.paidBills)) {
-    Object.keys(x.paidBills).forEach((k) => { if (x.paidBills[k] === true) out.paidBills[k] = true; });
+    Object.keys(x.paidBills).forEach((k) => {
+      if (x.paidBills[k] === true) out.paidBills[k] = true;
+    });
     if (profile && hasOldPaidKeys(out)) out.paidBills = convertPaidKeys(out.paidBills, out.bills, profile);
   }
   const bal = cleanBalance(x.balance);
@@ -143,7 +188,12 @@ export function payDelayOf(profile) {
   return Math.min(21, Math.max(0, Math.round(Number(v))));
 }
 /** True when the profile has a payDelay the user actually set. */
-export const hasPayDelay = (profile) => !!profile && profile.payDelay !== undefined && profile.payDelay !== null && profile.payDelay !== '' && Number.isFinite(Number(profile.payDelay));
+export const hasPayDelay = (profile) =>
+  !!profile &&
+  profile.payDelay !== undefined &&
+  profile.payDelay !== null &&
+  profile.payDelay !== '' &&
+  Number.isFinite(Number(profile.payDelay));
 
 /**
  * The next payday is the first pay date after today. A period's check arrives payDelay days after it ends,
@@ -163,7 +213,8 @@ export function paydayInfo(profile, today = todayISO()) {
   for (let k = k0; k < k0 + 400; k++) {
     const r = periodRange(profile, k);
     const date = addDays(r.end, delay);
-    if (date > today) return { date, daysAway: dayDiff(today, date), periodIndex: k, periodStart: r.start, periodEnd: r.end };
+    if (date > today)
+      return { date, daysAway: dayDiff(today, date), periodIndex: k, periodStart: r.start, periodEnd: r.end };
   }
   return none;
 }
@@ -179,11 +230,15 @@ export function nextPayday(profile, today = todayISO()) {
  * Returns [{id, name, amount, category?, dueDay, date}].
  */
 export function billsDue(budget, fromDate, toDate) {
-  const from = parseISO(fromDate), to = parseISO(toDate);
+  const from = parseISO(fromDate),
+    to = parseISO(toDate);
   if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) return [];
-  const a = new Date(from), b = new Date(to);
-  let y = a.getUTCFullYear(), m = a.getUTCMonth() + 1;
-  const endY = b.getUTCFullYear(), endM = b.getUTCMonth() + 1;
+  const a = new Date(from),
+    b = new Date(to);
+  let y = a.getUTCFullYear(),
+    m = a.getUTCMonth() + 1;
+  const endY = b.getUTCFullYear(),
+    endM = b.getUTCMonth() + 1;
   const found = [];
   while (y < endY || (y === endY && m <= endM)) {
     const last = daysInMonth(y, m);
@@ -193,7 +248,10 @@ export function billsDue(budget, fromDate, toDate) {
       if (date >= fromDate && date <= toDate) found.push({ ...bill, date });
     });
     m++;
-    if (m > 12) { m = 1; y++; }
+    if (m > 12) {
+      m = 1;
+      y++;
+    }
   }
   return found.sort((p, q) => (p.date < q.date ? -1 : p.date > q.date ? 1 : 0));
 }
@@ -217,16 +275,27 @@ export function expectedIncome(profile, nights, today = todayISO(), index = inde
   const t = periodTotals(profile, nights, idx, today, expected, index);
   const done = [...index.keys()].filter((i) => isFinal(profile, i, today));
   const past = done.map((i) => periodTotals(profile, nights, i, today, expected, index));
-  const mean = (list, f) => (list.length ? fromCents(Math.round(list.reduce((s, x) => s + toCents(f(x)), 0) / list.length)) : null);
+  const mean = (list, f) =>
+    list.length ? fromCents(Math.round(list.reduce((s, x) => s + toCents(f(x)), 0) / list.length)) : null;
   const avg = mean(past, (x) => x.net);
-  const avgChk = mean(past.filter((x) => x.allCash), (x) => x.chk);
+  const avgChk = mean(
+    past.filter((x) => x.allCash),
+    (x) => x.chk,
+  );
   const withCash = t.ns.filter(hasCash).length;
   let projected;
   // never scale down what is already earned
   if (withCash > 0) projected = round2(t.chk * Math.max(1, Math.max(expected, t.ns.length) / withCash));
   else projected = avgChk;
   const projectedFrom = withCash > 0 ? 'nights' : avgChk == null ? null : 'average';
-  return { cashSoFar: t.cash, checkSoFar: t.chk, projectedCheck: projected, projectedFrom, avgCheckPerPeriod: avgChk, avgTakeHomePerPeriod: avg };
+  return {
+    cashSoFar: t.cash,
+    checkSoFar: t.chk,
+    projectedCheck: projected,
+    projectedFrom,
+    avgCheckPerPeriod: avgChk,
+    avgTakeHomePerPeriod: avg,
+  };
 }
 
 /**
@@ -241,7 +310,10 @@ function finishedCheckC(profile, nights, k, today, avgCheck, index) {
   const withCash = t.ns.map((night) => computeNight(night, profile, n)).filter((c) => c.onCheck != null);
   if (withCash.length) {
     const sumC = withCash.reduce((s, c) => s + toCents(c.onCheck) + toCents(c.fixedPerShift), 0);
-    return { c: Math.round((sumC * t.ns.length) / withCash.length) - toCents(periodFixed(profile, t.ns)), from: 'finished' };
+    return {
+      c: Math.round((sumC * t.ns.length) / withCash.length) - toCents(periodFixed(profile, t.ns)),
+      from: 'finished',
+    };
   }
   return { c: avgCheck == null ? null : toCents(avgCheck), from: avgCheck == null ? null : 'average' };
 }
@@ -255,14 +327,20 @@ export function categoryStatus(budget, month) {
       .reduce((sum, s) => sum + toCents(num(s.amount)), 0);
     const monthlyC = toCents(num(c.monthly));
     return {
-      id: c.id, name: c.name, monthly: fromCents(monthlyC), spent: fromCents(spentC), remaining: fromCents(monthlyC - spentC),
-      pct: monthlyC > 0 ? Math.round((spentC / monthlyC) * 100) : (spentC > 0 ? 100 : 0),
+      id: c.id,
+      name: c.name,
+      monthly: fromCents(monthlyC),
+      spent: fromCents(spentC),
+      remaining: fromCents(monthlyC - spentC),
+      pct: monthlyC > 0 ? Math.round((spentC / monthlyC) * 100) : spentC > 0 ? 100 : 0,
     };
   });
 }
 /** {pct (0-100), remaining, paychecksToGo (null if perPaycheck is 0 and goal not met)}. */
 export function goalProgress(goal) {
-  const targetC = toCents(num(goal.target)), savedC = toCents(num(goal.saved)), per = toCents(num(goal.perPaycheck));
+  const targetC = toCents(num(goal.target)),
+    savedC = toCents(num(goal.saved)),
+    per = toCents(num(goal.perPaycheck));
   const remC = Math.max(0, targetC - savedC);
   const pct = targetC > 0 ? Math.min(100, Math.floor((savedC / targetC) * 100)) : 0;
   const paychecksToGo = remC === 0 ? 0 : per > 0 ? Math.ceil(remC / per) : null;
@@ -305,12 +383,18 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
   const saved = entered ? null : cleanBalance(budget.balance);
   // Money you have: what you typed, or your saved balance minus what you logged spending since, or cash tips this period
   // minus what you logged spending this period. Money already spent also counts against its category below.
-  let spentC = 0, cashC;
+  let spentC = 0,
+    cashC;
   if (entered) cashC = toCents(num(co));
-  else if (saved) { cashC = toCents(saved.amount); spentC = spentSinceBalance(budget.spends, saved, today); }
-  else {
+  else if (saved) {
+    cashC = toCents(saved.amount);
+    spentC = spentSinceBalance(budget.spends, saved, today);
+  } else {
     cashC = toCents(inc.cashSoFar);
-    spentC = sumC((budget.spends || []).filter((s) => s.date >= range.start && s.date <= today), (s) => toCents(num(s.amount)));
+    spentC = sumC(
+      (budget.spends || []).filter((s) => s.date >= range.start && s.date <= today),
+      (s) => toCents(num(s.amount)),
+    );
   }
   const incomeC = cashC - spentC;
 
@@ -324,19 +408,28 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
 
   // Category money to set aside, day by day from today to the day before payday. Days left in this month share what is
   // left of this month's allowance; days in later months each take that month's full allowance / days in that month.
-  const y = +today.slice(0, 4), m = +today.slice(5, 7), d = +today.slice(8, 10);
+  const y = +today.slice(0, 4),
+    m = +today.slice(5, 7),
+    d = +today.slice(8, 10);
   const monthDaysLeft = daysInMonth(y, m) - d + 1;
   const thisMonthDays = Math.min(daysAway, monthDaysLeft);
   const later = []; // {n days, dim days in that month} for each later month in the window
   for (let left = daysAway - thisMonthDays, mm = m, yy = y; left > 0;) {
-    mm++; if (mm > 12) { mm = 1; yy++; }
-    const dim = daysInMonth(yy, mm), n = Math.min(left, dim);
-    later.push({ n, dim }); left -= n;
+    mm++;
+    if (mm > 12) {
+      mm = 1;
+      yy++;
+    }
+    const dim = daysInMonth(yy, mm),
+      n = Math.min(left, dim);
+    later.push({ n, dim });
+    left -= n;
   }
   const cats = categoryStatus(budget, today.slice(0, 7)).map((c) => {
-    const remC = Math.max(0, toCents(c.remaining)), monthlyC = toCents(c.monthly);
-    let reservedC = Math.round(remC * thisMonthDays / monthDaysLeft);
-    for (const L of later) reservedC += Math.round(monthlyC * L.n / L.dim);
+    const remC = Math.max(0, toCents(c.remaining)),
+      monthlyC = toCents(c.monthly);
+    let reservedC = Math.round((remC * thisMonthDays) / monthDaysLeft);
+    for (const L of later) reservedC += Math.round((monthlyC * L.n) / L.dim);
     return { id: c.id, name: c.name, remaining: fromCents(remC), reservedC };
   });
   const catsC = sumC(cats, (c) => c.reservedC);
@@ -346,27 +439,55 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
   // After payday: bills from payday until the following payday come out of the check that arrives on payday.
   // That check pays for period np.periodIndex: the current one, or (between its end and payday) the finished one.
   const nextR = periodRange(profile, np.periodIndex + 1);
-  const afterStart = payday, afterEnd = addDays(nextR.end, delay - 1);
+  const afterStart = payday,
+    afterEnd = addDays(nextR.end, delay - 1);
   const nextBills = unpaid(afterStart, afterEnd);
   const nextBillsC = sumC(nextBills, (b) => toCents(num(b.amount)));
   let projC, checkFrom;
   if (np.periodIndex === idx) {
     projC = inc.projectedCheck == null ? null : toCents(inc.projectedCheck);
     checkFrom = inc.projectedFrom === 'nights' ? 'current' : inc.projectedFrom;
-  } else ({ c: projC, from: checkFrom } = finishedCheckC(profile, nights, np.periodIndex, today, inc.avgCheckPerPeriod, index));
+  } else
+    ({ c: projC, from: checkFrom } = finishedCheckC(
+      profile,
+      nights,
+      np.periodIndex,
+      today,
+      inc.avgCheckPerPeriod,
+      index,
+    ));
 
   return {
-    payday, daysAway,
-    income: { source: entered ? 'entered' : saved ? 'balance' : 'cash', amount: fromCents(incomeC), cash: fromCents(cashC), spent: fromCents(spentC) },
-    bills, billsTotal: fromCents(billsC),
-    goals: goals.map((g) => ({ id: g.id, name: g.name, amount: fromCents(g.amountC) })), goalsTotal: fromCents(goalsC),
-    categories: cats.map((c) => ({ id: c.id, name: c.name, remaining: c.remaining, reserved: fromCents(c.reservedC) })),
+    payday,
+    daysAway,
+    income: {
+      source: entered ? 'entered' : saved ? 'balance' : 'cash',
+      amount: fromCents(incomeC),
+      cash: fromCents(cashC),
+      spent: fromCents(spentC),
+    },
+    bills,
+    billsTotal: fromCents(billsC),
+    goals: goals.map((g) => ({ id: g.id, name: g.name, amount: fromCents(g.amountC) })),
+    goalsTotal: fromCents(goalsC),
+    categories: cats.map((c) => ({
+      id: c.id,
+      name: c.name,
+      remaining: c.remaining,
+      reserved: fromCents(c.reservedC),
+    })),
     categoriesTotal: fromCents(catsC),
     safe: fromCents(safeC),
     perDay: fromCents(Math.round(safeC / Math.max(1, daysAway))),
     after: {
-      projectedCheck: projC == null ? null : fromCents(projC), checkFrom, bills: nextBills, billsTotal: fromCents(nextBillsC), goalsTotal: fromCents(goalsC),
-      left: projC == null ? null : fromCents(projC - nextBillsC - goalsC), periodStart: afterStart, periodEnd: afterEnd,
+      projectedCheck: projC == null ? null : fromCents(projC),
+      checkFrom,
+      bills: nextBills,
+      billsTotal: fromCents(nextBillsC),
+      goalsTotal: fromCents(goalsC),
+      left: projC == null ? null : fromCents(projC - nextBillsC - goalsC),
+      periodStart: afterStart,
+      periodEnd: afterEnd,
     },
   };
 }

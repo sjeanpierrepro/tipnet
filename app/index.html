@@ -1,41 +1,83 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; connect-src 'self' https://api.lemonsqueezy.com; base-uri 'none'; form-action 'none'; object-src 'none'">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>TipNet</title>
-<meta name="description" content="Estimate your take-home tips after tax, one night at a time.">
-<meta name="theme-color" content="#121417" media="(prefers-color-scheme: dark)">
-<meta name="theme-color" content="#F4F3EF" media="(prefers-color-scheme: light)">
-<link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<script src="js/theme-boot.js"></script>
-<link rel="stylesheet" href="css/fonts.css">
-<link rel="stylesheet" href="css/tokens.css">
-<link rel="stylesheet" href="css/components.css">
-</head>
-<body>
-<div id="update-bar" class="update-bar" role="status" hidden>
-  <span>Update available.</span>
-  <button type="button" id="update-refresh">Refresh</button>
-</div>
-<div class="app-shell">
-  <header class="app-header">
-    <div class="brand">Tip<span>Net</span></div>
-  </header>
-  <nav class="tabbar" id="tabs" aria-label="Main">
-    <button type="button" role="tab" id="tab-tonight" aria-controls="app" data-tab="tonight" aria-selected="true">Tonight</button>
-    <button type="button" role="tab" id="tab-periods" aria-controls="app" data-tab="periods" aria-selected="false">Pay periods</button>
-    <button type="button" role="tab" id="tab-budget" aria-controls="app" data-tab="budget" aria-selected="false">Budget</button>
-    <button type="button" role="tab" id="tab-setup" aria-controls="app" data-tab="setup" aria-selected="false">Setup</button>
-  </nav>
-  <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
-  <main id="app" role="tabpanel" aria-labelledby="tab-tonight" tabindex="-1"></main>
-  <footer class="app-footer">TipNet gives estimates, not tax advice. Your numbers stay on this device. <a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a></footer>
-</div>
-<noscript><p class="noscript">TipNet needs JavaScript to run.</p></noscript>
-<script type="module" src="js/app.js"></script>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; connect-src 'self' https://api.lemonsqueezy.com; base-uri 'none'; form-action 'none'; object-src 'none'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>TipNet</title>
+    <meta name="description" content="Estimate your take-home tips after tax, one night at a time." />
+    <meta name="theme-color" content="#121417" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#F4F3EF" media="(prefers-color-scheme: light)" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <script src="js/theme-boot.js"></script>
+    <link rel="stylesheet" href="css/fonts.css" />
+    <link rel="stylesheet" href="css/tokens.css" />
+    <link rel="stylesheet" href="css/components.css" />
+  </head>
+  <body>
+    <div id="update-bar" class="update-bar" role="status" hidden>
+      <span>Update available.</span>
+      <button type="button" id="update-refresh">Refresh</button>
+    </div>
+    <div class="app-shell">
+      <header class="app-header">
+        <div class="brand">Tip<span>Net</span></div>
+      </header>
+      <nav class="tabbar" id="tabs" aria-label="Main">
+        <button
+          type="button"
+          role="tab"
+          id="tab-tonight"
+          aria-controls="app"
+          data-tab="tonight"
+          aria-selected="true"
+        >
+          Tonight
+        </button>
+        <button
+          type="button"
+          role="tab"
+          id="tab-periods"
+          aria-controls="app"
+          data-tab="periods"
+          aria-selected="false"
+        >
+          Pay periods
+        </button>
+        <button
+          type="button"
+          role="tab"
+          id="tab-budget"
+          aria-controls="app"
+          data-tab="budget"
+          aria-selected="false"
+        >
+          Budget
+        </button>
+        <button
+          type="button"
+          role="tab"
+          id="tab-setup"
+          aria-controls="app"
+          data-tab="setup"
+          aria-selected="false"
+        >
+          Setup
+        </button>
+      </nav>
+      <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+      <main id="app" role="tabpanel" aria-labelledby="tab-tonight" tabindex="-1"></main>
+      <footer class="app-footer">
+        TipNet gives estimates, not tax advice. Your numbers stay on this device.
+        <a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a>
+      </footer>
+    </div>
+    <noscript><p class="noscript">TipNet needs JavaScript to run.</p></noscript>
+    <script type="module" src="js/app.js"></script>
+  </body>
 </html>

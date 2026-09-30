@@ -14,7 +14,14 @@ test('performance smoke: 700 nights with blank shifts; Pay periods draws only re
     s.settings.setupDone = true;
     s.profile.shifts = 0; // blank: the app averages history for every period
     s.budget = exampleBudget();
-    s.nights = Array.from({ length: 700 }, (_, i) => ({ id: i + 1, date: addDays(today, -i), total: 200 + (i % 90), cash: 40 + (i % 30), pay: { p1: 6 }, barback: i % 3 !== 0 }));
+    s.nights = Array.from({ length: 700 }, (_, i) => ({
+      id: i + 1,
+      date: addDays(today, -i),
+      total: 200 + (i % 90),
+      cash: 40 + (i % 30),
+      pay: { p1: 6 },
+      barback: i % 3 !== 0,
+    }));
   });
   const page = await boot({ url: 'http://localhost/?unlock=dev', seed: S });
   try {
@@ -31,5 +38,7 @@ test('performance smoke: 700 nights with blank shifts; Pay periods draws only re
     console.log('# periods ' + Math.round(periodsMs) + ' ms, budget ' + Math.round(budgetMs) + ' ms');
     assert.ok(periodsMs < 5000, 'Pay periods took ' + periodsMs + ' ms');
     assert.ok(budgetMs < 5000, 'Budget took ' + budgetMs + ' ms');
-  } finally { await page.close(); }
+  } finally {
+    await page.close();
+  }
 });

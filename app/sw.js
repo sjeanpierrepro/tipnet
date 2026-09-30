@@ -1,7 +1,7 @@
 /* TipNet service worker. Bump VERSION on every release so clients fetch a fresh shell.
    It does NOT skipWaiting on its own: the page shows "Update available: Refresh" and
    posts {type:'SKIP_WAITING'} (or the string 'SKIP_WAITING') when the user agrees. */
-const VERSION = 'tipnet-v19';
+const VERSION = 'tipnet-v20';
 
 const SHELL = [
   './',
@@ -43,16 +43,21 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(VERSION).then((cache) =>
       // Add one by one so a single missing file cannot block installation.
-      Promise.all(SHELL.map((url) => cache.add(new Request(url, { cache: 'reload' })).catch(() => {})))
-    )
+      Promise.all(SHELL.map((url) => cache.add(new Request(url, { cache: 'reload' })).catch(() => {}))),
+    ),
   );
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k.startsWith('tipnet-') && k !== VERSION).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim())
+    caches
+      .keys()
+      .then((keys) =>
+        Promise.all(
+          keys.filter((k) => k.startsWith('tipnet-') && k !== VERSION).map((k) => caches.delete(k)),
+        ),
+      )
+      .then(() => self.clients.claim()),
   );
 });
 
@@ -71,18 +76,35 @@ self.addEventListener('fetch', (event) => {
   // Payment settings: network first so switching payments on reaches installed apps on their next open.
   // Falls back to the cached copy when offline, or when the network is slower than 4 seconds.
   if (url.pathname.endsWith('/js/billing-config.js')) {
-    event.respondWith(new Promise((resolve) => {
-      let done = false;
-      const finish = (res) => { if (!done) { done = true; clearTimeout(timer); resolve(res); } };
-      const cached = () => caches.match(req, { ignoreSearch: true });
-      const timer = setTimeout(() => cached().then((hit) => { if (hit) finish(hit); }), 4000);
-      fetch(req, { cache: 'no-cache' })
-        .then((res) => {
-          if (res && res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(req, copy)); finish(res); }
-          else cached().then((hit) => finish(hit || res)); // host error (404/5xx): keep booting from the cached copy
-        })
-        .catch(() => cached().then((hit) => finish(hit || Response.error())));
-    }));
+    event.respondWith(
+      new Promise((resolve) => {
+        let done = false;
+        const finish = (res) => {
+          if (!done) {
+            done = true;
+            clearTimeout(timer);
+            resolve(res);
+          }
+        };
+        const cached = () => caches.match(req, { ignoreSearch: true });
+        const timer = setTimeout(
+          () =>
+            cached().then((hit) => {
+              if (hit) finish(hit);
+            }),
+          4000,
+        );
+        fetch(req, { cache: 'no-cache' })
+          .then((res) => {
+            if (res && res.ok) {
+              const copy = res.clone();
+              caches.open(VERSION).then((c) => c.put(req, copy));
+              finish(res);
+            } else cached().then((hit) => finish(hit || res)); // host error (404/5xx): keep booting from the cached copy
+          })
+          .catch(() => cached().then((hit) => finish(hit || Response.error())));
+      }),
+    );
     return;
   }
 
@@ -98,6 +120,6 @@ self.addEventListener('fetch', (event) => {
           return res;
         })
         .catch(() => (req.mode === 'navigate' ? caches.match('index.html') : Response.error()));
-    })
+    }),
   );
 });

@@ -8,7 +8,10 @@
 const DAY = 864e5;
 
 /* ---------- small helpers ---------- */
-export const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
+export const num = (v) => {
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : 0;
+};
 export const toCents = (x) => Math.round(x * 100 + (x < 0 ? -1e-9 : 1e-9));
 export const fromCents = (c) => c / 100;
 export const round2 = (x) => fromCents(toCents(x));
@@ -38,7 +41,8 @@ export const weekdayMon0 = (s) => (new Date(parseISO(s)).getUTCDay() + 6) % 7;
 const sumDed = (p, f) => (p.deductions || []).filter(f).reduce((s, d) => s + num(d.amount), 0);
 export const baseRate = (p) => (num(p.gross) > 0 ? sumDed(p, (d) => d.mode === 'pct') / num(p.gross) : 0);
 export const rate = (p) => (p.rateOverride != null ? p.rateOverride : baseRate(p));
-export const fedRate = (p) => (num(p.gross) > 0 ? sumDed(p, (d) => d.mode === 'pct' && d.k === 'fed') / num(p.gross) : 0);
+export const fedRate = (p) =>
+  num(p.gross) > 0 ? sumDed(p, (d) => d.mode === 'pct' && d.k === 'fed') / num(p.gross) : 0;
 export const fixedTotal = (p) => sumDed(p, (d) => d.mode === 'fixed');
 /** Bonuses/commissions: swap the regular federal share for the 22% supplemental rate (6.5). */
 export const suppRate = (p) => Math.max(0, rate(p) - fedRate(p)) + 0.22;
@@ -55,11 +59,14 @@ export function calendarMode(p) {
 }
 /** First day of calendar period idx (any integer, negative before periodStart). */
 function calStart(p, idx, mode) {
-  const y0 = +p.periodStart.slice(0, 4), m0 = +p.periodStart.slice(5, 7) - 1;
+  const y0 = +p.periodStart.slice(0, 4),
+    m0 = +p.periodStart.slice(5, 7) - 1;
   const A = +p.periodStart.slice(8, 10);
   let mi, day;
-  if (mode === 'monthly') { mi = y0 * 12 + m0 + idx; day = A; }
-  else {
+  if (mode === 'monthly') {
+    mi = y0 * 12 + m0 + idx;
+    day = A;
+  } else {
     // anchors: A and B = A+15 (A <= 15) or A-15 (A > 15)
     const B = A <= 15 ? A + 15 : A - 15;
     mi = y0 * 12 + m0 + (A <= 15 ? Math.floor(idx / 2) : Math.floor((idx + 1) / 2));
@@ -71,7 +78,10 @@ function calIndex(p, dateISO, mode) {
   const d = parseISO(dateISO);
   if (!Number.isFinite(d)) return NaN;
   const dt = new Date(d);
-  const md = (dt.getUTCFullYear() - +p.periodStart.slice(0, 4)) * 12 + dt.getUTCMonth() - (+p.periodStart.slice(5, 7) - 1);
+  const md =
+    (dt.getUTCFullYear() - +p.periodStart.slice(0, 4)) * 12 +
+    dt.getUTCMonth() -
+    (+p.periodStart.slice(5, 7) - 1);
   let i = mode === 'monthly' ? md : md * 2;
   // The estimate above is off by a step or two at most; the caps only stop bad data from looping.
   for (let k = 0; k < 8 && calStart(p, i, mode) > dateISO; k++) i--;
@@ -118,14 +128,15 @@ export function indexNights(p, nights) {
   nights.forEach((n) => {
     const i = periodIndex(p, n.date);
     const list = map.get(i);
-    if (list) list.push(n); else map.set(i, [n]);
+    if (list) list.push(n);
+    else map.set(i, [n]);
   });
   map.forEach((list) => list.sort(byDate));
   return map;
 }
 /** Nights in period idx, oldest first. Pass a prebuilt `index` (from indexNights) to skip the full scan. */
 export const nightsInPeriod = (p, nights, idx, index) =>
-  (index ? (index.get(idx) || []).slice() : nights.filter((n) => periodIndex(p, n.date) === idx).sort(byDate));
+  index ? (index.get(idx) || []).slice() : nights.filter((n) => periodIndex(p, n.date) === idx).sort(byDate);
 
 /* ---------- shifts per period (6.2) ---------- */
 /**
@@ -134,10 +145,16 @@ export const nightsInPeriod = (p, nights, idx, index) =>
  */
 export function shiftsPerPeriod(p, nights = [], today = todayISO(), idx, index) {
   if (num(p.shifts) > 0) return { n: num(p.shifts), source: 'entered' };
-  let count = 0, total = 0;
-  (index || indexNights(p, nights)).forEach((list, i) => { if (isFinal(p, i, today)) { count++; total += list.length; } });
+  let count = 0,
+    total = 0;
+  (index || indexNights(p, nights)).forEach((list, i) => {
+    if (isFinal(p, i, today)) {
+      count++;
+      total += list.length;
+    }
+  });
   if (count) return { n: Math.max(1, total / count), source: 'history' };
-  const at = idx !== undefined ? idx : (Number.isFinite(parseISO(p.periodStart)) ? periodIndex(p, today) : 0);
+  const at = idx !== undefined ? idx : Number.isFinite(parseISO(p.periodStart)) ? periodIndex(p, today) : 0;
   return { n: Math.max(1, Math.round((periodLength(p, at) * 4) / 7)), source: 'default' };
 }
 export const SHIFT_SOURCE_TEXT = {
@@ -161,7 +178,10 @@ export const SHIFT_SOURCE_TEXT = {
 export function snapshotFor(p, shifts) {
   const to = p.tipout || {};
   return {
-    v: 1, r: rate(p), rf: fedRate(p), fixed: round2(fixedTotal(p)),
+    v: 1,
+    r: rate(p),
+    rf: fedRate(p),
+    fixed: round2(fixedTotal(p)),
     n: shifts > 0 ? shifts : shiftsPerPeriod(p, [], todayISO()).n,
     pay: (p.payTypes || []).map((t, i) => {
       const o = { id: t.id, rate: num(t.rate), unit: t.unit };
@@ -170,7 +190,13 @@ export function snapshotFor(p, shifts) {
       if (t.k === 'diff' || t.diff) o.diff = 1;
       return o;
     }),
-    tipout: { on: !!to.on, mode: to.mode === 'flat' ? 'flat' : 'pct', value: num(to.value), basis: to.basis || 'before', from: to.from || 'cash' },
+    tipout: {
+      on: !!to.on,
+      mode: to.mode === 'flat' ? 'flat' : 'pct',
+      value: num(to.value),
+      basis: to.basis || 'before',
+      from: to.from || 'cash',
+    },
   };
 }
 export const isLocked = (night) => !!(night && night.snap);
@@ -203,9 +229,21 @@ export function lockFinishedNights(profile, nights, today = todayISO()) {
 /** The numbers one night is worked out with: its snapshot when locked, else the current Setup. */
 function termsOf(night, p, shifts) {
   const s = night && night.snap;
-  if (s) return { r: s.r, rf: s.rf, fixed: s.fixed, n: s.n, payTypes: s.pay || [], tipout: s.tipout || { on: false } };
+  if (s)
+    return {
+      r: s.r,
+      rf: s.rf,
+      fixed: s.fixed,
+      n: s.n,
+      payTypes: s.pay || [],
+      tipout: s.tipout || { on: false },
+    };
   return {
-    r: rate(p), rf: fedRate(p), fixed: fixedTotal(p), payTypes: p.payTypes || [], tipout: p.tipout || { on: false },
+    r: rate(p),
+    rf: fedRate(p),
+    fixed: fixedTotal(p),
+    payTypes: p.payTypes || [],
+    tipout: p.tipout || { on: false },
     n: shifts > 0 ? shifts : shiftsPerPeriod(p, [], todayISO()).n,
   };
 }
@@ -218,14 +256,21 @@ export function periodFixed(p, ns) {
 /* ---------- one night (6.4) ---------- */
 /** Amount for a pay type on a night; the main (first) type falls back to its usual amount. */
 export function payAmount(night, t, i) {
-  if (night.pay && night.pay[t.id] !== undefined && night.pay[t.id] !== '' && night.pay[t.id] !== null) return num(night.pay[t.id]);
+  if (night.pay && night.pay[t.id] !== undefined && night.pay[t.id] !== '' && night.pay[t.id] !== null)
+    return num(night.pay[t.id]);
   return i === 0 ? num(t.usual) : 0;
 }
 /** Pay from pay types for one night (uses the night's snapshot when it has one). */
-export function basePay(night, p) { return basePayWith(night, termsOf(night, p, 1)); }
+export function basePay(night, p) {
+  return basePayWith(night, termsOf(night, p, 1));
+}
 function basePayWith(night, T) {
-  let pay = 0, hours = 0, extra = 0, extraTax = 0;
-  const r = T.r, rs = Math.max(0, T.r - T.rf) + 0.22; // supplemental rate (6.5)
+  let pay = 0,
+    hours = 0,
+    extra = 0,
+    extraTax = 0;
+  const r = T.r,
+    rs = Math.max(0, T.r - T.rf) + 0.22; // supplemental rate (6.5)
   T.payTypes.forEach((t, i) => {
     const a = payAmount(night, t, i);
     if (t.unit === 'amt') {
@@ -259,7 +304,7 @@ export function computeNight(night, p, shifts) {
   const useTO = !!(to.on && night.barback && to.basis === 'before');
   let tipoutC = 0;
   if (useTO) {
-    tipoutC = to.mode === 'pct' ? toCents((tipsC / 100) * num(to.value) / 100) : toCents(num(to.value));
+    tipoutC = to.mode === 'pct' ? toCents(((tipsC / 100) * num(to.value)) / 100) : toCents(num(to.value));
     tipoutC = Math.min(tipoutC, tipsC);
   }
   const keptC = total - tipoutC;
@@ -268,7 +313,9 @@ export function computeNight(night, p, shifts) {
   const fixedC = toCents(T.fixed / n);
   const netC = keptC + extraC - taxC - fixedC;
   const fedOnTipsC = toCents((Math.max(0, tipsC - tipoutC) / 100) * T.rf);
-  let fromCashC = 0, cashInHandC = null, onCheckC = null;
+  let fromCashC = 0,
+    cashInHandC = null,
+    onCheckC = null;
   const hasCash = night.cash !== '' && night.cash != null && Number.isFinite(parseFloat(night.cash));
   if (hasCash) {
     const c = toCents(num(night.cash));
@@ -278,10 +325,23 @@ export function computeNight(night, p, shifts) {
   }
   const d = fromCents;
   return {
-    total: d(total), basePay: d(baseC), hours: bp.hours, extra: d(extraC), extraTax: d(extraTaxC),
-    tips: d(tipsC), tipout: d(tipoutC), kept: d(keptC), tax: d(taxC), fixedPerShift: d(fixedC), net: d(netC),
-    fromCash: d(fromCashC), cashInHand: cashInHandC == null ? null : d(cashInHandC),
-    onCheck: onCheckC == null ? null : d(onCheckC), fedOnTips: d(fedOnTipsC), r, locked: !!night.snap,
+    total: d(total),
+    basePay: d(baseC),
+    hours: bp.hours,
+    extra: d(extraC),
+    extraTax: d(extraTaxC),
+    tips: d(tipsC),
+    tipout: d(tipoutC),
+    kept: d(keptC),
+    tax: d(taxC),
+    fixedPerShift: d(fixedC),
+    net: d(netC),
+    fromCash: d(fromCashC),
+    cashInHand: cashInHandC == null ? null : d(cashInHandC),
+    onCheck: onCheckC == null ? null : d(onCheckC),
+    fedOnTips: d(fedOnTipsC),
+    r,
+    locked: !!night.snap,
   };
 }
 
@@ -296,19 +356,41 @@ export function computeNight(night, p, shifts) {
 export function periodTotals(p, nights, idx, today = todayISO(), shifts, index) {
   const ns = nightsInPeriod(p, nights, idx, index);
   const n = shifts > 0 ? shifts : shiftsPerPeriod(p, nights, today, idx, index).n;
-  let net = 0, hrs = 0, chk = 0, kept = 0, cash = 0, fixedShares = 0, allCash = ns.length > 0;
+  let net = 0,
+    hrs = 0,
+    chk = 0,
+    kept = 0,
+    cash = 0,
+    fixedShares = 0,
+    allCash = ns.length > 0;
   ns.forEach((night) => {
     const c = computeNight(night, p, n);
-    net += toCents(c.net); hrs += c.hours; kept += toCents(c.kept); fixedShares += toCents(c.fixedPerShift);
+    net += toCents(c.net);
+    hrs += c.hours;
+    kept += toCents(c.kept);
+    fixedShares += toCents(c.fixedPerShift);
     if (c.onCheck == null) allCash = false;
-    else { chk += toCents(c.onCheck); cash += toCents(c.cashInHand); }
+    else {
+      chk += toCents(c.onCheck);
+      cash += toCents(c.cashInHand);
+    }
   });
   const exact = ns.length > 0 && isFinal(p, idx, today);
   if (exact) {
     const adj = fixedShares - toCents(periodFixed(p, ns));
-    net += adj; chk += adj;
+    net += adj;
+    chk += adj;
   }
-  return { ns, net: fromCents(net), hrs, chk: fromCents(chk), kept: fromCents(kept), cash: fromCents(cash), allCash, exact };
+  return {
+    ns,
+    net: fromCents(net),
+    hrs,
+    chk: fromCents(chk),
+    kept: fromCents(kept),
+    cash: fromCents(cash),
+    allCash,
+    exact,
+  };
 }
 
 /* ---------- calibration (6.7) ---------- */
@@ -342,7 +424,9 @@ export function calibrate(p, nights, idx, actual, today = todayISO(), shifts) {
   const cs = ns.map((night) => computeNight(night, p, n));
   const missing = cs.filter((c) => c.cashInHand == null).length;
   if (missing) return { ok: false, reason: 'missingCash', missingCash: missing };
-  let T = 0, C = 0, predC = 0;
+  let T = 0,
+    C = 0,
+    predC = 0;
   cs.forEach((c) => {
     T += toCents(c.kept) + toCents(c.extra);
     C += toCents(c.cashInHand);
@@ -353,16 +437,30 @@ export function calibrate(p, nights, idx, actual, today = todayISO(), shifts) {
   const pred = fromCents(predC);
   const err = (pred - A) / A;
   const rOld = rate(p);
-  const rNew = T > 0 ? Math.min(0.45, Math.max(0.02, 1 - (A + fromCents(F) + fromCents(C)) / fromCents(T))) : rOld;
+  const rNew =
+    T > 0 ? Math.min(0.45, Math.max(0.02, 1 - (A + fromCents(F) + fromCents(C)) / fromCents(T))) : rOld;
   const uncapped = (rOld + rNew) / 2; // blend to avoid overreacting to one check
   const rateOverride = Math.min(rOld + MAX_RATE_STEP, Math.max(rOld - MAX_RATE_STEP, uncapped));
   const expectedShifts = Math.max(1, Math.round(n));
   return {
-    ok: true, pred, actual: A, err, rNew, rOld, rateOverride, uncapped,
-    capped: Math.abs(uncapped - rateOverride) > 1e-12, change: rateOverride - rOld,
-    nightsLogged: ns.length, expectedShifts, expectedSource: sp.source, missingNights: Math.max(0, expectedShifts - ns.length),
+    ok: true,
+    pred,
+    actual: A,
+    err,
+    rNew,
+    rOld,
+    rateOverride,
+    uncapped,
+    capped: Math.abs(uncapped - rateOverride) > 1e-12,
+    change: rateOverride - rOld,
+    nightsLogged: ns.length,
+    expectedShifts,
+    expectedSource: sp.source,
+    missingNights: Math.max(0, expectedShifts - ns.length),
     suspect: Math.abs(err) > SUSPECT_ERROR,
-    T: fromCents(T), C: fromCents(C), F: fromCents(F),
+    T: fromCents(T),
+    C: fromCents(C),
+    F: fromCents(F),
   };
 }
 
@@ -380,12 +478,22 @@ export function weeklyHours(p, nights, dateISO, threshold = 40) {
 
 /* ---------- Setup summary box (5.5) ---------- */
 export function summary(p, nights = [], today = todayISO()) {
-  const r = rate(p), si = shiftsPerPeriod(p, nights, today), fixed = fixedTotal(p);
+  const r = rate(p),
+    si = shiftsPerPeriod(p, nights, today),
+    fixed = fixedTotal(p);
   return {
-    r, taxPer100: round2(100 * r), keepPer100: round2(100 * (1 - r)),
-    fixed, fixedPerShift: round2(fixed / si.n), shifts: si.n, shiftSource: si.source,
-    shiftSourceText: SHIFT_SOURCE_TEXT[si.source], periodLength: periodLength(p, Number.isFinite(parseISO(p.periodStart)) ? periodIndex(p, today) : 0),
-    calendar: calendarMode(p), fromDates: lengthFromDates(p), adjusted: p.rateOverride != null,
+    r,
+    taxPer100: round2(100 * r),
+    keepPer100: round2(100 * (1 - r)),
+    fixed,
+    fixedPerShift: round2(fixed / si.n),
+    shifts: si.n,
+    shiftSource: si.source,
+    shiftSourceText: SHIFT_SOURCE_TEXT[si.source],
+    periodLength: periodLength(p, Number.isFinite(parseISO(p.periodStart)) ? periodIndex(p, today) : 0),
+    calendar: calendarMode(p),
+    fromDates: lengthFromDates(p),
+    adjusted: p.rateOverride != null,
   };
 }
 
@@ -393,20 +501,51 @@ export function summary(p, nights = [], today = todayISO()) {
 export const PAY_PRESETS = [
   { k: 'hourly', name: 'Hourly', unit: 'hr', g: 'Hourly' },
   { k: 'training', name: 'Training', unit: 'hr', g: 'Hourly' },
-  { k: 'ot', name: 'Overtime', unit: 'hr', g: 'Hourly', rateMultiplier: 1.5,
-    notes: 'Overtime is usually 1.5x your hourly rate for hours past 40 in a week.' },
+  {
+    k: 'ot',
+    name: 'Overtime',
+    unit: 'hr',
+    g: 'Hourly',
+    rateMultiplier: 1.5,
+    notes: 'Overtime is usually 1.5x your hourly rate for hours past 40 in a week.',
+  },
   { k: 'holiday', name: 'Holiday pay', unit: 'hr', g: 'Hourly' },
-  { k: 'diff', name: 'Shift lead / supervisor differential', unit: 'hr', g: 'Hourly', diff: 1,
-    notes: 'Enter the extra per hour on top of your base rate. These hours do not count twice toward your hours worked.' },
+  {
+    k: 'diff',
+    name: 'Shift lead / supervisor differential',
+    unit: 'hr',
+    g: 'Hourly',
+    diff: 1,
+    notes:
+      'Enter the extra per hour on top of your base rate. These hours do not count twice toward your hours worked.',
+  },
   { k: 'pto', name: 'Paid time off / sick pay', unit: 'hr', g: 'Hourly' },
   { k: 'event', name: 'Private event / banquet', unit: 'shift', g: 'Per shift' },
   { k: 'shift', name: 'Flat shift pay', unit: 'shift', g: 'Per shift' },
-  { k: 'bonus', name: 'Bonus', unit: 'amt', supp: 1, g: 'Flat amount',
-    notes: 'Federal tax is estimated at the 22% bonus rate.' },
-  { k: 'commission', name: 'Commission / sales incentive', unit: 'amt', supp: 1, g: 'Flat amount',
-    notes: 'Federal tax is estimated at the 22% bonus rate.' },
-  { k: 'autograt', name: 'Service charge / auto-gratuity', unit: 'amt', g: 'Flat amount',
-    notes: 'Auto-gratuities are taxed as wages, not tips, so they do not count toward the federal tip deduction.' },
+  {
+    k: 'bonus',
+    name: 'Bonus',
+    unit: 'amt',
+    supp: 1,
+    g: 'Flat amount',
+    notes: 'Federal tax is estimated at the 22% bonus rate.',
+  },
+  {
+    k: 'commission',
+    name: 'Commission / sales incentive',
+    unit: 'amt',
+    supp: 1,
+    g: 'Flat amount',
+    notes: 'Federal tax is estimated at the 22% bonus rate.',
+  },
+  {
+    k: 'autograt',
+    name: 'Service charge / auto-gratuity',
+    unit: 'amt',
+    g: 'Flat amount',
+    notes:
+      'Auto-gratuities are taxed as wages, not tips, so they do not count toward the federal tip deduction.',
+  },
   { k: 'other', name: 'Other', unit: 'hr', g: 'Other' },
 ];
 const PRETAX_NOTE = 'Your stub’s taxes already account for this, so nothing else to enter.';
@@ -450,16 +589,25 @@ export function applyPayPreset(t, k, mainRate = 0) {
   const pr = findPayPreset(k) || PAY_PRESETS[PAY_PRESETS.length - 1];
   const out = { ...t, k: pr.k, name: pr.k === 'other' ? '' : pr.name, unit: pr.unit, supp: pr.supp ? 1 : 0 };
   if (pr.rateMultiplier && mainRate) out.rate = +(num(mainRate) * pr.rateMultiplier).toFixed(2);
-  if (pr.unit === 'amt') { out.rate = 0; out.usual = 0; }
+  if (pr.unit === 'amt') {
+    out.rate = 0;
+    out.usual = 0;
+  }
   return out;
 }
 /** Social Security and Medicare from gross (6.2% and 1.45%). Returns a new deductions array. */
 export function fillFica(p) {
   const g = num(p.gross);
   const deds = (p.deductions || []).map((d) => ({ ...d }));
-  [['ss', 'Social Security', 0.062], ['med', 'Medicare', 0.0145]].forEach(([k, name, r], i) => {
+  [
+    ['ss', 'Social Security', 0.062],
+    ['med', 'Medicare', 0.0145],
+  ].forEach(([k, name, r], i) => {
     let d = deds.find((x) => x.k === k);
-    if (!d) { d = { id: 'd' + Date.now() + i, k, name, mode: 'pct' }; deds.push(d); }
+    if (!d) {
+      d = { id: 'd' + Date.now() + i, k, name, mode: 'pct' };
+      deds.push(d);
+    }
     d.amount = +(g * r).toFixed(2);
   });
   return deds;
@@ -484,8 +632,14 @@ const clone = (o) => JSON.parse(JSON.stringify(o));
 export function exampleProfile(today = todayISO()) {
   const start = addDays(today, -7);
   return {
-    freq: 14, periodStart: start, periodEnd: addDays(start, 13), shifts: 10, gross: 2000, rateOverride: null,
-    deductions: clone(EXAMPLE_DEDUCTIONS), payTypes: clone(EXAMPLE_PAY_TYPES),
+    freq: 14,
+    periodStart: start,
+    periodEnd: addDays(start, 13),
+    shifts: 10,
+    gross: 2000,
+    rateOverride: null,
+    deductions: clone(EXAMPLE_DEDUCTIONS),
+    payTypes: clone(EXAMPLE_PAY_TYPES),
     tipout: { on: true, mode: 'pct', value: 15, basis: 'before', from: 'cash' },
   };
 }

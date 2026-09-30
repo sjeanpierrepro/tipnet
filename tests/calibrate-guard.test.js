@@ -8,7 +8,15 @@ const TODAY = '2026-09-28';
 const AFTER = '2026-10-10';
 const P = () => M.exampleProfile(TODAY); // 10 shifts entered, rate 16.65%
 // Ten identical nights in the example period (09-21..10-04), each with cash.
-const TEN = () => Array.from({ length: 10 }, (_, i) => ({ id: i + 1, date: M.addDays('2026-09-21', i), total: 400, cash: 120, pay: { p1: 7 }, barback: true }));
+const TEN = () =>
+  Array.from({ length: 10 }, (_, i) => ({
+    id: i + 1,
+    date: M.addDays('2026-09-21', i),
+    total: 400,
+    cash: 120,
+    pay: { p1: 7 },
+    barback: true,
+  }));
 
 test('every shift logged and an accurate check: no warnings, nothing capped', () => {
   const p = P();
@@ -59,14 +67,31 @@ test('expected shifts fall back to the period count when none is entered', () =>
 test('no shift count entered: the checked period is left out of the history average, so a missed night still warns', () => {
   const p = { ...P(), shifts: 0 };
   const all = [];
-  for (let k = -1; k <= 0; k++) for (let i = 0; i < 10; i++) if (k === 0 && i === 9) continue; else all.push({ id: `${k}-${i}`, date: M.addDays(M.periodRange(p, k).start, i), total: 400, cash: 120, pay: { p1: 7 }, barback: true });
+  for (let k = -1; k <= 0; k++)
+    for (let i = 0; i < 10; i++)
+      if (k === 0 && i === 9) continue;
+      else
+        all.push({
+          id: `${k}-${i}`,
+          date: M.addDays(M.periodRange(p, k).start, i),
+          total: 400,
+          cash: 120,
+          pay: { p1: 7 },
+          barback: true,
+        });
   // period -1 has 10 shifts, period 0 has 9
   const c = M.calibrate(p, all, 0, 500, AFTER);
   assert.equal(c.expectedSource, 'history');
   assert.equal(c.expectedShifts, 10);
   assert.equal(c.missingNights, 1);
   // with no other history the ~4-a-week default applies
-  const d = M.calibrate(p, all.filter((n) => n.id.startsWith('0-')), 0, 500, AFTER);
+  const d = M.calibrate(
+    p,
+    all.filter((n) => n.id.startsWith('0-')),
+    0,
+    500,
+    AFTER,
+  );
   assert.equal(d.expectedSource, 'default');
   assert.equal(d.expectedShifts, 8);
 });

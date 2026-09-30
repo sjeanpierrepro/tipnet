@@ -16,7 +16,12 @@ test('bills due: month rollover', () => {
 });
 
 test('bills due: Feb with dueDay 30/31 and leap years', () => {
-  const b = { bills: [{ id: 'x', name: 'X', amount: 10, dueDay: 31 }, { id: 'y', name: 'Y', amount: 10, dueDay: 30 }] };
+  const b = {
+    bills: [
+      { id: 'x', name: 'X', amount: 10, dueDay: 31 },
+      { id: 'y', name: 'Y', amount: 10, dueDay: 30 },
+    ],
+  };
   assert.deepEqual(dates(B.billsDue(b, '2027-02-01', '2027-02-28')), ['x@2027-02-28', 'y@2027-02-28']);
   assert.deepEqual(dates(B.billsDue(b, '2028-02-01', '2028-02-29')), ['x@2028-02-29', 'y@2028-02-29']); // leap year
   assert.deepEqual(dates(B.billsDue(b, '2028-02-01', '2028-02-28')), []);
@@ -42,7 +47,14 @@ test('expected income', () => {
   assert.equal(inc.projectedFrom, 'nights');
   assert.equal(inc.avgTakeHomePerPeriod, null);
   const none = B.expectedIncome(P(), [], TODAY);
-  assert.deepEqual(none, { cashSoFar: 0, checkSoFar: 0, projectedCheck: null, projectedFrom: null, avgCheckPerPeriod: null, avgTakeHomePerPeriod: null });
+  assert.deepEqual(none, {
+    cashSoFar: 0,
+    checkSoFar: 0,
+    projectedCheck: null,
+    projectedFrom: null,
+    avgCheckPerPeriod: null,
+    avgTakeHomePerPeriod: null,
+  });
   // a finished period gives an average take-home, and an average check when every night has cash entered
   const later = B.expectedIncome(P(), M.exampleNights(TODAY), '2026-10-10');
   const done = M.periodTotals(P(), M.exampleNights(TODAY), 0, '2026-10-10');
@@ -55,7 +67,8 @@ test('expected income: the check projection uses only nights with cash entered',
   const n = (date, cash) => ({ ...M.exampleNights(TODAY)[0], id: date, date, cash });
   const withCash = [n('2026-09-22', 150), n('2026-09-23', 150)];
   const mixed = [...withCash, n('2026-09-24', ''), n('2026-09-25', '')];
-  const a = B.expectedIncome(P(), withCash, TODAY), b = B.expectedIncome(P(), mixed, TODAY);
+  const a = B.expectedIncome(P(), withCash, TODAY),
+    b = B.expectedIncome(P(), mixed, TODAY);
   // two nights of check money spread over the same expected shifts give the same projection
   assert.equal(b.checkSoFar, a.checkSoFar);
   assert.equal(b.projectedCheck, a.projectedCheck);
@@ -82,7 +95,11 @@ test('category status: spent, remaining, pct', () => {
 });
 
 test('goal progress', () => {
-  assert.deepEqual(B.goalProgress({ target: 1000, saved: 250, perPaycheck: 40 }), { pct: 25, remaining: 750, paychecksToGo: 19 });
+  assert.deepEqual(B.goalProgress({ target: 1000, saved: 250, perPaycheck: 40 }), {
+    pct: 25,
+    remaining: 750,
+    paychecksToGo: 19,
+  });
   assert.equal(B.goalProgress({ target: 1000, saved: 1200, perPaycheck: 40 }).paychecksToGo, 0);
   assert.equal(B.goalProgress({ target: 1000, saved: 0, perPaycheck: 0 }).paychecksToGo, null);
   assert.equal(B.goalProgress({ target: 0, saved: 0, perPaycheck: 0 }).pct, 0);
@@ -146,16 +163,28 @@ test('migrateBudget handles garbage', () => {
   assert.deepEqual(B.migrateBudget('nope'), B.emptyBudget());
   assert.deepEqual(B.migrateBudget({ bills: 5, goals: 'x', paidBills: [] }), B.emptyBudget());
   const m = B.migrateBudget({
-    bills: [null, { name: '', amount: 'abc', dueDay: 99 }, { id: 'k', name: 'Gym', amount: '19.999', dueDay: -3 }],
+    bills: [
+      null,
+      { name: '', amount: 'abc', dueDay: 99 },
+      { id: 'k', name: 'Gym', amount: '19.999', dueDay: -3 },
+    ],
     categories: [{ monthly: -5 }],
     goals: [{ target: 'x' }],
-    spends: [{ date: 'bad', amount: 5 }, { date: '2026-09-01', amount: '12.5', categoryId: 7, note: 'tacos' }],
+    spends: [
+      { date: 'bad', amount: 5 },
+      { date: '2026-09-01', amount: '12.5', categoryId: 7, note: 'tacos' },
+    ],
     paidBills: { '0:b1': true, '1:b1': 'yes' },
   });
-  assert.deepEqual(m.bills, [{ id: 'b1', name: 'Bill', amount: 0, dueDay: 31 }, { id: 'k', name: 'Gym', amount: 20, dueDay: 1 }]);
+  assert.deepEqual(m.bills, [
+    { id: 'b1', name: 'Bill', amount: 0, dueDay: 31 },
+    { id: 'k', name: 'Gym', amount: 20, dueDay: 1 },
+  ]);
   assert.deepEqual(m.categories, [{ id: 'c1', name: 'Category', monthly: 0 }]);
   assert.deepEqual(m.goals, [{ id: 'g1', name: 'Goal', target: 0, saved: 0, perPaycheck: 0 }]);
-  assert.deepEqual(m.spends, [{ id: 's1', date: '2026-09-01', amount: 12.5, categoryId: '7', note: 'tacos' }]);
+  assert.deepEqual(m.spends, [
+    { id: 's1', date: '2026-09-01', amount: 12.5, categoryId: '7', note: 'tacos' },
+  ]);
   assert.deepEqual(m.paidBills, { '0:b1': true });
   assert.deepEqual(B.migrateBudget(B.exampleBudget()), B.exampleBudget());
 });
@@ -165,7 +194,10 @@ test('without an entered balance, spending logged this period comes out of the c
   const cash = M.periodTotals(P(), nights, 0, TODAY).cash;
   const b = { ...B.emptyBudget(), categories: [{ id: 'c', name: 'Fun', monthly: 100 }], spends: [] };
   const before = B.safeToSpend(b, P(), nights, TODAY);
-  b.spends = [{ id: 's', date: '2026-09-25', amount: 30, categoryId: 'c' }, { id: 'old', date: '2026-09-01', amount: 99, categoryId: 'x' }];
+  b.spends = [
+    { id: 's', date: '2026-09-25', amount: 30, categoryId: 'c' },
+    { id: 'old', date: '2026-09-01', amount: 99, categoryId: 'x' },
+  ];
   const after = B.safeToSpend(b, P(), nights, TODAY);
   assert.equal(after.income.cash, cash);
   assert.equal(after.income.spent, 30); // the 09-01 spend was before this period
@@ -201,11 +233,14 @@ test('payDelay 4: between period end and payday, next payday is for the previous
   assert.equal(np.daysAway, 2);
   assert.equal(np.periodIndex, 0);
   assert.equal(B.nextPayday(p, '2026-10-08').date, '2026-10-22'); // on payday itself the next one is the following
-  const b = { ...B.emptyBudget(), bills: [
-    { id: 'a', name: 'A', amount: 100, dueDay: 7 },   // 10-07: before payday, counts now
-    { id: 'c', name: 'C', amount: 50, dueDay: 10 },   // 10-10: after payday
-    { id: 'd', name: 'D', amount: 25, dueDay: 8 },    // 10-08: on payday, comes out of that check
-  ] };
+  const b = {
+    ...B.emptyBudget(),
+    bills: [
+      { id: 'a', name: 'A', amount: 100, dueDay: 7 }, // 10-07: before payday, counts now
+      { id: 'c', name: 'C', amount: 50, dueDay: 10 }, // 10-10: after payday
+      { id: 'd', name: 'D', amount: 25, dueDay: 8 }, // 10-08: on payday, comes out of that check
+    ],
+  };
   const nights = M.exampleNights(TODAY);
   const r = B.safeToSpend(b, p, nights, today, { cashOnHand: 500 });
   assert.equal(r.payday, '2026-10-08');
@@ -247,12 +282,23 @@ test('semimonthly paydays use payDelay, short months and pre-start dates', () =>
 });
 
 test('safeToSpend on semimonthly counts bills up to payday and in the following half', () => {
-  const b = B.migrateBudget({ bills: [{ id: 'b1', name: 'Rent', amount: 100, dueDay: 12 }, { id: 'b2', name: 'Phone', amount: 40, dueDay: 20 }] });
+  const b = B.migrateBudget({
+    bills: [
+      { id: 'b1', name: 'Rent', amount: 100, dueDay: 12 },
+      { id: 'b2', name: 'Phone', amount: 40, dueDay: 20 },
+    ],
+  });
   const p = { freq: 'semimonthly', periodStart: '2026-09-01', shifts: 6, payTypes: [], deductions: [] };
   const r = B.safeToSpend(b, p, [], '2026-09-10');
   assert.equal(r.payday, '2026-09-16');
-  assert.deepEqual(r.bills.map((x) => x.id + '@' + x.date), ['b1@2026-09-12']);
-  assert.deepEqual(r.after.bills.map((x) => x.id + '@' + x.date), ['b2@2026-09-20']);
+  assert.deepEqual(
+    r.bills.map((x) => x.id + '@' + x.date),
+    ['b1@2026-09-12'],
+  );
+  assert.deepEqual(
+    r.after.bills.map((x) => x.id + '@' + x.date),
+    ['b2@2026-09-20'],
+  );
 });
 
 test('between period end and payday: projected check scales from nights with cash, never uses a partial raw total', () => {
@@ -265,7 +311,9 @@ test('between period end and payday: projected check scales from nights with cas
   // half the nights lose their cash: scale the rest up to all nights, then take off the fixed deductions once
   const half = all.map((n, i) => (i % 2 ? { ...n, cash: '' } : n));
   const n = M.shiftsPerPeriod(p, half, today, 0).n;
-  const withCash = M.nightsInPeriod(p, half, 0).map((x) => M.computeNight(x, p, n)).filter((c) => c.onCheck != null);
+  const withCash = M.nightsInPeriod(p, half, 0)
+    .map((x) => M.computeNight(x, p, n))
+    .filter((c) => c.onCheck != null);
   const N = M.nightsInPeriod(p, half, 0).length;
   const sumC = withCash.reduce((s, c) => s + M.toCents(c.onCheck) + M.toCents(c.fixedPerShift), 0);
   const want = M.fromCents(Math.round((sumC * N) / withCash.length) - M.toCents(M.fixedTotal(p)));
@@ -303,7 +351,11 @@ test('paydayInfo: short periods with a long pay delay pick the earliest check st
 test('paydayInfo never hangs on a missing or broken start date; restore repairs it', async () => {
   const B = await import('../app/js/budget.js');
   const S = await import('../app/js/storage.js');
-  for (const bad of [{}, { periodStart: 'garbage', freq: 14 }, { periodStart: '', freq: 'semimonthly', payDelay: 21 }]) {
+  for (const bad of [
+    {},
+    { periodStart: 'garbage', freq: 14 },
+    { periodStart: '', freq: 'semimonthly', payDelay: 21 },
+  ]) {
     const r = B.paydayInfo(bad, '2026-09-29');
     assert.equal(typeof r.date, 'string');
   }
@@ -333,7 +385,9 @@ test('old period-number ticks are converted with the current profile, or dropped
   assert.deepEqual(out, { 'b1@2026-10-01': true, 'b2@2026-10-15': true });
   // Same old keys, but the schedule changed to weekly starting 09-28: period 0 = 09-28..10-04, period 1 = 10-05..10-11.
   const weekly = { ...P(), freq: 7, periodStart: '2026-09-28', periodEnd: '' };
-  assert.deepEqual(B.convertPaidKeys({ '0:b1': true, '1:b2': true }, bills, weekly), { 'b1@2026-10-01': true }); // phone is not due in 10-05..10-11
+  assert.deepEqual(B.convertPaidKeys({ '0:b1': true, '1:b2': true }, bills, weekly), {
+    'b1@2026-10-01': true,
+  }); // phone is not due in 10-05..10-11
   // Two due dates in one period is ambiguous: dropped
   const long = { freq: 30, periodStart: '2026-09-01', periodEnd: '' };
   const twice = [{ id: 'x', name: 'X', amount: 1, dueDay: 30 }];
@@ -349,7 +403,10 @@ test('old period-number ticks are converted with the current profile, or dropped
 
 test('saved balance: kept by migrate, junk dropped', () => {
   const asOf = '2026-09-28T21:40:00.000Z';
-  assert.deepEqual(B.migrateBudget({ balance: { amount: '1234.567', asOf } }).balance, { amount: 1234.57, asOf });
+  assert.deepEqual(B.migrateBudget({ balance: { amount: '1234.567', asOf } }).balance, {
+    amount: 1234.57,
+    asOf,
+  });
   assert.equal('balance' in B.migrateBudget({ balance: { amount: 'x', asOf } }), false);
   assert.equal('balance' in B.migrateBudget({ balance: { amount: 5, asOf: 'yesterday-ish' } }), false);
   assert.equal('balance' in B.migrateBudget({}), false);
@@ -362,11 +419,35 @@ test('safe to spend uses the saved balance minus spending logged since', () => {
   const b = B.exampleBudget();
   b.balance = { amount: 1000, asOf };
   b.spends = [
-    { id: 'a', date: '2026-09-27', amount: 10, categoryId: 'c1', loggedAt: new Date(2026, 8, 27, 20, 0).toISOString() }, // logged before the balance: already in it
-    { id: 'b', date: '2026-09-27', amount: 20, categoryId: 'c1', loggedAt: new Date(2026, 8, 27, 22, 0).toISOString() }, // after: counts
-    { id: 'c', date: '2026-09-28', amount: 5.5, categoryId: 'c2', loggedAt: new Date(2026, 8, 28, 9, 0).toISOString() }, // counts
-    { id: 'd', date: '2026-09-20', amount: 99, categoryId: 'c2', loggedAt: new Date(2026, 8, 28, 9, 0).toISOString() }, // backdated to before the balance: not counted
-    { id: 'e', date: '2026-09-28', amount: 4 , categoryId: 'c2' }, // no time recorded, later day: counts
+    {
+      id: 'a',
+      date: '2026-09-27',
+      amount: 10,
+      categoryId: 'c1',
+      loggedAt: new Date(2026, 8, 27, 20, 0).toISOString(),
+    }, // logged before the balance: already in it
+    {
+      id: 'b',
+      date: '2026-09-27',
+      amount: 20,
+      categoryId: 'c1',
+      loggedAt: new Date(2026, 8, 27, 22, 0).toISOString(),
+    }, // after: counts
+    {
+      id: 'c',
+      date: '2026-09-28',
+      amount: 5.5,
+      categoryId: 'c2',
+      loggedAt: new Date(2026, 8, 28, 9, 0).toISOString(),
+    }, // counts
+    {
+      id: 'd',
+      date: '2026-09-20',
+      amount: 99,
+      categoryId: 'c2',
+      loggedAt: new Date(2026, 8, 28, 9, 0).toISOString(),
+    }, // backdated to before the balance: not counted
+    { id: 'e', date: '2026-09-28', amount: 4, categoryId: 'c2' }, // no time recorded, later day: counts
     { id: 'f', date: '2026-09-27', amount: 3, categoryId: 'c2' }, // no time recorded, same day: assumed already in the balance
   ];
   const r = B.safeToSpend(b, P(), M.exampleNights(TODAY), TODAY);
@@ -393,14 +474,23 @@ test('a balance older than 3 days is stale', () => {
 });
 
 test('spends keep a valid loggedAt through migrate', () => {
-  const m = B.migrateBudget({ spends: [{ date: '2026-09-01', amount: 1, loggedAt: '2026-09-01T10:00:00.000Z' }, { date: '2026-09-02', amount: 1, loggedAt: 'nope' }] });
+  const m = B.migrateBudget({
+    spends: [
+      { date: '2026-09-01', amount: 1, loggedAt: '2026-09-01T10:00:00.000Z' },
+      { date: '2026-09-02', amount: 1, loggedAt: 'nope' },
+    ],
+  });
   assert.equal(m.spends[0].loggedAt, '2026-09-01T10:00:00.000Z');
   assert.equal('loggedAt' in m.spends[1], false);
 });
 
-test('category money: a window that crosses a month end reserves this month\'s rest plus next month per day', () => {
+test("category money: a window that crosses a month end reserves this month's rest plus next month per day", () => {
   // Payday 2026-10-05, today 09-28: 3 days left in September, then Oct 1-4.
-  const b = { ...B.emptyBudget(), categories: [{ id: 'c', name: 'Fun', monthly: 310 }], spends: [{ id: 's', date: '2026-09-10', amount: 100, categoryId: 'c' }] };
+  const b = {
+    ...B.emptyBudget(),
+    categories: [{ id: 'c', name: 'Fun', monthly: 310 }],
+    spends: [{ id: 's', date: '2026-09-10', amount: 100, categoryId: 'c' }],
+  };
   const r = B.safeToSpend(b, P(), [], TODAY, { cashOnHand: 1000 });
   assert.equal(r.daysAway, 7);
   assert.equal(r.categories[0].reserved, 210 + 40); // all 210 left in Sep (3 of 3 days) + 310 x 4/31
@@ -420,17 +510,28 @@ test('category money: a window spanning two month boundaries', () => {
   assert.equal(r.categories[0].reserved, 310 + 310 + 186); // Sep rest + full Oct + 310 x 18/30
 });
 
-test('category money: an overspent category reserves 0 this month but still next month\'s days', () => {
-  const b = { ...B.emptyBudget(), categories: [{ id: 'c', name: 'Fun', monthly: 310 }], spends: [{ id: 's', date: '2026-09-10', amount: 400, categoryId: 'c' }] };
+test("category money: an overspent category reserves 0 this month but still next month's days", () => {
+  const b = {
+    ...B.emptyBudget(),
+    categories: [{ id: 'c', name: 'Fun', monthly: 310 }],
+    spends: [{ id: 's', date: '2026-09-10', amount: 400, categoryId: 'c' }],
+  };
   const r = B.safeToSpend(b, P(), [], TODAY, { cashOnHand: 1000 });
   assert.equal(r.categories[0].reserved, 40); // 0 for September, 310 x 4/31 for Oct 1-4
 });
 
-test('a finished period awaiting its check uses its own locked fixed total, not today\'s Setup', () => {
+test("a finished period awaiting its check uses its own locked fixed total, not today's Setup", () => {
   const p = { ...P(), payDelay: 4 };
   const today = '2026-10-06';
-  const half = M.exampleNights(TODAY).map((n, i) => ({ ...n, snap: M.snapshotFor(p, 10), ...(i % 2 ? { cash: '' } : {}) }));
+  const half = M.exampleNights(TODAY).map((n, i) => ({
+    ...n,
+    snap: M.snapshotFor(p, 10),
+    ...(i % 2 ? { cash: '' } : {}),
+  }));
   const before = B.safeToSpend(B.emptyBudget(), p, half, today).after.projectedCheck;
-  const p2 = { ...p, deductions: [...p.deductions, { id: 'd9', k: 'dental', name: 'Dental', amount: 40, mode: 'fixed' }] };
+  const p2 = {
+    ...p,
+    deductions: [...p.deductions, { id: 'd9', k: 'dental', name: 'Dental', amount: 40, mode: 'fixed' }],
+  };
   assert.equal(B.safeToSpend(B.emptyBudget(), p2, half, today).after.projectedCheck, before);
 });

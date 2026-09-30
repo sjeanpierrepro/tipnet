@@ -13,21 +13,42 @@ const src = fs.readFileSync(path.join(APP_DIR, 'sw.js'), 'utf8');
 const later = () => new Promise((r) => setImmediate(r));
 
 class Response {
-  constructor(body, init = {}) { this.body = body; this.status = init.status || 200; this.ok = this.status >= 200 && this.status < 300; this.type = 'basic'; }
-  clone() { return Object.assign(Object.create(Response.prototype), this); }
-  static error() { const r = new Response(null, { status: 0 }); r.type = 'error'; return r; }
+  constructor(body, init = {}) {
+    this.body = body;
+    this.status = init.status || 200;
+    this.ok = this.status >= 200 && this.status < 300;
+    this.type = 'basic';
+  }
+  clone() {
+    return Object.assign(Object.create(Response.prototype), this);
+  }
+  static error() {
+    const r = new Response(null, { status: 0 });
+    r.type = 'error';
+    return r;
+  }
 }
 class Request {
-  constructor(url, init = {}) { this.url = new URL(url, ORIGIN + '/').href; this.method = init.method || 'GET'; this.cache = init.cache; this.mode = init.mode || 'cors'; }
+  constructor(url, init = {}) {
+    this.url = new URL(url, ORIGIN + '/').href;
+    this.method = init.method || 'GET';
+    this.cache = init.cache;
+    this.mode = init.mode || 'cors';
+  }
 }
-const offline = async () => { throw new TypeError('offline'); };
+const offline = async () => {
+  throw new TypeError('offline');
+};
 
 /** A fresh worker in a sandbox. net(url, init) is the fake network. */
 function load(net = offline) {
   const stores = new Map(); // cache name -> Map(url -> response)
   const calls = { fetch: [], added: [], claimed: 0, skipped: 0, deleted: [] };
   const handlers = {};
-  const open = (name) => { if (!stores.has(name)) stores.set(name, new Map()); return stores.get(name); };
+  const open = (name) => {
+    if (!stores.has(name)) stores.set(name, new Map());
+    return stores.get(name);
+  };
   const strip = (u) => u.split('?')[0];
   const caches = {
     open: async (name) => ({
@@ -37,10 +58,15 @@ function load(net = offline) {
         calls.added.push({ url: req.url, cache: req.cache, into: name });
         open(name).set(strip(req.url), res);
       },
-      put: async (req, res) => { open(name).set(strip(req.url), res); },
+      put: async (req, res) => {
+        open(name).set(strip(req.url), res);
+      },
     }),
     keys: async () => [...stores.keys()],
-    delete: async (name) => { calls.deleted.push(name); return stores.delete(name); },
+    delete: async (name) => {
+      calls.deleted.push(name);
+      return stores.delete(name);
+    },
     match: async (req) => {
       const url = strip(typeof req === 'string' ? new URL(req, ORIGIN + '/').href : req.url);
       for (const m of stores.values()) if (m.has(url)) return m.get(url);
@@ -49,24 +75,61 @@ function load(net = offline) {
   };
   const self = {
     location: { origin: ORIGIN },
-    addEventListener: (type, fn) => { handlers[type] = fn; },
-    clients: { claim: async () => { calls.claimed++; } },
-    skipWaiting: () => { calls.skipped++; },
+    addEventListener: (type, fn) => {
+      handlers[type] = fn;
+    },
+    clients: {
+      claim: async () => {
+        calls.claimed++;
+      },
+    },
+    skipWaiting: () => {
+      calls.skipped++;
+    },
   };
   const ctx = vm.createContext({
-    self, caches, Request, Response, URL, Promise, setTimeout, clearTimeout,
-    fetch: async (req, init) => { calls.fetch.push({ url: req.url, init }); return net(req.url, init); },
+    self,
+    caches,
+    Request,
+    Response,
+    URL,
+    Promise,
+    setTimeout,
+    clearTimeout,
+    fetch: async (req, init) => {
+      calls.fetch.push({ url: req.url, init });
+      return net(req.url, init);
+    },
   });
   vm.runInContext(src, ctx, { filename: 'sw.js' });
   return {
-    stores, calls, handlers, open,
-    get: (name) => { const v = vm.runInContext(name, ctx); return Array.isArray(v) ? Array.from(v) : v; },
+    stores,
+    calls,
+    handlers,
+    open,
+    get: (name) => {
+      const v = vm.runInContext(name, ctx);
+      return Array.isArray(v) ? Array.from(v) : v;
+    },
     /** Fire install/activate and wait for the worker's waitUntil promise. */
-    async lifecycle(type) { let p; handlers[type]({ waitUntil: (x) => { p = x; } }); await p; },
+    async lifecycle(type) {
+      let p;
+      handlers[type]({
+        waitUntil: (x) => {
+          p = x;
+        },
+      });
+      await p;
+    },
     /** Fire a fetch event. null = the worker did not intercept it, otherwise the response. */
     async request(url, init = {}) {
       let p = null;
-      handlers.fetch({ request: new Request(url, init), respondWith: (x) => { p = x; } });
+      handlers.fetch({
+        request: new Request(url, init),
+        respondWith: (x) => {
+          p = x;
+        },
+      });
       return p;
     },
   };
@@ -75,25 +138,35 @@ function load(net = offline) {
 test('sw: every SHELL entry exists on disk under app/', () => {
   const shell = load().get('SHELL');
   assert.ok(shell.length > 20);
-  for (const entry of shell) assert.ok(fs.existsSync(path.join(APP_DIR, entry === './' ? '' : entry)), 'missing from disk: ' + entry);
+  for (const entry of shell)
+    assert.ok(fs.existsSync(path.join(APP_DIR, entry === './' ? '' : entry)), 'missing from disk: ' + entry);
   assert.equal(new Set(shell).size, shell.length, 'no duplicates');
 });
 
 test('sw: every JS module in app/js is in SHELL (otherwise the app breaks offline)', () => {
   const shell = new Set(load().get('SHELL'));
-  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]));
-  const js = walk(path.join(APP_DIR, 'js')).map((f) => path.relative(APP_DIR, f).split(path.sep).join('/')).filter((f) => f.endsWith('.js'));
+  const walk = (d) =>
+    fs
+      .readdirSync(d, { withFileTypes: true })
+      .flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]));
+  const js = walk(path.join(APP_DIR, 'js'))
+    .map((f) => path.relative(APP_DIR, f).split(path.sep).join('/'))
+    .filter((f) => f.endsWith('.js'));
   for (const f of js) assert.ok(shell.has(f), f + ' is not in SHELL');
 });
 
 test('sw: install precaches the whole shell with cache: reload into the versioned cache', async () => {
   const sw = load(async () => new Response('body'));
   await sw.lifecycle('install');
-  const shell = sw.get('SHELL'), version = sw.get('VERSION');
+  const shell = sw.get('SHELL'),
+    version = sw.get('VERSION');
   assert.match(version, /^tipnet-/);
   assert.equal(sw.calls.added.length, shell.length);
   assert.ok(sw.calls.added.every((a) => a.cache === 'reload' && a.into === version));
-  assert.deepEqual(sw.calls.added.map((a) => new URL(a.url).pathname).sort(), shell.map((s) => new URL(s, ORIGIN + '/').pathname).sort());
+  assert.deepEqual(
+    sw.calls.added.map((a) => new URL(a.url).pathname).sort(),
+    shell.map((s) => new URL(s, ORIGIN + '/').pathname).sort(),
+  );
   assert.equal(sw.calls.skipped, 0, 'does not skip waiting on its own');
 });
 

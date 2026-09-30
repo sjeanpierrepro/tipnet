@@ -10,7 +10,11 @@ const AFTER = '2026-10-10'; // the example period has finished
 const P = () => M.exampleProfile(TODAY);
 const N = () => M.exampleNights(TODAY);
 const lock = (nights, p, n = 10) => nights.map((x) => ({ ...x, snap: M.snapshotFor(p, n) }));
-const raise = (p) => { p.payTypes[0].rate = 14; p.deductions.push({ id: 'd9', k: 'dental', name: 'Dental', amount: 40, mode: 'fixed' }); p.tipout.value = 20; };
+const raise = (p) => {
+  p.payTypes[0].rate = 14;
+  p.deductions.push({ id: 'd9', k: 'dental', name: 'Dental', amount: 40, mode: 'fixed' });
+  p.tipout.value = 20;
+};
 
 test('snapshotFor keeps the rates, pay types, tip-out, fixed total and shift basis', () => {
   const p = P();
@@ -83,11 +87,24 @@ test('calibration: rate override only moves unlocked nights; the check uses the 
 /* ---------- migration stamping and backups ---------- */
 const realToday = M.todayISO();
 const stateWith = (nights) => ({
-  profileExample: false, nightsExample: false,
-  profile: { ...M.exampleProfile(realToday), periodStart: M.addDays(realToday, -21), periodEnd: M.addDays(realToday, -8), shifts: 3 },
+  profileExample: false,
+  nightsExample: false,
+  profile: {
+    ...M.exampleProfile(realToday),
+    periodStart: M.addDays(realToday, -21),
+    periodEnd: M.addDays(realToday, -8),
+    shifts: 3,
+  },
   nights,
 });
-const nightAgo = (id, ago) => ({ id, date: M.addDays(realToday, -ago), total: 300, cash: 80, pay: { p1: 6 }, barback: true });
+const nightAgo = (id, ago) => ({
+  id,
+  date: M.addDays(realToday, -ago),
+  total: 300,
+  cash: 80,
+  pay: { p1: 6 },
+  barback: true,
+});
 
 test('load migration locks nights in finished periods only, with the Setup they are shown with', () => {
   const S = migrate(stateWith([nightAgo(1, 27), nightAgo(2, 20), nightAgo(3, 5), nightAgo(4, 1)]));
@@ -110,8 +127,16 @@ test('backup round trip keeps snapshots; malformed ones are dropped; prototype c
   S.nights[1].snap = M.snapshotFor(S.profile, 3); // a screen may lock a current-period night too
   const back = decodeBackup(encodeBackup(S));
   assert.deepEqual(back.nights, S.nights);
-  const bad = migrate(stateWith([{ ...nightAgo(1, 1), snap: { r: 'x', pay: 3 } }, { ...nightAgo(2, 2), snap: { r: 2, rf: 0, fixed: 0, n: 1, pay: [] } }]));
-  assert.ok(!bad.nights[0].snap && !bad.nights[1].snap, 'garbage snapshots are removed (current period: unlocked)');
+  const bad = migrate(
+    stateWith([
+      { ...nightAgo(1, 1), snap: { r: 'x', pay: 3 } },
+      { ...nightAgo(2, 2), snap: { r: 2, rf: 0, fixed: 0, n: 1, pay: [] } },
+    ]),
+  );
+  assert.ok(
+    !bad.nights[0].snap && !bad.nights[1].snap,
+    'garbage snapshots are removed (current period: unlocked)',
+  );
   // a prototype backup (no snapshots) restores and its finished nights get locked
   const proto = Buffer.from(JSON.stringify(stateWith([nightAgo(1, 27)])), 'utf8').toString('base64');
   const r = decodeBackup(proto);
@@ -148,7 +173,10 @@ test('app open across a period boundary: locking first keeps a later Setup edit 
 test('imported past nights lock right away with the current Setup', async () => {
   const S = await import('../app/js/storage.js');
   const st = S.setState({ profile: P(), nights: [] });
-  st.nights = [{ id: 'i1', date: '2026-09-22', total: 300, cash: 100, pay: {}, barback: true }, { id: 'i2', date: '2026-10-08', total: 300, cash: 100, pay: {}, barback: true }];
+  st.nights = [
+    { id: 'i1', date: '2026-09-22', total: 300, cash: 100, pay: {}, barback: true },
+    { id: 'i2', date: '2026-10-08', total: 300, cash: 100, pay: {}, barback: true },
+  ];
   assert.equal(S.lockFinished({ force: true, today: '2026-10-09' }), 1);
   assert.ok(st.nights[0].snap && !st.nights[1].snap);
 });

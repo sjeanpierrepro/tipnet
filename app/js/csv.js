@@ -1,5 +1,5 @@
 // CSV import helpers. Everything is parsed locally; nothing is uploaded.
-import { num, toCents, fromCents, formatISO } from './math.js';
+import { toCents, fromCents, formatISO } from './math.js';
 
 /** RFC 4180-ish parser. Returns an array of rows (arrays of strings). Handles BOM, quotes, "" escapes,
  *  commas and newlines inside quotes, CRLF/LF/CR. Blank lines are dropped. */
@@ -7,23 +7,42 @@ export function parseCSV(text) {
   let s = String(text == null ? '' : text);
   if (s.charCodeAt(0) === 0xfeff) s = s.slice(1);
   const rows = [];
-  let row = [], field = '', inQ = false, any = false;
+  let row = [],
+    field = '',
+    inQ = false,
+    any = false;
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
     if (inQ) {
       if (c === '"') {
-        if (s[i + 1] === '"') { field += '"'; i++; } else inQ = false;
+        if (s[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else inQ = false;
       } else field += c;
-    } else if (c === '"') { inQ = true; any = true; }
-    else if (c === ',') { row.push(field); field = ''; any = true; }
-    else if (c === '\n' || c === '\r') {
+    } else if (c === '"') {
+      inQ = true;
+      any = true;
+    } else if (c === ',') {
+      row.push(field);
+      field = '';
+      any = true;
+    } else if (c === '\n' || c === '\r') {
       if (c === '\r' && s[i + 1] === '\n') i++;
-      row.push(field); field = '';
+      row.push(field);
+      field = '';
       if (any || row.length > 1 || row[0] !== '') rows.push(row);
-      row = []; any = false;
-    } else { field += c; any = true; }
+      row = [];
+      any = false;
+    } else {
+      field += c;
+      any = true;
+    }
   }
-  if (any || field !== '' || row.length) { row.push(field); if (row.length > 1 || row[0] !== '') rows.push(row); }
+  if (any || field !== '' || row.length) {
+    row.push(field);
+    if (row.length > 1 || row[0] !== '') rows.push(row);
+  }
   return rows;
 }
 
@@ -33,7 +52,10 @@ export function parseMoney(v) {
   let s = String(v).trim();
   if (!s) return null;
   let neg = false;
-  if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1); }
+  if (/^\(.*\)$/.test(s)) {
+    neg = true;
+    s = s.slice(1, -1);
+  }
   // Look for a minus sign (plain or typographic) once currency symbols and spaces are out of the way.
   const bare = s.replace(/[\s$€£¥]/g, '');
   if (/^[-−]/.test(bare) || /[-−]$/.test(bare)) neg = true;
@@ -49,7 +71,8 @@ export function parseHours(v) {
   const s = String(v == null ? '' : v).trim();
   let x;
   if ((x = /^(\d+):(\d{1,2})(?::\d{1,2})?$/.exec(s))) return +x[1] + +x[2] / 60;
-  if ((x = /^(\d+(?:\.\d+)?)\s*h(?:ours?|rs?)?\s*(?:(\d+)\s*m(?:in(?:ute)?s?)?)?$/i.exec(s))) return +x[1] + (x[2] ? +x[2] / 60 : 0);
+  if ((x = /^(\d+(?:\.\d+)?)\s*h(?:ours?|rs?)?\s*(?:(\d+)\s*m(?:in(?:ute)?s?)?)?$/i.exec(s)))
+    return +x[1] + (x[2] ? +x[2] / 60 : 0);
   const n = parseFloat(s.replace(/[^0-9.]/g, ''));
   return Number.isFinite(n) ? n : 0;
 }
@@ -64,11 +87,23 @@ export function parseDate(v, refYear = new Date().getFullYear()) {
   const s = String(v == null ? '' : v).trim();
   if (!s) return null;
   let y, m, d, x;
-  if ((x = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s].*)?$/.exec(s))) { y = +x[1]; m = +x[2]; d = +x[3]; }
-  else if ((x = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s.*)?$/.exec(s))) { m = +x[1]; d = +x[2]; y = +x[3]; }
-  else if ((x = /^(\d{1,2})\/(\d{1,2})\/(\d{2})(?:\s.*)?$/.exec(s))) { m = +x[1]; d = +x[2]; y = +x[3] < 70 ? 2000 + +x[3] : 1900 + +x[3]; }
-  else if ((x = /^(\d{1,2})\/(\d{1,2})$/.exec(s))) { m = +x[1]; d = +x[2]; y = refYear; }
-  else return null;
+  if ((x = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s].*)?$/.exec(s))) {
+    y = +x[1];
+    m = +x[2];
+    d = +x[3];
+  } else if ((x = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s.*)?$/.exec(s))) {
+    m = +x[1];
+    d = +x[2];
+    y = +x[3];
+  } else if ((x = /^(\d{1,2})\/(\d{1,2})\/(\d{2})(?:\s.*)?$/.exec(s))) {
+    m = +x[1];
+    d = +x[2];
+    y = +x[3] < 70 ? 2000 + +x[3] : 1900 + +x[3];
+  } else if ((x = /^(\d{1,2})\/(\d{1,2})$/.exec(s))) {
+    m = +x[1];
+    d = +x[2];
+    y = refYear;
+  } else return null;
   if (!validYMD(y, m, d)) return null;
   return formatISO(Date.UTC(y, m - 1, d));
 }
@@ -105,7 +140,10 @@ export function guessMapping(headerRow, preset = 'generic') {
   const out = {};
   Object.keys(spec).forEach((field) => {
     let idx = -1;
-    for (const name of spec[field]) { idx = hs.indexOf(name); if (idx >= 0) break; }
+    for (const name of spec[field]) {
+      idx = hs.indexOf(name);
+      if (idx >= 0) break;
+    }
     out[field] = idx >= 0 ? idx : null;
   });
   return out;
@@ -114,13 +152,23 @@ export function guessMapping(headerRow, preset = 'generic') {
 export function namesToMapping(headerRow, names) {
   const hs = headerRow.map((h) => String(h).trim().toLowerCase());
   const out = {};
-  Object.keys(names || {}).forEach((f) => { const i = names[f] == null ? -1 : hs.indexOf(String(names[f]).toLowerCase()); out[f] = i >= 0 ? i : null; });
+  Object.keys(names || {}).forEach((f) => {
+    const i = names[f] == null ? -1 : hs.indexOf(String(names[f]).toLowerCase());
+    out[f] = i >= 0 ? i : null;
+  });
   return out;
 }
 /** Convert index mapping to header-name mapping for storing in settings.csvMapping. */
 export function mappingToNames(headerRow, mapping) {
   const out = {};
-  Object.keys(mapping || {}).forEach((f) => { out[f] = mapping[f] == null ? null : String(headerRow[mapping[f]] || '').trim().toLowerCase() || null; });
+  Object.keys(mapping || {}).forEach((f) => {
+    out[f] =
+      mapping[f] == null
+        ? null
+        : String(headerRow[mapping[f]] || '')
+            .trim()
+            .toLowerCase() || null;
+  });
   return out;
 }
 
@@ -147,16 +195,31 @@ export function buildNights(rows, mapping, opts = {}) {
     const rowNo = i + 1;
     if (mapping.employee != null && employee && String(r[mapping.employee] || '').trim() !== employee) return;
     const date = parseDate(r[mapping.date], refYear);
-    if (!date) { skipped.push({ row: rowNo, reason: 'date' }); return; }
+    if (!date) {
+      skipped.push({ row: rowNo, reason: 'date' });
+      return;
+    }
     const cash = mapping.cash != null ? parseMoney(r[mapping.cash]) : null;
     const card = mapping.card != null ? parseMoney(r[mapping.card]) : null;
     const hours = mapping.hours != null ? parseHours(r[mapping.hours]) : 0;
     let total = mapping.total != null ? parseMoney(r[mapping.total]) : null;
     // A negative amount or hours (refund, void, typo) is not a night we can trust: skip the row and say why.
-    const negHours = mapping.hours != null && /^\s*[-−(]/.test(String(r[mapping.hours] == null ? '' : r[mapping.hours]));
-    if ((cash != null && cash < 0) || (card != null && card < 0) || (total != null && total < 0) || negHours) { skipped.push({ row: rowNo, reason: 'negative' }); return; }
+    const negHours =
+      mapping.hours != null && /^\s*[-−(]/.test(String(r[mapping.hours] == null ? '' : r[mapping.hours]));
+    if (
+      (cash != null && cash < 0) ||
+      (card != null && card < 0) ||
+      (total != null && total < 0) ||
+      negHours
+    ) {
+      skipped.push({ row: rowNo, reason: 'negative' });
+      return;
+    }
     if (total == null) {
-      if (cash == null && card == null && !(hours && rate)) { skipped.push({ row: rowNo, reason: 'amount' }); return; }
+      if (cash == null && card == null && !(hours && rate)) {
+        skipped.push({ row: rowNo, reason: 'amount' });
+        return;
+      }
       total = fromCents(toCents(cash || 0) + toCents(card || 0) + toCents(hours * rate));
     }
     const cur = byDate.get(date) || { date, totalC: 0, cashC: null, hours: 0 };
@@ -166,22 +229,27 @@ export function buildNights(rows, mapping, opts = {}) {
     byDate.set(date, cur);
   });
   const base = Date.now();
-  const nights = [...byDate.values()].sort((a, b) => (a.date < b.date ? -1 : 1)).map((c, i) => ({
-    id: base + i,
-    date: c.date,
-    total: fromCents(c.totalC),
-    cash: c.cashC == null ? null : fromCents(c.cashC),
-    pay: c.hours ? { [payId]: c.hours } : {},
-    barback,
-  }));
+  const nights = [...byDate.values()]
+    .sort((a, b) => (a.date < b.date ? -1 : 1))
+    .map((c, i) => ({
+      id: base + i,
+      date: c.date,
+      total: fromCents(c.totalC),
+      cash: c.cashC == null ? null : fromCents(c.cashC),
+      pay: c.hours ? { [payId]: c.hours } : {},
+      barback,
+    }));
   return { nights, skipped };
 }
 
 /** Split incoming nights into new ones and ones whose date already exists. */
 export function dedupeNights(incoming, existing) {
   const byDate = new Map(existing.map((n) => [n.date, n]));
-  const fresh = [], duplicates = [];
-  incoming.forEach((n) => (byDate.has(n.date) ? duplicates.push({ incoming: n, existing: byDate.get(n.date) }) : fresh.push(n)));
+  const fresh = [],
+    duplicates = [];
+  incoming.forEach((n) =>
+    byDate.has(n.date) ? duplicates.push({ incoming: n, existing: byDate.get(n.date) }) : fresh.push(n),
+  );
   return { fresh, duplicates };
 }
 /**
@@ -194,10 +262,22 @@ export function mergeNights(existing, incoming, { overwrite = false } = {}) {
   if (overwrite) {
     const dupDates = new Set(duplicates.map((d) => d.incoming.date));
     out = out.filter((n) => !dupDates.has(n.date));
-    out.push(...duplicates.map(({ incoming: inc, existing: ex }) => ({
-      ...ex, ...inc, id: ex.id, cash: inc.cash ?? ex.cash ?? null, pay: { ...ex.pay, ...inc.pay }, barback: ex.barback,
-    })));
+    out.push(
+      ...duplicates.map(({ incoming: inc, existing: ex }) => ({
+        ...ex,
+        ...inc,
+        id: ex.id,
+        cash: inc.cash ?? ex.cash ?? null,
+        pay: { ...ex.pay, ...inc.pay },
+        barback: ex.barback,
+      })),
+    );
   }
   out.push(...fresh);
-  return { nights: out, added: fresh.length, replaced: overwrite ? duplicates.length : 0, skipped: overwrite ? 0 : duplicates.length };
+  return {
+    nights: out,
+    added: fresh.length,
+    replaced: overwrite ? duplicates.length : 0,
+    skipped: overwrite ? 0 : duplicates.length,
+  };
 }

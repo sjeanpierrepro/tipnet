@@ -15,10 +15,14 @@ export function cutoffFromSettings(settings) {
  * so daylight-saving nights (23 or 25 hours long) still land on the right date.
  */
 export function businessDate(now = new Date(), cutoffHour = DEFAULT_CUTOFF_HOUR) {
-  let y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
+  let y = now.getFullYear(),
+    m = now.getMonth(),
+    d = now.getDate();
   if (cutoffHour > 0 && now.getHours() < cutoffHour) {
     const prev = new Date(Date.UTC(y, m, d - 1));
-    y = prev.getUTCFullYear(); m = prev.getUTCMonth(); d = prev.getUTCDate();
+    y = prev.getUTCFullYear();
+    m = prev.getUTCMonth();
+    d = prev.getUTCDate();
   }
   return y + '-' + pad(m + 1) + '-' + pad(d);
 }
@@ -28,14 +32,21 @@ export function businessDate(now = new Date(), cutoffHour = DEFAULT_CUTOFF_HOUR)
  * Returns {status: 'none'|'ok'|'negative'|'over', message}. Only 'ok' cash is used for the check split and saved.
  */
 export function checkCash(totalStr, cashStr) {
-  const raw = String(cashStr == null ? '' : cashStr).replace(/[^0-9.\-]/g, '');
+  const raw = String(cashStr == null ? '' : cashStr).replace(/[^0-9.-]/g, '');
   if (raw === '' || raw === '-' || raw === '.') return { status: 'none', message: '' };
   const cash = parseFloat(raw);
   if (!Number.isFinite(cash)) return { status: 'none', message: '' };
-  if (cash < 0) return { status: 'negative', message: 'Cash can’t be a negative number. It won’t be saved until you fix it.' };
-  const total = parseFloat(String(totalStr == null ? '' : totalStr).replace(/[^0-9.\-]/g, ''));
+  if (cash < 0)
+    return {
+      status: 'negative',
+      message: 'Cash can’t be a negative number. It won’t be saved until you fix it.',
+    };
+  const total = parseFloat(String(totalStr == null ? '' : totalStr).replace(/[^0-9.-]/g, ''));
   if (Number.isFinite(total) && total > 0 && cash > total + 0.005) {
-    return { status: 'over', message: 'Cash is more than what you made tonight. Check the number. The cash amount won’t be saved.' };
+    return {
+      status: 'over',
+      message: 'Cash is more than what you made tonight. Check the number. The cash amount won’t be saved.',
+    };
   }
   return { status: 'ok', message: '' };
 }

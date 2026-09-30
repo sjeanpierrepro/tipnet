@@ -3,18 +3,26 @@ import assert from 'node:assert/strict';
 import { boot, quiet, toCode, realState } from './harness.js';
 import { encodeBackup, seedState } from '../../app/js/storage.js';
 import { bus } from '../../app/js/ui/common.js';
-import { isUnlocked, BILLING } from '../../app/js/billing.js';
+import { isUnlocked } from '../../app/js/billing.js';
 
 const future = new Date(Date.now() + 5 * 864e5).toISOString();
 const forged = () => {
   const S = seedState();
-  S.settings.entitlement = { status: 'active', instanceId: null, validatedAt: future, plan: 'monthly', key: 'FORGED-KEY' };
-  S.nightsExample = false; S.nights = [];
+  S.settings.entitlement = {
+    status: 'active',
+    instanceId: null,
+    validatedAt: future,
+    plan: 'monthly',
+    key: 'FORGED-KEY',
+  };
+  S.nightsExample = false;
+  S.nights = [];
   return toCode(S);
 };
 const restoreVia = (page, code) => {
   page.tab('setup');
-  const skip = page.byText('button', 'Skip guided setup'); if (skip) page.click(skip);
+  const skip = page.byText('button', 'Skip guided setup');
+  if (skip) page.click(skip);
   page.type(page.must(page.$('#bk-code'), '#bk-code'), code);
   page.click(page.button('Restore from code'));
 };
@@ -27,7 +35,9 @@ test('restore: a hand-made code with an entitlement does not unlock Budget (paym
     assert.equal(page.state().settings.entitlement, undefined);
     assert.equal(page.tabHidden('budget'), true);
     assert.equal(isUnlocked(page.state().settings.entitlement), false);
-  } finally { await page.close(); }
+  } finally {
+    await page.close();
+  }
 });
 
 test('restore: a hand-made code with an entitlement stays locked when payments are on', async () => {
@@ -39,7 +49,9 @@ test('restore: a hand-made code with an entitlement stays locked when payments a
     page.tab('budget');
     assert.match(page.text(), /Unlock Budget/);
     assert.equal(page.$('#budget-balance'), null, 'no unlocked budget controls');
-  } finally { await page.close(); }
+  } finally {
+    await page.close();
+  }
 });
 
 test('restore: a garbage but decodable code restores to a working app', async () => {
@@ -52,11 +64,16 @@ test('restore: a garbage but decodable code restores to a working app', async ()
       assert.doesNotMatch(page.text(), /Something went wrong/, t);
       assert.ok(page.app.firstChild, t + ' rendered');
     }
-  } finally { await page.close(); }
+  } finally {
+    await page.close();
+  }
 });
 
 /** Force a render error by poisoning the in-memory state (nights is not a list). */
-const poison = (page) => { page.state().nights = null; bus.rerender(); };
+const poison = (page) => {
+  page.state().nights = null;
+  bus.rerender();
+};
 
 test('error screen: shows, restores from a code, and erases with two taps', async () => {
   const page = await boot();
@@ -71,7 +88,9 @@ test('error screen: shows, restores from a code, and erases with two taps', asyn
     assert.match(page.text(), /That code did not work/);
 
     // a good code restores
-    const good = realState((S) => { S.nights = [{ id: 1, date: '2026-01-05', total: 300, cash: 50, pay: { p1: 6 }, barback: true }]; });
+    const good = realState((S) => {
+      S.nights = [{ id: 1, date: '2026-01-05', total: 300, cash: 50, pay: { p1: 6 }, barback: true }];
+    });
     page.type(box, encodeBackup(good));
     page.click(page.button('Restore from a backup code'));
     assert.doesNotMatch(page.text(), /Something went wrong/);
@@ -88,5 +107,7 @@ test('error screen: shows, restores from a code, and erases with two taps', asyn
     assert.doesNotMatch(page.text(), /Something went wrong/);
     assert.equal(page.state().nights.length, 0);
     assert.ok(page.$('.result'));
-  } finally { await page.close(); }
+  } finally {
+    await page.close();
+  }
 });
