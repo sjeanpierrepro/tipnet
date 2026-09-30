@@ -40,6 +40,8 @@ export function el(tag, props, ...kids) {
       else if (k === 'value' || k === 'checked' || k === 'disabled' || k === 'hidden') n[k] = v;
       else n.setAttribute(k, v === true ? '' : v);
     }
+    // An element with an id can be found again after a re-render, so keep keyboard focus on it (see keepFocus).
+    if (props.id && !props['data-focus-key']) n.setAttribute('data-focus-key', props.id);
   }
   kids.flat(Infinity).forEach((c) => { if (c != null && c !== false) n.append(c.nodeType ? c : document.createTextNode(String(c))); });
   return n;
@@ -70,6 +72,48 @@ export const select = (options, value, props = {}) => {
   s.value = String(value); // option values are strings, so numbers and string modes both work
   return s;
 };
+
+/* ---------- keeping keyboard focus across re-renders ---------- */
+/*
+ * Screens rebuild their whole tab on every change, which would drop focus to the page. keepFocus() remembers
+ * which control had focus and puts it back on the matching new one. For a screen to get this:
+ *   - give the control an id (el() then adds data-focus-key for you), or set data-focus-key="something-stable"
+ *     yourself (use this for controls made in a loop, e.g. 'paid-' + bill.id);
+ *   - controls with neither are matched by tag, position and label, which works when the list did not change.
+ * If the control is gone (for example you just deleted the row it was in), focus moves to the panel heading.
+ */
+const labelOf = (n) => (n.getAttribute('aria-label') || n.textContent || n.value || '').trim().slice(0, 60);
+export function captureFocus(root) {
+  const a = document.activeElement;
+  if (!a || a === document.body || a === root || !root.contains(a)) return null;
+  const saved = { key: a.getAttribute('data-focus-key') || a.id || null, tag: a.tagName, label: labelOf(a) };
+  saved.index = Array.from(root.querySelectorAll(a.tagName)).indexOf(a);
+  try { if (typeof a.selectionStart === 'number') { saved.start = a.selectionStart; saved.end = a.selectionEnd; } } catch (e) { /* not a text field */ }
+  return saved;
+}
+export function restoreFocus(root, saved) {
+  if (!saved) return;
+  let target = null;
+  if (saved.key) {
+    target = Array.from(root.querySelectorAll('[data-focus-key],[id]')).find((n) => (n.getAttribute('data-focus-key') || n.id) === saved.key) || null;
+  }
+  if (!target && saved.index >= 0) { // no stable key (or a generated id that changed): match by tag, position and label
+    const c = root.querySelectorAll(saved.tag)[saved.index];
+    if (c && labelOf(c) === saved.label) target = c;
+  }
+  if (!target || target.disabled || target.hidden) {
+    target = root.querySelector('h1,h2') || root;
+    if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+  }
+  try { target.focus({ preventScroll: true }); } catch (e) { return; }
+  try { if (saved.start != null && target === document.activeElement && typeof target.setSelectionRange === 'function') target.setSelectionRange(saved.start, saved.end); } catch (e) { /* ignore */ }
+}
+/** Run redraw() (which rebuilds root's contents) and keep keyboard focus where it was. */
+export function keepFocus(root, redraw) {
+  const saved = captureFocus(root);
+  redraw();
+  restoreFocus(root, saved);
+}
 
 /* ---------- toast ---------- */
 export function toast(message, { undo, ms } = {}) {

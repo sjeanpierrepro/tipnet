@@ -7,14 +7,19 @@ const DAY = 24 * 3600 * 1000;
 const ent = (o = {}) => ({ plan: 'monthly', key: 'AAAA-BBBB-CCCC-1234', instanceId: 'i1', status: 'active', validatedAt: new Date(NOW - DAY / 2).toISOString(), ...o });
 const json = (body) => async () => ({ json: async () => body });
 
+const ON = { provider: 'lemonsqueezy' };
+const un = (e, now = NOW, opts = {}) => isUnlocked(e, now, { config: ON, loc: { hostname: 'tipnet.example' }, ...opts });
+
 test('isUnlocked rules', () => {
-  assert.equal(isUnlocked(null, NOW), false);
-  assert.equal(isUnlocked(ent(), NOW), true);
-  assert.equal(isUnlocked(ent({ status: 'on_trial' }), NOW), true);
-  assert.equal(isUnlocked(ent({ status: 'expired' }), NOW), false);
-  assert.equal(isUnlocked(ent({ validatedAt: new Date(NOW - GRACE_MS + 1000).toISOString() }), NOW), true);
-  assert.equal(isUnlocked(ent({ validatedAt: new Date(NOW - GRACE_MS - 1000).toISOString() }), NOW), false);
-  assert.equal(isUnlocked({ plan: 'dev' }, NOW), true);
+  assert.equal(un(null), false);
+  assert.equal(un(ent()), true);
+  assert.equal(un(ent({ status: 'on_trial' })), true);
+  assert.equal(un(ent({ status: 'expired' })), false);
+  assert.equal(un(ent({ validatedAt: new Date(NOW - GRACE_MS + 1000).toISOString() })), true);
+  assert.equal(un(ent({ validatedAt: new Date(NOW - GRACE_MS - 1000).toISOString() })), false);
+  // dev unlock only counts on localhost
+  assert.equal(un({ plan: 'dev' }), false);
+  assert.equal(un({ plan: 'dev' }, NOW, { loc: { hostname: 'localhost' } }), true);
 });
 
 test('needsRevalidate', () => {
@@ -95,7 +100,7 @@ test('a server error or rate limit never locks anyone', async () => {
   }
   // a definite "not found" (404 with JSON) does lock
   const gone = lemonSqueezyProvider({ fetch: async () => ({ status: 404, json: async () => ({ valid: false, error: 'license_key not found.', license_key: null }) }) });
-  assert.equal(isUnlocked(await revalidate(stale, { provider: gone, now: NOW, online: true }), NOW), false);
+  assert.equal(un(await revalidate(stale, { provider: gone, now: NOW, online: true })), false);
 });
 
 test('plan comes from the variant name when the caller does not give one', async () => {
@@ -117,13 +122,13 @@ test('revalidate: valid:false locks even when the key status is still active', a
   const noInstance = lemonSqueezyProvider({ fetch: async () => ({ status: 404, json: async () => ({ valid: false, error: 'license_key instance not found.', license_key: { status: 'active' } }) }) });
   const r = await revalidate(stale, { provider: noInstance, now: NOW, online: true });
   assert.equal(r.status, 'invalid');
-  assert.equal(isUnlocked(r, NOW), false);
+  assert.equal(un(r), false);
   const plain = lemonSqueezyProvider({ fetch: json({ valid: false, license_key: { status: 'on_trial' } }) });
-  assert.equal(isUnlocked(await revalidate(stale, { provider: plain, now: NOW, online: true }), NOW), false);
-  assert.equal(isUnlocked({ ...ent(), status: 'invalid' }, NOW), false);
+  assert.equal(un(await revalidate(stale, { provider: plain, now: NOW, online: true })), false);
+  assert.equal(un({ ...ent(), status: 'invalid' }), false);
   // a good answer still keeps it unlocked
   const good = lemonSqueezyProvider({ fetch: json({ valid: true, license_key: { status: 'active' } }) });
   const g = await revalidate(stale, { provider: good, now: NOW, online: true });
   assert.equal(g.status, 'active');
-  assert.equal(isUnlocked(g, NOW), true);
+  assert.equal(un(g), true);
 });

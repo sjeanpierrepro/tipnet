@@ -26,12 +26,12 @@
     <div class="brand">Tip<span>Net</span></div>
   </header>
   <nav class="tabbar" id="tabs" aria-label="Main">
-    <button type="button" role="tab" data-tab="tonight" aria-selected="true">Tonight</button>
-    <button type="button" role="tab" data-tab="periods" aria-selected="false">Pay periods</button>
-    <button type="button" role="tab" data-tab="budget" aria-selected="false">Budget</button>
-    <button type="button" role="tab" data-tab="setup" aria-selected="false">Setup</button>
+    <button type="button" role="tab" id="tab-tonight" aria-controls="app" data-tab="tonight" aria-selected="true">Tonight</button>
+    <button type="button" role="tab" id="tab-periods" aria-controls="app" data-tab="periods" aria-selected="false">Pay periods</button>
+    <button type="button" role="tab" id="tab-budget" aria-controls="app" data-tab="budget" aria-selected="false">Budget</button>
+    <button type="button" role="tab" id="tab-setup" aria-controls="app" data-tab="setup" aria-selected="false">Setup</button>
   </nav>
-  <main id="app" tabindex="-1"></main>
+  <main id="app" role="tabpanel" aria-labelledby="tab-tonight" tabindex="-1"></main>
   <footer class="app-footer">TipNet gives estimates, not tax advice. Your numbers stay on this device.</footer>
 </div>
 <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>

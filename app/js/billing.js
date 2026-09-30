@@ -3,7 +3,25 @@
 // The only network calls ever made go to the payment provider, and only when the user
 // activates a key or a revalidation is due (at most once per 24 hours). They send the
 // license key and a random device name, never budget or pay data.
-import { BILLING } from './billing-config.js';
+import * as configModule from './billing-config.js';
+
+/**
+ * billing-config.js is fetched network-first but this file may come from the cache, so the two can be from
+ * different versions. Read the config defensively: missing or extra fields are fine, and a missing export is too.
+ */
+export function readConfig(raw) {
+  const c = raw && typeof raw === 'object' ? raw : {};
+  const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+  const str = (v) => (typeof v === 'string' ? v : '');
+  return {
+    provider: c.provider === 'lemonsqueezy' ? c.provider : null, // unknown providers count as off
+    prices: { monthly: '$1.99', yearly: '$20', ...obj(c.prices) },
+    checkout: { monthly: str(obj(c.checkout).monthly), yearly: str(obj(c.checkout).yearly) },
+    productIds: Array.isArray(c.productIds) ? c.productIds : [],
+    proxyUrl: str(c.proxyUrl),
+  };
+}
+export const BILLING = readConfig(configModule.BILLING);
 
 export const GRACE_MS = 14 * 24 * 3600 * 1000;   // offline grace after last successful validation
 export const REVALIDATE_MS = 24 * 3600 * 1000;   // at most one silent check per day
@@ -29,20 +47,33 @@ export function randomInstanceName() {
 }
 
 const ACTIVE = new Set(['active', 'on_trial']);
+const CLOCK_SKEW_MS = 5 * 60 * 1000; // a check that claims to be from the future (beyond clock drift) is not trusted
 const toMs = (v) => { const t = typeof v === 'number' ? v : Date.parse(v); return Number.isFinite(t) ? t : null; };
 
 /**
  * Is the add-on unlocked right now? ent: state.settings.entitlement or null. now: ms.
- * A dev entitlement always unlocks (it can only be created on localhost). Otherwise the status must be
- * active/on_trial and last validated within 14 days.
+ * Two ways in: (1) a dev entitlement, honored only on localhost; (2) a real one, which needs a license key AND
+ * the device seat (instanceId) the payment service handed back, payments switched on, status active/on_trial,
+ * and a last check within 14 days that is not in the future. Anything hand-made fails at least one of these.
+ * opts: { loc, config } for tests.
  */
-export function isUnlocked(ent, now = Date.now()) {
+export function isUnlocked(ent, now = Date.now(), opts = {}) {
   if (!ent || typeof ent !== 'object') return false;
-  if (ent.plan === 'dev') return true;
+  const loc = 'loc' in opts ? opts.loc : globalThis.location;
+  if (ent.plan === 'dev') return isDevHost(loc);
+  const config = 'config' in opts ? readConfig(opts.config) : BILLING;
+  if (!config.provider) return false;
+  if (typeof ent.key !== 'string' || !ent.key || (typeof ent.instanceId !== 'string' && typeof ent.instanceId !== 'number') || ent.instanceId === '') return false;
   if (!ACTIVE.has(ent.status)) return false;
   const v = toMs(ent.validatedAt);
-  if (v === null || now - v > GRACE_MS || v - now > REVALIDATE_MS) return false;
+  if (v === null || now - v > GRACE_MS || v - now > CLOCK_SKEW_MS) return false;
   return true;
+}
+
+/** Should the Budget tab be visible? Only when payments are on, or this device already has an unlocked add-on (or dev unlock). */
+export function budgetVisible(ent, now = Date.now(), opts = {}) {
+  const config = 'config' in opts ? readConfig(opts.config) : BILLING;
+  return !!config.provider || isUnlocked(ent, now, opts);
 }
 
 /** True when a silent recheck is due: has a real key, online, and last check is 24h+ old. */
@@ -68,10 +99,12 @@ export function parseLemonSqueezy(body, productIds = []) {
   if (vn.includes('year') || vn.includes('annual')) out.plan = 'yearly';
   else if (vn.includes('month')) out.plan = 'monthly';
   const good = b.activated === true || b.valid === true;
-  if (productIds && productIds.length) {
+  // Only say "wrong product" when the service found the key and it belongs to a different product.
+  // A key it did not find at all is a typo, and gets the "not found" message below.
+  if (productIds && productIds.length && b.license_key && typeof b.license_key === 'object') {
     const pid = b.meta && b.meta.product_id;
     if (!productIds.map(Number).includes(Number(pid))) {
-      return { ok: false, status: 'invalid', error: 'This key is not for TipNet Budget.' };
+      return { ok: false, status: 'invalid', error: 'This key is real, but it is for a different product, not TipNet Budget.' };
     }
   }
   if (good && ACTIVE.has(status)) { out.ok = true; return out; }
@@ -129,7 +162,8 @@ export function lemonSqueezyProvider(deps = {}) {
 }
 
 /** Provider chosen in billing-config.js, or null while payments are switched off. */
-export function getProvider(config = BILLING, deps = {}) {
+export function getProvider(rawConfig = BILLING, deps = {}) {
+  const config = readConfig(rawConfig);
   if (config.provider === 'lemonsqueezy') {
     return lemonSqueezyProvider({ productIds: config.productIds, proxyUrl: config.proxyUrl, ...deps });
   }
@@ -196,6 +230,6 @@ export function isDevHost(loc = globalThis.location) {
 }
 
 /** Checkout link for a plan ('monthly'|'yearly'), or '' if not set up yet. */
-export function checkoutUrl(plan, config = BILLING) {
-  return (config.checkout && config.checkout[plan]) || '';
+export function checkoutUrl(plan, rawConfig = BILLING) {
+  return readConfig(rawConfig).checkout[plan] || '';
 }

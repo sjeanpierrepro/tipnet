@@ -35,27 +35,96 @@ export function erasedState() {
 /* ---------- migration (prototype logic kept) ---------- */
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
+const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+const text = (v, d = '') => (typeof v === 'string' ? v.slice(0, 200) : d);
+const numOr0 = (v) => (typeof v === 'number' || typeof v === 'string' ? num(v) : 0);
+const validDate = (v) => typeof v === 'string' && Number.isFinite(parseISO(v));
+/** Ids must be unique and non-empty. Bad or repeated ids get a fresh one. */
+function uniqueId(v, seen, prefix, i) {
+  let id = (typeof v === 'string' && v) || (typeof v === 'number' && Number.isFinite(v) ? v : '');
+  while (id === '' || seen.has(id)) id = prefix + (i++) + '_' + seen.size;
+  seen.add(id);
+  return id;
+}
+function cleanPayTypes(list) {
+  const seen = new Set();
+  const out = (Array.isArray(list) ? list : []).filter(isObj).slice(0, 30).map((t, i) => {
+    const unit = ['hr', 'shift', 'amt'].includes(t.unit) ? t.unit : 'hr';
+    const o = { id: uniqueId(t.id, seen, 'p', i + 1), name: text(t.name), rate: numOr0(t.rate), unit: i === 0 && unit === 'amt' ? 'hr' : unit, usual: numOr0(t.usual) };
+    o.k = typeof t.k === 'string' && t.k ? t.k.slice(0, 40) : (i === 0 ? 'hourly' : 'other');
+    if (t.supp) o.supp = 1;
+    if (t.diff) o.diff = true;
+    return o;
+  });
+  if (!out.length) out.push({ id: 'p1', name: 'Main rate', rate: 0, unit: 'hr', usual: 7, k: 'hourly' });
+  return out;
+}
+function cleanDeductions(list) {
+  const seen = new Set();
+  return (Array.isArray(list) ? list : []).filter(isObj).slice(0, 50).map((d, i) => ({
+    id: uniqueId(d.id, seen, 'd', i + 1), k: typeof d.k === 'string' && d.k ? d.k.slice(0, 40) : 'other',
+    name: text(d.name), amount: numOr0(d.amount), mode: d.mode === 'fixed' ? 'fixed' : 'pct',
+  }));
+}
+function cleanNights(list) {
+  const seen = new Set();
+  return (Array.isArray(list) ? list : []).filter((n) => isObj(n) && validDate(n.date)).map((n, i) => {
+    const pay = {};
+    if (isObj(n.pay)) {
+      Object.keys(n.pay).forEach((k) => {
+        const v = n.pay[k];
+        if ((typeof v === 'number' || (typeof v === 'string' && v.trim() !== '')) && Number.isFinite(parseFloat(v))) pay[k] = num(v);
+      });
+    }
+    const hasCash = (typeof n.cash === 'number' || typeof n.cash === 'string') && n.cash !== '' && Number.isFinite(parseFloat(n.cash));
+    const o = { id: uniqueId(n.id, seen, 'n', i + 1), date: n.date, total: numOr0(n.total), cash: hasCash ? num(n.cash) : null, pay, barback: n.barback === undefined ? true : !!n.barback };
+    if (typeof n.note === 'string' && n.note) o.note = n.note.slice(0, 500);
+    return o;
+  });
+}
+function cleanSettings(x) {
+  const s = isObj(x) ? x : {};
+  const out = {
+    theme: ['auto', 'light', 'dark'].includes(s.theme) ? s.theme : 'auto',
+    lastTab: ['tonight', 'periods', 'budget', 'setup'].includes(s.lastTab) ? s.lastTab : 'tonight',
+    csvMapping: null,
+  };
+  if (isObj(s.csvMapping)) {
+    const m = {};
+    Object.keys(s.csvMapping).forEach((k) => { const v = s.csvMapping[k]; if (v === null || ['string', 'number', 'boolean'].includes(typeof v)) m[k] = v; });
+    out.csvMapping = m;
+  }
+  if (s.setupDone !== undefined) out.setupDone = !!s.setupDone;
+  // The license entitlement is device-only. decodeBackup strips it before migrate; here we only keep its known plain fields.
+  if (isObj(s.entitlement)) {
+    const e = {};
+    ['plan', 'key', 'instanceId', 'status', 'validatedAt', 'expiresAt'].forEach((k) => { const v = s.entitlement[k]; if (v === null || typeof v === 'string' || typeof v === 'number') e[k] = v; });
+    out.entitlement = e;
+  }
+  return out;
+}
+
 /**
  * Accepts anything (null, prototype v1 shapes both old and new, v2). Returns a fresh, valid v2 state.
- * Never throws for missing or garbage input; returns the seed state instead.
+ * Never throws for missing or garbage input; returns the seed state instead. Every field is coerced to a
+ * safe shape (bad rows are dropped) so the math and screens can always render the result.
  */
 export function migrate(input) {
+  try { return migrateUnsafe(input); } catch (e) { return seedState(); }
+}
+function migrateUnsafe(input) {
   let S;
-  try { S = input && typeof input === 'object' ? clone(input) : null; } catch (e) { S = null; }
-  if (!S || !S.profile || typeof S.profile !== 'object') return seedState();
-  if (!Array.isArray(S.nights)) S.nights = [];
-  if (!Array.isArray(S.calib)) S.calib = [];
+  try { S = isObj(input) ? clone(input) : null; } catch (e) { S = null; }
+  if (!S || !isObj(S.profile)) return seedState();
   const p = S.profile;
+  const rawNights = Array.isArray(S.nights) ? S.nights.filter(isObj) : [];
   // Oldest prototype: single hourly rate and hours instead of payTypes.
-  if (!p.payTypes) {
+  if (!Array.isArray(p.payTypes)) {
     p.payTypes = [{ id: 'p1', name: 'Main rate', rate: num(p.hourly), unit: 'hr', usual: num(p.hours) || 7 }];
-    S.nights.forEach((n) => { if (!n.pay) n.pay = { p1: num(n.hours) }; });
+    rawNights.forEach((n) => { if (!isObj(n.pay)) n.pay = { p1: num(n.hours) }; });
   }
-  // A missing or broken start date would leave every pay period undefined; fall back to today.
-  if (typeof p.periodStart !== 'string' || !Number.isFinite(parseISO(p.periodStart))) p.periodStart = todayISO();
-  if (p.periodEnd === undefined) p.periodEnd = '';
   // Older prototype: fixed set of deduction fields instead of a deductions list.
-  if (!p.deductions) {
+  if (!Array.isArray(p.deductions)) {
     const d = [];
     let n = 1;
     [['fed', 'Federal income tax', p.fed, 'pct'], ['state', 'State / local tax', p.other, 'pct'],
@@ -63,25 +132,37 @@ export function migrate(input) {
       ['other', 'Benefits and fixed deductions', p.fixed, 'fixed']]
       .forEach(([k, name, a, mode]) => { if (num(a)) d.push({ id: 'd' + (n++), k, name, amount: num(a), mode }); });
     p.deductions = d;
-    ['fed', 'other', 'ss', 'med', 'fixed', 'hourly', 'hours'].forEach((k) => delete p[k]);
   }
-  p.payTypes.forEach((t, i) => { if (!t.k) t.k = i === 0 ? 'hourly' : 'other'; });
-  S.nights.forEach((n) => { if (!n.pay) n.pay = {}; if (n.barback === undefined) n.barback = true; });
-  if (p.rateOverride === undefined) p.rateOverride = null;
-  if (!p.tipout) p.tipout = { on: false, mode: 'pct', value: 0, basis: 'before', from: 'cash' };
+  const out = {};
+  // A missing or broken start date would leave every pay period undefined; fall back to today.
+  out.periodStart = validDate(p.periodStart) ? p.periodStart : todayISO();
+  out.periodEnd = validDate(p.periodEnd) ? p.periodEnd : '';
+  out.gross = Math.max(0, numOr0(p.gross));
+  out.shifts = Math.max(0, Math.round(numOr0(p.shifts)));
+  const ro = p.rateOverride;
+  out.rateOverride = (typeof ro === 'number' && Number.isFinite(ro) && ro >= 0 && ro <= 1) ? ro : null;
   // freq: fixed day counts 7/14/15/30 or the calendar modes 'semimonthly'/'monthly'; anything else falls back to 14.
-  if (typeof p.freq === 'string' && /^[0-9]+$/.test(p.freq)) p.freq = Number(p.freq);
-  if (![7, 14, 15, 30, 'semimonthly', 'monthly'].includes(p.freq)) p.freq = 14;
-  if (p.shifts === undefined) p.shifts = 0;
+  let freq = p.freq;
+  if (typeof freq === 'string' && /^[0-9]+$/.test(freq)) freq = Number(freq);
+  out.freq = [7, 14, 15, 30, 'semimonthly', 'monthly'].includes(freq) ? freq : 14;
   // payDelay: whole days after the period end that the check arrives (0-21). Absent/blank stays absent (treated as 1).
-  if (p.payDelay === undefined || p.payDelay === null || p.payDelay === '' || !Number.isFinite(Number(p.payDelay))) delete p.payDelay;
-  else p.payDelay = Math.min(21, Math.max(0, Math.round(Number(p.payDelay))));
-  S.budget = migrateBudget(S.budget); // old states and old backup codes have none: they get an empty budget
-  S.profileExample = !!S.profileExample;
-  S.nightsExample = !!S.nightsExample;
-  S.settings = { theme: 'auto', lastTab: 'tonight', csvMapping: null, ...(S.settings || {}) };
-  S.schemaVersion = SCHEMA_VERSION;
-  return S;
+  const pd = p.payDelay;
+  if (!(pd === undefined || pd === null || pd === '' || typeof pd === 'boolean' || !Number.isFinite(Number(pd)))) out.payDelay = Math.min(21, Math.max(0, Math.round(Number(pd))));
+  out.deductions = cleanDeductions(p.deductions);
+  out.payTypes = cleanPayTypes(p.payTypes);
+  const to = isObj(p.tipout) ? p.tipout : {};
+  out.tipout = { on: !!to.on, mode: to.mode === 'flat' ? 'flat' : 'pct', value: numOr0(to.value), basis: text(to.basis, 'before') || 'before', from: text(to.from, 'cash') || 'cash' };
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    profileExample: !!S.profileExample,
+    nightsExample: !!S.nightsExample,
+    profile: out,
+    nights: cleanNights(rawNights),
+    calib: (Array.isArray(S.calib) ? S.calib : []).filter(isObj).slice(-50)
+      .map((c) => ({ label: text(c.label), pred: numOr0(c.pred), actual: numOr0(c.actual), err: numOr0(c.err) })),
+    budget: migrateBudget(S.budget), // old states and old backup codes have none: they get an empty budget
+    settings: cleanSettings(S.settings),
+  };
 }
 
 /* ---------- backup codes: base64 of the JSON state, UTF-8 safe ---------- */
@@ -108,8 +189,13 @@ export function decodeBackup(code) {
   try {
     const clean = String(code).replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
     const d = JSON.parse(fromB64(clean));
-    if (!d || !d.profile || !Array.isArray(d.nights)) throw new Error('shape');
-    return migrate(d);
+    if (!d || typeof d !== 'object' || !d.profile || !Array.isArray(d.nights)) throw new Error('shape');
+    // A backup code is text anyone can write by hand, so it never carries device-only data.
+    // The license (entitlement) belongs to this device and is only ever set by activating a key.
+    if (d.settings && typeof d.settings === 'object') delete d.settings.entitlement;
+    const out = migrate(d);
+    delete out.settings.entitlement;
+    return out;
   } catch (e) {
     throw new Error('bad-backup');
   }
@@ -160,17 +246,29 @@ function lsSet(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch (e) { return false; }
 }
 
+/** Time a saved copy was written (ms), or 0 if unknown. */
+const savedAtOf = (r) => (r && typeof r === 'object' && Number.isFinite(r._savedAt) ? r._savedAt : 0);
+/**
+ * Pure. Given the IndexedDB copy and the localStorage copy (either may be null), returns the newer one.
+ * A copy without a timestamp counts as oldest; on a tie IndexedDB wins.
+ */
+export function pickNewest(idbCopy, lsCopy) {
+  if (!idbCopy) return lsCopy || null;
+  if (!lsCopy) return idbCopy;
+  return savedAtOf(lsCopy) > savedAtOf(idbCopy) ? lsCopy : idbCopy;
+}
+
 /**
  * load(): reads IndexedDB (then localStorage v2, then legacy 'tipnet.v1'), migrates, fills the
  * in-memory cache and returns it. Never throws; falls back to the example state.
  */
 export async function load() {
-  let raw = null;
+  let idbRaw = null;
   try {
     const db = await openDB();
-    if (db) raw = await idbGet(db);
-  } catch (e) { raw = null; }
-  if (!raw) raw = lsGet(LS_KEY);
+    if (db) idbRaw = await idbGet(db);
+  } catch (e) { idbRaw = null; }
+  let raw = pickNewest(idbRaw, lsGet(LS_KEY));
   if (!raw) raw = lsGet(LEGACY_KEY);
   cache = migrate(raw);
   return cache;
@@ -200,7 +298,7 @@ export async function flush() {
   if (!cache) return false;
   let ok = false;
   try {
-    const snapshot = clone(cache);
+    const snapshot = { ...clone(cache), _savedAt: Date.now() }; // same stamp in both stores, so load can pick the newer
     const db = await openDB();
     if (db) ok = await idbPut(db, snapshot);
     if (!ok) ok = lsSet(LS_KEY, snapshot);

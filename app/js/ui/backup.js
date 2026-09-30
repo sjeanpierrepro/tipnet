@@ -1,6 +1,7 @@
 // Backup (copy / restore code, erase) and the "put TipNet on your home screen" section.
 import { encodeBackup, decodeBackup, setState, erasedState, flush } from '../storage.js';
 import { subscriptionLine } from './budget.js';
+import { budgetVisible } from '../billing.js';
 import { el, toast, arm, save, bus, getState, applyTheme, install } from './common.js';
 
 export function renderInstall(host) {
@@ -32,6 +33,35 @@ export function renderInstall(host) {
       'Your phone can keep the home-screen version and the browser version as two separate copies with different nights saved. If you switch, move your data with a backup code below.')));
 }
 
+const deviceEntitlement = () => { const st = getState(); return (st && st.settings && st.settings.entitlement) || null; };
+
+/**
+ * Replace everything with a pasted backup code. Throws Error('bad-backup') for a bad code.
+ * The license belongs to this device: whatever the code says, we keep this device's own (or none).
+ * Also used by the error screen in app.js.
+ */
+export function restoreFromCode(code) {
+  const next = decodeBackup(code);
+  const ent = deviceEntitlement();
+  delete next.settings.entitlement;
+  if (ent) next.settings.entitlement = ent;
+  setState(next);
+  const s = getState();
+  applyTheme(s.settings.theme);
+  flush();
+  return s.nights.length;
+}
+
+/** Erase all nights and settings. Erasing your data does not cancel or lose your subscription. */
+export function eraseEverything() {
+  const ent = deviceEntitlement();
+  const fresh = erasedState();
+  if (ent) fresh.settings.entitlement = ent;
+  setState(fresh);
+  applyTheme('auto');
+  flush();
+}
+
 export function renderBackup(host) {
   const S = getState();
   const box = el('textarea', { id: 'bk-code', placeholder: 'Paste a backup code here, then tap Restore.', spellcheck: 'false', autocapitalize: 'off', rows: '4' });
@@ -49,14 +79,8 @@ export function renderBackup(host) {
   const restore = el('button', { type: 'button', class: 'btn btn-secondary btn-small' });
   const doRestore = () => {
     try {
-      const next = decodeBackup(box.value);
-      const ent = getState().settings.entitlement; // a backup never carries the license key; keep this device's
-      if (ent) next.settings.entitlement = ent;
-      setState(next);
-      const s = getState();
-      applyTheme(s.settings.theme);
-      flush();
-      toast('Restored ' + s.nights.length + ' night' + (s.nights.length === 1 ? '' : 's') + '.');
+      const count = restoreFromCode(box.value);
+      toast('Restored ' + count + ' night' + (count === 1 ? '' : 's') + '.');
       bus.stateReplaced();
     } catch (e) { say('That code didn’t work. Copy the whole code and try again.'); }
   };
@@ -68,12 +92,7 @@ export function renderBackup(host) {
   arm(erase, {
     label: 'Erase everything', armedLabel: 'Tap again to erase all nights and settings',
     onConfirm: () => {
-      const ent = getState().settings.entitlement; // erasing your data does not cancel or lose your subscription
-      const fresh = erasedState();
-      if (ent) fresh.settings.entitlement = ent;
-      setState(fresh);
-      applyTheme('auto');
-      flush();
+      eraseEverything();
       toast('Erased. Example paystub numbers are loaded until you enter yours.');
       bus.stateReplaced();
     },
@@ -85,6 +104,6 @@ export function renderBackup(host) {
     el('div', { class: 'cluster' }, copy, restore),
     el('div', { class: 'field' }, el('label', { for: 'bk-code' }, 'Backup code'), box),
     msg,
-    subscriptionLine(),
+    budgetVisible(S.settings.entitlement) ? subscriptionLine() : null, // hidden while payments are off
     el('div', null, erase)));
 }
