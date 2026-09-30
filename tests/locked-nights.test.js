@@ -118,3 +118,37 @@ test('backup round trip keeps snapshots; malformed ones are dropped; prototype c
   assert.equal(r.nights.length, 1);
   assert.ok(r.nights[0].snap);
 });
+
+test('lockFinishedNights stamps only finished periods, purely, with the Setup of that moment', () => {
+  const p = P();
+  const nights = N();
+  const during = M.lockFinishedNights(p, nights, TODAY);
+  assert.equal(during.stamped, 0);
+  assert.equal(during.nights, nights);
+  const r = M.lockFinishedNights(p, nights, AFTER);
+  assert.equal(r.stamped, nights.length);
+  assert.ok(r.nights.every((n) => n.snap) && nights.every((n) => !n.snap), 'input untouched');
+  assert.equal(M.lockFinishedNights(p, r.nights, AFTER).stamped, 0);
+});
+
+test('app open across a period boundary: locking first keeps a later Setup edit out of the finished period', async () => {
+  const S = await import('../app/js/storage.js');
+  const st = S.setState({ profile: P(), nights: N() });
+  assert.equal(S.lockFinished({ force: true, today: TODAY }), 0);
+  assert.ok(st.nights.every((n) => !n.snap));
+  // the period ends while the app stays open; the next hook (visibility / render / any input) locks it
+  assert.equal(S.lockFinished({ today: AFTER }), st.nights.length);
+  const was = M.periodTotals(st.profile, st.nights, 0, AFTER);
+  raise(st.profile); // the Setup edit
+  const now = M.periodTotals(st.profile, st.nights, 0, AFTER);
+  assert.equal(now.net, was.net);
+  assert.equal(now.chk, was.chk);
+});
+
+test('imported past nights lock right away with the current Setup', async () => {
+  const S = await import('../app/js/storage.js');
+  const st = S.setState({ profile: P(), nights: [] });
+  st.nights = [{ id: 'i1', date: '2026-09-22', total: 300, cash: 100, pay: {}, barback: true }, { id: 'i2', date: '2026-10-08', total: 300, cash: 100, pay: {}, barback: true }];
+  assert.equal(S.lockFinished({ force: true, today: '2026-10-09' }), 1);
+  assert.ok(st.nights[0].snap && !st.nights[1].snap);
+});

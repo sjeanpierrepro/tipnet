@@ -51,7 +51,22 @@ test('an error over 25% is flagged as suspect', () => {
 test('expected shifts fall back to the period count when none is entered', () => {
   const p = { ...P(), shifts: 0 };
   const c = M.calibrate(p, TEN().slice(0, 4), 0, 500, AFTER);
-  assert.equal(c.expectedSource, 'history'); // the only finished period is this one
-  assert.equal(c.expectedShifts, 4);
-  assert.equal(c.missingNights, 0);
+  assert.equal(c.expectedSource, 'default'); // the only finished period is the one being checked, so it is not its own average
+  assert.equal(c.expectedShifts, 8);
+  assert.equal(c.missingNights, 4);
+});
+
+test('no shift count entered: the checked period is left out of the history average, so a missed night still warns', () => {
+  const p = { ...P(), shifts: 0 };
+  const all = [];
+  for (let k = -1; k <= 0; k++) for (let i = 0; i < 10; i++) if (k === 0 && i === 9) continue; else all.push({ id: `${k}-${i}`, date: M.addDays(M.periodRange(p, k).start, i), total: 400, cash: 120, pay: { p1: 7 }, barback: true });
+  // period -1 has 10 shifts, period 0 has 9
+  const c = M.calibrate(p, all, 0, 500, AFTER);
+  assert.equal(c.expectedSource, 'history');
+  assert.equal(c.expectedShifts, 10);
+  assert.equal(c.missingNights, 1);
+  // with no other history the ~4-a-week default applies
+  const d = M.calibrate(p, all.filter((n) => n.id.startsWith('0-')), 0, 500, AFTER);
+  assert.equal(d.expectedSource, 'default');
+  assert.equal(d.expectedShifts, 8);
 });

@@ -174,6 +174,32 @@ export function snapshotFor(p, shifts) {
   };
 }
 export const isLocked = (night) => !!(night && night.snap);
+/**
+ * Lock every night in a FINISHED pay period that has no snapshot yet, with the Setup it is shown with right now.
+ * A night locks when its pay period ENDS (not when it is saved), so Setup fixes still apply to the current period.
+ * Pure: returns {nights, stamped}; nights that got a snapshot are copies, the rest are the same objects.
+ */
+export function lockFinishedNights(profile, nights, today = todayISO()) {
+  if (!nights.some((n) => !n.snap)) return { nights, stamped: 0 };
+  const index = indexNights(profile, nights);
+  const base = shiftsPerPeriod(profile, nights, today, undefined, index);
+  const snaps = new Map();
+  index.forEach((list, idx) => {
+    if (!isFinal(profile, idx, today) || list.every((n) => n.snap)) return;
+    const shifts = base.source === 'default' ? shiftsPerPeriod(profile, nights, today, idx, index).n : base.n;
+    snaps.set(idx, snapshotFor(profile, shifts));
+  });
+  if (!snaps.size) return { nights, stamped: 0 };
+  let stamped = 0;
+  const out = nights.map((n) => {
+    if (n.snap) return n;
+    const s = snaps.get(periodIndex(profile, n.date));
+    if (!s) return n;
+    stamped++;
+    return { ...n, snap: JSON.parse(JSON.stringify(s)) };
+  });
+  return { nights: out, stamped };
+}
 /** The numbers one night is worked out with: its snapshot when locked, else the current Setup. */
 function termsOf(night, p, shifts) {
   const s = night && night.snap;
@@ -308,7 +334,9 @@ export function calibrate(p, nights, idx, actual, today = todayISO(), shifts) {
   if (!(A > 0)) return { ok: false, reason: 'noactual', missingCash: 0 };
   // A paycheck only exists for a finished pay period; comparing a half-worked one would drag the tax rate down.
   if (!isFinal(p, idx, today)) return { ok: false, reason: 'notFinal', missingCash: 0 };
-  const sp = shifts > 0 ? { n: shifts, source: 'entered' } : shiftsPerPeriod(p, nights, today, idx);
+  // The expected count must not include the period being checked: a missed night would pull its own average down.
+  const others = nights.filter((n) => periodIndex(p, n.date) !== idx);
+  const sp = shifts > 0 ? { n: shifts, source: 'entered' } : shiftsPerPeriod(p, others, today, idx);
   const n = sp.n;
   // same test computeNight uses, so junk like "abc" counts as missing instead of silently being $0
   const cs = ns.map((night) => computeNight(night, p, n));

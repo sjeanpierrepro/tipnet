@@ -1,6 +1,7 @@
 // Tonight screen: one number in, estimated take-home out. Also exports the night form used by "edit night".
 import { computeNight, periodTotals, periodIndex, shiftsPerPeriod, weeklyHours, payAmount, todayISO, num } from '../math.js';
 import { businessDate, cutoffFromSettings, checkCash, negativeCheckReason } from '../inputs.js';
+import { lockFinished } from '../storage.js';
 import { el, clear, field, moneyInput, clean, numOf, money, money0, minus, pct, fmtDate, periodLabel, exampleBanner, save, getState, uid, debounce } from './common.js';
 
 let draft = null; // survives tab switches so half-typed entries are not lost
@@ -204,6 +205,7 @@ export function render(root) {
     const net = computeNight(night, p, shiftsPerPeriod(p, historyOf(S)).n).net;
     if (S.nightsExample) { S.nights = []; S.calib = []; S.nightsExample = false; }
     S.nights.push(night);
+    lockFinished({ force: true });
     save();
     draft = blankDraft(S); draftIsExample = exampleMode(S);
     render(clear(root));

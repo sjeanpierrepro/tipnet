@@ -425,3 +425,12 @@ test('category money: an overspent category reserves 0 this month but still next
   const r = B.safeToSpend(b, P(), [], TODAY, { cashOnHand: 1000 });
   assert.equal(r.categories[0].reserved, 40); // 0 for September, 310 x 4/31 for Oct 1-4
 });
+
+test('a finished period awaiting its check uses its own locked fixed total, not today\'s Setup', () => {
+  const p = { ...P(), payDelay: 4 };
+  const today = '2026-10-06';
+  const half = M.exampleNights(TODAY).map((n, i) => ({ ...n, snap: M.snapshotFor(p, 10), ...(i % 2 ? { cash: '' } : {}) }));
+  const before = B.safeToSpend(B.emptyBudget(), p, half, today).after.projectedCheck;
+  const p2 = { ...p, deductions: [...p.deductions, { id: 'd9', k: 'dental', name: 'Dental', amount: 40, mode: 'fixed' }] };
+  assert.equal(B.safeToSpend(B.emptyBudget(), p2, half, today).after.projectedCheck, before);
+});

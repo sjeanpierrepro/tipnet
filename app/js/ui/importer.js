@@ -2,6 +2,7 @@
 import { parseCSV, guessMapping, namesToMapping, mappingToNames, listEmployees, buildNights, dedupeNights, mergeNights } from '../csv.js';
 import { num } from '../math.js';
 import { el, clear, select, money, fmtDate, toast, save, bus, getState } from './common.js';
+import { lockFinished } from '../storage.js';
 
 const FIELDS = [
   ['date', 'Date', true],
@@ -106,6 +107,7 @@ export function renderImporter(host) {
         if (S.nightsExample) { S.nights = []; S.calib = []; S.nightsExample = false; }
         const r = mergeNights(S.nights, nights, { overwrite: st.overwrite });
         S.nights = r.nights;
+        lockFinished({ force: true }); // imported nights in finished periods lock now, with the current Setup
         S.settings.csvMapping = mappingToNames(headerRow(), m);
         save();
         toast('Imported ' + (r.added + r.replaced) + ' night' + (r.added + r.replaced === 1 ? '' : 's') + (r.skipped ? ', skipped ' + r.skipped + ' duplicate date' + (r.skipped > 1 ? 's' : '') : '') + '.');

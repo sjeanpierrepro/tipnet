@@ -49,6 +49,7 @@ function errorScreen(root) {
 }
 
 function render() {
+  storage.lockFinished(); // a pay period that ended while the app was open locks before anything is drawn from Setup
   const root = document.getElementById('app');
   const y = window.scrollY;
   if (syncTabs() === false && current === 'budget') { go('tonight'); return; }
@@ -141,7 +142,12 @@ async function boot() {
   window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); setInstallPrompt(e); });
   window.addEventListener('appinstalled', () => setInstallPrompt(null));
   window.addEventListener('pagehide', () => storage.flush());
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') storage.flush(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') storage.flush();
+    else if (storage.lockFinished()) render(); // back after a period boundary: lock it, then redraw
+  });
+  // Capture phase runs before the screens' own handlers, so a Setup edit made after midnight cannot reach a finished period first.
+  ['input', 'change', 'click'].forEach((t) => document.addEventListener(t, () => { storage.lockFinished(); }, true));
   budget.bootBilling(); // may add the localhost dev unlock, so it runs before the first render decides whether Budget shows
   go(TABS.includes(state.settings.lastTab) ? state.settings.lastTab : 'tonight');
   setupServiceWorker();

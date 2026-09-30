@@ -13,7 +13,7 @@
 import {
   num, toCents, fromCents, round2, parseISO, addDays, dayDiff,
   periodIndex, periodRange, isFinal, periodTotals, shiftsPerPeriod, todayISO, indexNights,
-  computeNight, fixedTotal,
+  computeNight, periodFixed,
 } from './math.js';
 
 /* ---------- small helpers ---------- */
@@ -241,7 +241,7 @@ function finishedCheckC(profile, nights, k, today, avgCheck, index) {
   const withCash = t.ns.map((night) => computeNight(night, profile, n)).filter((c) => c.onCheck != null);
   if (withCash.length) {
     const sumC = withCash.reduce((s, c) => s + toCents(c.onCheck) + toCents(c.fixedPerShift), 0);
-    return { c: Math.round((sumC * t.ns.length) / withCash.length) - toCents(fixedTotal(profile)), from: 'finished' };
+    return { c: Math.round((sumC * t.ns.length) / withCash.length) - toCents(periodFixed(profile, t.ns)), from: 'finished' };
   }
   return { c: avgCheck == null ? null : toCents(avgCheck), from: avgCheck == null ? null : 'average' };
 }

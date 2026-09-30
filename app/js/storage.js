@@ -1,6 +1,6 @@
 // TipNet persistence: state shape, migration, backup codes, IndexedDB + localStorage.
 // The pure helpers (seedState, migrate, encodeBackup, decodeBackup) work in Node with no browser APIs.
-import { exampleProfile, exampleNights, num, parseISO, todayISO, indexNights, isFinal, shiftsPerPeriod, snapshotFor } from './math.js';
+import { exampleProfile, exampleNights, num, parseISO, todayISO, lockFinishedNights } from './math.js';
 import { emptyBudget, migrateBudget } from './budget.js';
 
 export const SCHEMA_VERSION = 2;
@@ -82,22 +82,6 @@ function cleanSnap(s) {
     v: 1, r: s.r, rf: s.rf, fixed: s.fixed, n: s.n, pay,
     tipout: { on: !!to.on, mode: to.mode === 'flat' ? 'flat' : 'pct', value: numOr0(to.value), basis: text(to.basis, 'before') || 'before', from: text(to.from, 'cash') || 'cash' },
   };
-}
-/**
- * Lock every night in a FINISHED pay period that has no snapshot yet, with the Setup it is shown with right now.
- * This freezes history on load even for nights saved before snapshots existed (or by screens that do not add one).
- * Nights in the current period stay unlocked and keep following Setup until it ends.
- */
-function lockFinished(profile, nights, today = todayISO()) {
-  if (!nights.some((n) => !n.snap)) return;
-  const index = indexNights(profile, nights);
-  const base = shiftsPerPeriod(profile, nights, today, undefined, index);
-  index.forEach((list, idx) => {
-    if (!isFinal(profile, idx, today) || list.every((n) => n.snap)) return;
-    const shifts = base.source === 'default' ? shiftsPerPeriod(profile, nights, today, idx, index).n : base.n;
-    const snap = snapshotFor(profile, shifts);
-    list.forEach((n) => { if (!n.snap) n.snap = JSON.parse(JSON.stringify(snap)); });
-  });
 }
 function cleanNights(list) {
   const seen = new Set();
@@ -189,8 +173,7 @@ function migrateUnsafe(input) {
   out.payTypes = cleanPayTypes(p.payTypes);
   const to = isObj(p.tipout) ? p.tipout : {};
   out.tipout = { on: !!to.on, mode: to.mode === 'flat' ? 'flat' : 'pct', value: numOr0(to.value), basis: text(to.basis, 'before') || 'before', from: text(to.from, 'cash') || 'cash' };
-  const nights = cleanNights(rawNights);
-  lockFinished(out, nights);
+  const nights = lockFinishedNights(out, cleanNights(rawNights)).nights;
   return {
     schemaVersion: SCHEMA_VERSION,
     profileExample: !!S.profileExample,
@@ -310,6 +293,7 @@ export async function load() {
   let raw = pickNewest(idbRaw, lsGet(LS_KEY));
   if (!raw) raw = lsGet(LEGACY_KEY);
   cache = migrate(raw);
+  lockedOn = null;
   return cache;
 }
 /** Synchronous access to the cached state. Call load() first (returns the seed if not yet loaded). */
@@ -317,9 +301,26 @@ export function getState() {
   if (!cache) cache = seedState();
   return cache;
 }
+let lockedOn = null;
+/**
+ * Lock the nights of every pay period that has ended (see lockFinishedNights) in the cached state, and save if any got
+ * stamped. Call it before anything applies a changed Setup, so an edit can never rewrite a finished period.
+ * Unless force is set, it only looks once per calendar day (boundaries only pass at midnight).
+ */
+export function lockFinished({ force = false, today = todayISO() } = {}) {
+  if (!force && lockedOn === today) return 0;
+  lockedOn = today;
+  const S = getState();
+  const r = lockFinishedNights(S.profile, S.nights, today);
+  if (!r.stamped) return 0;
+  S.nights = r.nights;
+  scheduleSave();
+  return r.stamped;
+}
 /** Replace the whole state (e.g. after restore or erase) and schedule a save. */
 export function setState(next) {
   cache = migrate(next);
+  lockedOn = null;
   scheduleSave();
   return cache;
 }
