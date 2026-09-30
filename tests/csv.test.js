@@ -153,3 +153,11 @@ test('buildNights skips rows with negative cash, card, total or hours', () => {
   assert.equal(nights[0].date, '2026-09-30');
   assert.deepEqual(skipped.map((s) => [s.row, s.reason]), [[1, 'negative'], [2, 'negative'], [3, 'negative'], [4, 'negative']]);
 });
+
+test('parseMoney catches a minus sign after the currency symbol; negative hours with leading spaces are skipped', () => {
+  for (const [s, v] of [['$-3', -3], ['-$3', -3], ['($3)', -3], ['$ -3.50', -3.5], ['−$3', -3], ['$3', 3], ['3-', -3]]) assert.equal(parseMoney(s), v, s);
+  const rows = [['2026-09-01', ' -5', '100'], ['2026-09-02', ' (5)', '100'], ['2026-09-03', '5', '100']];
+  const { nights, skipped } = buildNights(rows, { date: 0, hours: 1, cash: 2 }, { rate: 12, payId: 'p1' });
+  assert.deepEqual(nights.map((n) => n.date), ['2026-09-03']);
+  assert.deepEqual(skipped.map((s) => s.reason), ['negative', 'negative']);
+});

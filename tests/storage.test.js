@@ -186,3 +186,12 @@ test('a prototype backup code with freq 15/30 restores as fixed lengths', () => 
     assert.equal(M.periodLength(s.profile), fr);
   }
 });
+
+test('Late nights setting survives a reload and a backup restore; bad values are dropped', () => {
+  const s = migrate(MIDDLE()); s.settings.dayCutoffHour = 0;
+  assert.equal(migrate(JSON.parse(JSON.stringify(s))).settings.dayCutoffHour, 0);
+  assert.equal(decodeBackup(encodeBackup(s)).settings.dayCutoffHour, 0);
+  s.settings.dayCutoffHour = 4;
+  assert.equal(migrate(s).settings.dayCutoffHour, 4);
+  for (const bad of [13, -1, 2.5, '4', null]) { s.settings.dayCutoffHour = bad; assert.equal('dayCutoffHour' in migrate(s).settings, false, String(bad)); }
+});

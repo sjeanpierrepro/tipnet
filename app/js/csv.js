@@ -27,14 +27,16 @@ export function parseCSV(text) {
   return rows;
 }
 
-/** "$1,234.50" -> 1234.5, "(45.00)" -> -45, "-$3" -> -3, "" or junk -> null. */
+/** "$1,234.50" -> 1234.5, "(45.00)" -> -45, "-$3" and "$-3" -> -3, "" or junk -> null. */
 export function parseMoney(v) {
   if (v == null) return null;
   let s = String(v).trim();
   if (!s) return null;
   let neg = false;
   if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1); }
-  if (/^-/.test(s) || /-$/.test(s)) neg = true;
+  // Look for a minus sign (plain or typographic) once currency symbols and spaces are out of the way.
+  const bare = s.replace(/[\s$€£¥]/g, '');
+  if (/^[-−]/.test(bare) || /[-−]$/.test(bare)) neg = true;
   s = s.replace(/[^0-9.]/g, '');
   if (!s || s === '.' || (s.match(/\./g) || []).length > 1) return null;
   const n = parseFloat(s);
@@ -151,7 +153,7 @@ export function buildNights(rows, mapping, opts = {}) {
     const hours = mapping.hours != null ? parseHours(r[mapping.hours]) : 0;
     let total = mapping.total != null ? parseMoney(r[mapping.total]) : null;
     // A negative amount or hours (refund, void, typo) is not a night we can trust: skip the row and say why.
-    const negHours = mapping.hours != null && /^s*[-−(]/.test(String(r[mapping.hours] == null ? '' : r[mapping.hours]));
+    const negHours = mapping.hours != null && /^\s*[-−(]/.test(String(r[mapping.hours] == null ? '' : r[mapping.hours]));
     if ((cash != null && cash < 0) || (card != null && card < 0) || (total != null && total < 0) || negHours) { skipped.push({ row: rowNo, reason: 'negative' }); return; }
     if (total == null) {
       if (cash == null && card == null && !(hours && rate)) { skipped.push({ row: rowNo, reason: 'amount' }); return; }

@@ -99,3 +99,4 @@
 - Wording: removed the unbacked "usually within 5–10%" claim; state-tax note is general, not Florida-only; tax lines say "Taxes and % deductions" because they include things like 401(k).
 - The icon script make-icons.ps1 moved to tools/ so it isn't published with the site.
 - The app is live at https://sjeanpierrepro.github.io/tipnet/. The gh command-line tool isn't installed on this computer, so updates are published by pushing from GitHub Desktop (see DEPLOY.md).
+- Hosting stays public on GitHub Pages (owner decision). The Budget paywall runs in the browser, so a technical person could unlock it on their own copy; accepted as a business risk at this price.

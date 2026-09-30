@@ -95,6 +95,8 @@ function cleanSettings(x) {
     out.csvMapping = m;
   }
   if (s.setupDone !== undefined) out.setupDone = !!s.setupDone;
+  // "Late nights" rule: shifts logged before this hour count as the night before (0 = off). Kept only when it's a whole hour 0-12.
+  if (Number.isInteger(s.dayCutoffHour) && s.dayCutoffHour >= 0 && s.dayCutoffHour <= 12) out.dayCutoffHour = s.dayCutoffHour;
   // The license entitlement is device-only. decodeBackup strips it before migrate; here we only keep its known plain fields.
   if (isObj(s.entitlement)) {
     const e = {};
