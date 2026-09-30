@@ -813,6 +813,14 @@ details > summary.btn-link {
   color: var(--accent);
   font-weight: 600;
 }
+/* Links inside the Privacy and Terms pages (including the contact email) use the accent, like the footer. */
+.doc a {
+  color: var(--accent);
+  text-underline-offset: 2px;
+}
+.doc a:hover {
+  color: var(--accent-hover);
+}
 .doc-page a.brand {
   text-decoration: none;
   color: inherit;
