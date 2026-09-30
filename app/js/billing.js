@@ -30,6 +30,22 @@ export function readConfig(raw) {
 }
 export const BILLING = readConfig(configModule.BILLING);
 
+/**
+ * Re-read billing-config.js after the service worker says it changed (the app started with the cached copy so the first
+ * screen never waits on the network). A fresh ?query makes the browser load the module again; the service worker
+ * answers with the copy it just stored. Updates BILLING in place. Resolves true when the new file was read.
+ * load: for tests.
+ */
+export async function reloadConfig(load = () => import('./billing-config.js?fresh=' + Date.now())) {
+  try {
+    const mod = await load();
+    Object.assign(BILLING, readConfig(mod && mod.BILLING));
+    return true;
+  } catch (e) {
+    return false; // keep what we have
+  }
+}
+
 export const GRACE_MS = 14 * 24 * 3600 * 1000; // offline grace after last successful validation
 export const REVALIDATE_MS = 24 * 3600 * 1000; // at most one silent check per day
 const LS_API = 'https://api.lemonsqueezy.com/v1/licenses';

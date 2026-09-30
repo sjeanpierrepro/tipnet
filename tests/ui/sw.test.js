@@ -22,6 +22,9 @@ class Response {
   clone() {
     return Object.assign(Object.create(Response.prototype), this);
   }
+  text() {
+    return Promise.resolve(String(this.body));
+  }
   static error() {
     const r = new Response(null, { status: 0 });
     r.type = 'error';
@@ -43,7 +46,7 @@ const offline = async () => {
 /** A fresh worker in a sandbox. net(url, init) is the fake network. */
 function load(net = offline) {
   const stores = new Map(); // cache name -> Map(url -> response)
-  const calls = { fetch: [], added: [], claimed: 0, skipped: 0, deleted: [] };
+  const calls = { fetch: [], added: [], claimed: 0, skipped: 0, deleted: [], posted: [], background: [] };
   const handlers = {};
   const open = (name) => {
     if (!stores.has(name)) stores.set(name, new Map());
@@ -82,6 +85,7 @@ function load(net = offline) {
       claim: async () => {
         calls.claimed++;
       },
+      matchAll: async () => [{ postMessage: (m) => calls.posted.push(m) }],
     },
     skipWaiting: () => {
       calls.skipped++;
@@ -128,6 +132,9 @@ function load(net = offline) {
         request: new Request(url, init),
         respondWith: (x) => {
           p = x;
+        },
+        waitUntil: (x) => {
+          calls.background.push(x);
         },
       });
       return p;
@@ -205,29 +212,49 @@ test('sw: SKIP_WAITING (object or string) skips waiting; other messages do not',
 
 const CFG = ORIGIN + '/js/billing-config.js';
 
-test('sw: billing-config.js is network first and refreshes the cache', async () => {
-  const sw = load(async () => new Response('fresh'));
-  sw.open(sw.get('VERSION')).set(CFG, new Response('stale'));
+test('sw: billing-config.js is cache first, so startup never waits on the network', async () => {
+  let release;
+  const slow = new Promise((r) => (release = r));
+  const sw = load(() => slow.then(() => new Response('fresh')));
+  sw.open(sw.get('VERSION')).set(CFG, new Response('cached'));
   const res = await sw.request(CFG + '?x=1');
-  assert.equal(res.body, 'fresh');
-  assert.equal(sw.calls.fetch[0].init.cache, 'no-cache');
+  assert.equal(res.body, 'cached', 'answered before the network replied');
+  assert.equal(sw.calls.fetch[0].init.cache, 'no-cache', 'revalidation started in the background');
+  release();
+  await Promise.all(sw.calls.background);
+  assert.equal(sw.open(sw.get('VERSION')).get(CFG).body, 'fresh', 'cache refreshed for the next open');
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(sw.calls.posted)),
+    [{ type: 'BILLING_CONFIG_CHANGED' }],
+    'pages told',
+  );
+});
+
+test('sw: billing-config.js unchanged on the network: no message to the pages', async () => {
+  const sw = load(async () => new Response('same'));
+  sw.open(sw.get('VERSION')).set(CFG, new Response('same'));
+  assert.equal((await sw.request(CFG)).body, 'same');
+  await Promise.all(sw.calls.background);
+  assert.deepEqual(sw.calls.posted, []);
+});
+
+test('sw: billing-config.js keeps the cached copy when offline or on a 5xx', async () => {
+  for (const net of [offline, async () => new Response('boom', { status: 503 })]) {
+    const sw = load(net);
+    sw.open(sw.get('VERSION')).set(CFG, new Response('cached'));
+    assert.equal((await sw.request(CFG)).body, 'cached');
+    await Promise.all(sw.calls.background);
+    assert.equal(sw.open(sw.get('VERSION')).get(CFG).body, 'cached');
+    assert.deepEqual(sw.calls.posted, []);
+  }
+});
+
+test('sw: billing-config.js with nothing cached: the network answer (a 5xx is passed on, offline is an error)', async () => {
+  const sw = load(async () => new Response('net'));
+  assert.equal((await sw.request(CFG)).body, 'net');
   await later();
-  assert.equal(sw.open(sw.get('VERSION')).get(CFG).body, 'fresh', 'cache updated');
-});
-
-test('sw: billing-config.js falls back to the cache when offline', async () => {
-  const sw = load(offline);
-  sw.open(sw.get('VERSION')).set(CFG, new Response('cached'));
-  assert.equal((await sw.request(CFG)).body, 'cached');
-});
-
-test('sw: billing-config.js falls back to the cache on a 5xx', async () => {
-  const sw = load(async () => new Response('boom', { status: 503 }));
-  sw.open(sw.get('VERSION')).set(CFG, new Response('cached'));
-  assert.equal((await sw.request(CFG)).body, 'cached');
-});
-
-test('sw: billing-config.js with nothing cached: a 5xx is passed on, offline gives a network error', async () => {
+  assert.equal(sw.open(sw.get('VERSION')).get(CFG).body, 'net', 'stored for next time');
+  assert.deepEqual(sw.calls.posted, [], 'first copy: nothing to tell');
   assert.equal((await load(async () => new Response('boom', { status: 503 })).request(CFG)).status, 503);
   assert.equal((await load(offline).request(CFG)).type, 'error');
 });

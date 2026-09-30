@@ -72,6 +72,14 @@ self.addEventListener('message', (event) => {
   if (d === 'SKIP_WAITING' || (d && d.type === 'SKIP_WAITING')) self.skipWaiting();
 });
 
+/** Post a message to every open TipNet page. */
+function tellPages(msg) {
+  return self.clients
+    .matchAll({ type: 'window', includeUncontrolled: true })
+    .then((list) => list.forEach((c) => c.postMessage(msg)))
+    .catch(() => {});
+}
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
@@ -79,36 +87,36 @@ self.addEventListener('fetch', (event) => {
   // Only same-origin files are cached; payment provider calls (api.lemonsqueezy.com) pass straight through.
   if (url.origin !== self.location.origin) return;
 
-  // Payment settings: network first so switching payments on reaches installed apps on their next open.
-  // Falls back to the cached copy when offline, or when the network is slower than 4 seconds.
+  // Payment settings: cache first, so the first screen never waits on the network (payments off or not), and
+  // revalidated in the background on every request. When the file changed, open pages are told
+  // ({type: 'BILLING_CONFIG_CHANGED'}) and re-read it; any page opened later gets the new copy straight away. So switching
+  // payments on reaches installed apps without a VERSION bump.
   if (url.pathname.endsWith('/js/billing-config.js')) {
+    const key = new Request(url.origin + url.pathname); // one cache entry, whatever ?query the page added
     event.respondWith(
-      new Promise((resolve) => {
-        let done = false;
-        const finish = (res) => {
-          if (!done) {
-            done = true;
-            clearTimeout(timer);
-            resolve(res);
-          }
-        };
-        const cached = () => caches.match(req, { ignoreSearch: true });
-        const timer = setTimeout(
-          () =>
-            cached().then((hit) => {
-              if (hit) finish(hit);
-            }),
-          4000,
-        );
-        fetch(req, { cache: 'no-cache' })
+      caches.match(req, { ignoreSearch: true }).then((hit) => {
+        const hitCopy = hit ? hit.clone() : null; // read later, after the page has consumed hit
+        const fresh = fetch(req, { cache: 'no-cache' })
           .then((res) => {
-            if (res && res.ok) {
-              const copy = res.clone();
-              caches.open(VERSION).then((c) => c.put(req, copy));
-              finish(res);
-            } else cached().then((hit) => finish(hit || res)); // host error (404/5xx): keep booting from the cached copy
+            if (!res || !res.ok) return hit ? null : res; // host error (404/5xx): keep the cached copy
+            const forCache = res.clone();
+            return Promise.all([res.clone().text(), hitCopy ? hitCopy.text() : null]).then(([now, was]) =>
+              caches
+                .open(VERSION)
+                .then((c) => c.put(key, forCache))
+                .then(() => {
+                  if (hitCopy && now !== was)
+                    return tellPages({ type: 'BILLING_CONFIG_CHANGED' }).then(() => res);
+                  return res;
+                }),
+            );
           })
-          .catch(() => cached().then((hit) => finish(hit || Response.error())));
+          .catch(() => (hit ? null : Response.error()));
+        if (hit) {
+          if (event.waitUntil) event.waitUntil(fresh);
+          return hit;
+        }
+        return fresh; // nothing cached yet (first visit before install finished): the network answer
       }),
     );
     return;

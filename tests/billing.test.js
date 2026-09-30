@@ -275,3 +275,25 @@ test('a key from another store is rejected, and no product id means payments are
   assert.equal(budgetVisible(null, NOW, { config: shipped, loc: { hostname: 'tipnet.example' } }), false);
   assert.equal((await activateKey('K', { provider: getProvider(shipped) })).ok, false);
 });
+
+test('reloadConfig: a changed billing-config.js updates BILLING in place; a failed load keeps it', async () => {
+  const { BILLING, reloadConfig } = await import('../app/js/billing.js');
+  const was = JSON.parse(JSON.stringify(BILLING));
+  try {
+    const cfg = { provider: 'lemonsqueezy', productIds: [123], prices: { monthly: '$2.99' } };
+    assert.equal(await reloadConfig(async () => ({ BILLING: cfg })), true);
+    assert.equal(BILLING.provider, 'lemonsqueezy');
+    assert.equal(BILLING.prices.monthly, '$2.99');
+    assert.equal(budgetVisible(null), true, 'the Budget tab can show without a reload');
+    assert.equal(
+      await reloadConfig(async () => {
+        throw new Error('offline');
+      }),
+      false,
+    );
+    assert.equal(BILLING.provider, 'lemonsqueezy', 'unchanged');
+  } finally {
+    Object.keys(BILLING).forEach((k) => delete BILLING[k]);
+    Object.assign(BILLING, was);
+  }
+});
