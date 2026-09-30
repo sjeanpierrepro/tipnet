@@ -135,9 +135,12 @@ test('budget: garbage budget is repaired, valid budget is kept', () => {
 test('budget: backup round-trip keeps budget; old codes without budget still restore', () => {
   const s = migrate(MIDDLE());
   s.budget = exampleBudget();
-  s.budget.paidBills['3:b1'] = true;
+  s.budget.paidBills['b1@2026-10-01'] = true; // "Paid" ticks are keyed by bill and due date
   const back = decodeBackup(encodeBackup(s));
   assert.deepEqual(back.budget, s.budget);
+  // An old-style tick ("<periodIndex>:<billId>") is converted at load: period 0 is Sep 21 – Oct 4, rent is due Oct 1.
+  const legacy = migrate(MIDDLE()); legacy.budget = exampleBudget(); legacy.budget.paidBills = { '0:b1': true, '3:b1': true };
+  assert.deepEqual(decodeBackup(encodeBackup(legacy)).budget.paidBills, { 'b1@2026-10-01': true });
   const old = decodeBackup(protoEncode(MIDDLE()));
   assert.deepEqual(old.budget.goals, []);
   assert.equal(old.nights.length, 1);
