@@ -15,9 +15,10 @@ export const round2 = (x) => fromCents(toCents(x));
 
 /* ---------- calendar-day math on "YYYY-MM-DD" strings (UTC, so DST-safe) ---------- */
 const pad = (n) => String(n).padStart(2, '0');
+// Years 1000-9998 only: every date keeps a 4-digit year (so ISO strings compare correctly), even one period past the end.
 export function parseISO(s) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || ''));
-  if (!m) return NaN;
+  if (!m || +m[1] < 1000 || +m[1] > 9998) return NaN;
   return Date.UTC(+m[1], +m[2] - 1, +m[3]);
 }
 export function formatISO(ms) {
@@ -72,8 +73,9 @@ function calIndex(p, dateISO, mode) {
   const dt = new Date(d);
   const md = (dt.getUTCFullYear() - +p.periodStart.slice(0, 4)) * 12 + dt.getUTCMonth() - (+p.periodStart.slice(5, 7) - 1);
   let i = mode === 'monthly' ? md : md * 2;
-  while (calStart(p, i, mode) > dateISO) i--;
-  while (calStart(p, i + 1, mode) <= dateISO) i++;
+  // The estimate above is off by a step or two at most; the caps only stop bad data from looping.
+  for (let k = 0; k < 8 && calStart(p, i, mode) > dateISO; k++) i--;
+  for (let k = 0; k < 8 && calStart(p, i + 1, mode) <= dateISO; k++) i++;
   return i;
 }
 /** Length in days of period idx (default: the first). Calendar frequencies vary by period; others use dates/frequency. */
@@ -106,18 +108,35 @@ export function periodRange(p, idx) {
 }
 /** A period is final once its end date is before today. */
 export const isFinal = (p, idx, today = todayISO()) => periodRange(p, idx).end < today;
-export const nightsInPeriod = (p, nights, idx) =>
-  nights.filter((n) => periodIndex(p, n.date) === idx).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+const byDate = (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+/**
+ * One pass over the nights: Map of period index -> that period's nights, oldest first.
+ * Build it once per screen and pass it down, so nothing rescans every night for every period.
+ */
+export function indexNights(p, nights) {
+  const map = new Map();
+  nights.forEach((n) => {
+    const i = periodIndex(p, n.date);
+    const list = map.get(i);
+    if (list) list.push(n); else map.set(i, [n]);
+  });
+  map.forEach((list) => list.sort(byDate));
+  return map;
+}
+/** Nights in period idx, oldest first. Pass a prebuilt `index` (from indexNights) to skip the full scan. */
+export const nightsInPeriod = (p, nights, idx, index) =>
+  (index ? (index.get(idx) || []).slice() : nights.filter((n) => periodIndex(p, n.date) === idx).sort(byDate));
 
 /* ---------- shifts per period (6.2) ---------- */
-/** Returns {n, source: 'entered'|'history'|'default'}. */
-export function shiftsPerPeriod(p, nights = [], today = todayISO(), idx) {
+/**
+ * Returns {n, source: 'entered'|'history'|'default'}. Pass `index` (from indexNights) when you have one.
+ * 'entered' and 'history' do not depend on idx, so a loop over many periods can compute this once.
+ */
+export function shiftsPerPeriod(p, nights = [], today = todayISO(), idx, index) {
   if (num(p.shifts) > 0) return { n: num(p.shifts), source: 'entered' };
-  const done = [...new Set(nights.map((n) => periodIndex(p, n.date)))].filter((i) => isFinal(p, i, today));
-  if (done.length) {
-    const avg = done.reduce((s, i) => s + nightsInPeriod(p, nights, i).length, 0) / done.length;
-    return { n: Math.max(1, avg), source: 'history' };
-  }
+  let count = 0, total = 0;
+  (index || indexNights(p, nights)).forEach((list, i) => { if (isFinal(p, i, today)) { count++; total += list.length; } });
+  if (count) return { n: Math.max(1, total / count), source: 'history' };
   const at = idx !== undefined ? idx : (Number.isFinite(parseISO(p.periodStart)) ? periodIndex(p, today) : 0);
   return { n: Math.max(1, Math.round((periodLength(p, at) * 4) / 7)), source: 'default' };
 }
@@ -195,14 +214,14 @@ export function computeNight(night, p, shifts) {
 
 /* ---------- period totals (6.6) ---------- */
 /**
- * periodTotals(profile, nights, idx, today?, shifts?) ->
+ * periodTotals(profile, nights, idx, today?, shifts?, index?) ->  (index: optional indexNights() result, for speed)
  * {ns, net, hrs, chk, kept, cash, allCash, exact}
  * When the period is final and has nights, the sum of per-shift fixed shares is replaced by the
  * exact fixed total (applied to net and expected check).
  */
-export function periodTotals(p, nights, idx, today = todayISO(), shifts) {
-  const ns = nightsInPeriod(p, nights, idx);
-  const n = shifts > 0 ? shifts : shiftsPerPeriod(p, nights, today, idx).n;
+export function periodTotals(p, nights, idx, today = todayISO(), shifts, index) {
+  const ns = nightsInPeriod(p, nights, idx, index);
+  const n = shifts > 0 ? shifts : shiftsPerPeriod(p, nights, today, idx, index).n;
   let net = 0, hrs = 0, chk = 0, kept = 0, cash = 0, fixedShares = 0, allCash = ns.length > 0;
   ns.forEach((night) => {
     const c = computeNight(night, p, n);
@@ -221,7 +240,7 @@ export function periodTotals(p, nights, idx, today = todayISO(), shifts) {
 /* ---------- calibration (6.7) ---------- */
 /**
  * calibrate(profile, nights, idx, actual, today?, shifts?)
- * Does not mutate. Returns {ok:false, reason:'nonights'|'noactual'|'missingCash', missingCash}
+ * Does not mutate. Returns {ok:false, reason:'nonights'|'noactual'|'notFinal'|'missingCash', missingCash}
  * or {ok:true, pred, actual, err, rNew, rateOverride, T, C, F}.
  * The caller stores {label, pred, actual, err} in calib and sets profile.rateOverride = rateOverride.
  */
@@ -230,6 +249,8 @@ export function calibrate(p, nights, idx, actual, today = todayISO(), shifts) {
   const A = num(actual);
   if (!ns.length) return { ok: false, reason: 'nonights', missingCash: 0 };
   if (!(A > 0)) return { ok: false, reason: 'noactual', missingCash: 0 };
+  // A paycheck only exists for a finished pay period; comparing a half-worked one would drag the tax rate down.
+  if (!isFinal(p, idx, today)) return { ok: false, reason: 'notFinal', missingCash: 0 };
   const n0 = shifts > 0 ? shifts : shiftsPerPeriod(p, nights, today, idx).n;
   // same test computeNight uses, so junk like "abc" counts as missing instead of silently being $0
   const missing = ns.filter((night) => computeNight(night, p, n0).cashInHand == null).length;
@@ -350,27 +371,36 @@ export function fillFica(p) {
 }
 
 /* ---------- example profile and nights (5.8) ---------- */
-export const EXAMPLE_PROFILE = {
-  freq: 14, periodStart: '2026-09-21', periodEnd: '2026-10-04', shifts: 10, gross: 2000, rateOverride: null,
-  deductions: [
-    { id: 'd1', k: 'fed', name: 'Federal income tax', amount: 180, mode: 'pct' },
-    { id: 'd2', k: 'ss', name: 'Social Security', amount: 124, mode: 'pct' },
-    { id: 'd3', k: 'med', name: 'Medicare', amount: 29, mode: 'pct' },
-    { id: 'd4', k: 'health', name: 'Health insurance', amount: 60, mode: 'fixed' },
-  ],
-  payTypes: [
-    { id: 'p1', k: 'hourly', name: 'Bartending', rate: 12, unit: 'hr', usual: 7 },
-    { id: 'p2', k: 'training', name: 'Training', rate: 15, unit: 'hr', usual: 0 },
-    { id: 'p3', k: 'bonus', name: 'Bonus', rate: 0, unit: 'amt', usual: 0, supp: 1 },
-  ],
-  tipout: { on: true, mode: 'pct', value: 15, basis: 'before', from: 'cash' },
-};
-export const EXAMPLE_NIGHTS = [
-  { id: 1, date: '2026-09-21', total: 310, cash: 90, pay: { p1: 6 }, barback: true },
-  { id: 2, date: '2026-09-24', total: 420, cash: 140, pay: { p1: 7 }, barback: true },
-  { id: 3, date: '2026-09-26', total: 585, cash: 210, pay: { p1: 8 }, barback: true },
-  { id: 4, date: '2026-09-27', total: 365, cash: 100, pay: { p1: 5, p2: 2 }, barback: false },
+// Built around "today" so the example always shows a live pay period: it started 7 days ago (a 14-day period),
+// and the four nights sit at 7, 4, 2 and 1 days ago. Pass a fixed date in tests.
+const EXAMPLE_DEDUCTIONS = [
+  { id: 'd1', k: 'fed', name: 'Federal income tax', amount: 180, mode: 'pct' },
+  { id: 'd2', k: 'ss', name: 'Social Security', amount: 124, mode: 'pct' },
+  { id: 'd3', k: 'med', name: 'Medicare', amount: 29, mode: 'pct' },
+  { id: 'd4', k: 'health', name: 'Health insurance', amount: 60, mode: 'fixed' },
 ];
-/** Fresh deep copies, safe to mutate. */
-export const exampleProfile = () => JSON.parse(JSON.stringify(EXAMPLE_PROFILE));
-export const exampleNights = () => JSON.parse(JSON.stringify(EXAMPLE_NIGHTS));
+const EXAMPLE_PAY_TYPES = [
+  { id: 'p1', k: 'hourly', name: 'Bartending', rate: 12, unit: 'hr', usual: 7 },
+  { id: 'p2', k: 'training', name: 'Training', rate: 15, unit: 'hr', usual: 0 },
+  { id: 'p3', k: 'bonus', name: 'Bonus', rate: 0, unit: 'amt', usual: 0, supp: 1 },
+];
+const clone = (o) => JSON.parse(JSON.stringify(o));
+/** Fresh example profile whose pay period contains `today`. */
+export function exampleProfile(today = todayISO()) {
+  const start = addDays(today, -7);
+  return {
+    freq: 14, periodStart: start, periodEnd: addDays(start, 13), shifts: 10, gross: 2000, rateOverride: null,
+    deductions: clone(EXAMPLE_DEDUCTIONS), payTypes: clone(EXAMPLE_PAY_TYPES),
+    tipout: { on: true, mode: 'pct', value: 15, basis: 'before', from: 'cash' },
+  };
+}
+/** Fresh example nights in the last week (the night of $585, 8 hours, $210 cash was 2 days ago). */
+export function exampleNights(today = todayISO()) {
+  const day = (ago) => addDays(today, -ago);
+  return [
+    { id: 1, date: day(7), total: 310, cash: 90, pay: { p1: 6 }, barback: true },
+    { id: 2, date: day(4), total: 420, cash: 140, pay: { p1: 7 }, barback: true },
+    { id: 3, date: day(2), total: 585, cash: 210, pay: { p1: 8 }, barback: true },
+    { id: 4, date: day(1), total: 365, cash: 100, pay: { p1: 5, p2: 2 }, barback: false },
+  ];
+}

@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import * as M from '../app/js/math.js';
 
 const near = (a, b, eps = 0.005) => assert.ok(Math.abs(a - b) <= eps, `${a} != ${b}`);
-const P = () => M.exampleProfile();
-const N = () => M.exampleNights();
+const P = () => M.exampleProfile(TODAY);
+const N = () => M.exampleNights(TODAY);
 const TODAY = '2026-09-28'; // inside the example period (09-21..10-04), so it is not final
 const AFTER = '2026-10-10'; // after the example period, so it is final
 
@@ -40,7 +40,7 @@ test('no barback means zero tip-out', () => {
   assert.equal(c.tipout, 0);
   assert.equal(c.kept, 585);
   assert.equal(c.fromCash, 0);
-  assert.equal(c.cashInHand, 210);
+  assert.equal(c.cashInHand + c.fromCash, 210);
 });
 
 test('basis "after" has zero tip-out and cash split ignores it', () => {
@@ -49,7 +49,7 @@ test('basis "after" has zero tip-out and cash split ignores it', () => {
   const c = M.computeNight({ total: 585, cash: 210, pay: { p1: 8 }, barback: true }, p, 10);
   assert.equal(c.tipout, 0);
   assert.equal(c.fromCash, 0);
-  assert.equal(c.cashInHand, 210);
+  assert.equal(c.cashInHand + c.fromCash, 210);
 });
 
 test('flat tip-out, capped at tips, and from "check" leaves cash alone', () => {
@@ -224,7 +224,7 @@ test('period totals report missing cash', () => {
 test('calibration math', () => {
   const p = P();
   const nights = N();
-  const c = M.calibrate(p, nights, 0, 800, TODAY);
+  const c = M.calibrate(p, nights, 0, 800, AFTER);
   assert.equal(c.ok, true);
   let T = 0, C = 0, pred = 0;
   nights.forEach((n) => {
@@ -238,16 +238,16 @@ test('calibration math', () => {
   near(c.rNew, rNew, 1e-9);
   near(c.rateOverride, (M.rate(p) + rNew) / 2, 1e-9);
   // a prediction fed back as the actual gives ~0 error and ~unchanged rate
-  const same = M.calibrate(p, nights, 0, c.pred, TODAY);
+  const same = M.calibrate(p, nights, 0, c.pred, AFTER);
   near(same.err, 0, 1e-9);
   near(same.rNew, M.rate(p), 1e-3);
 });
 
 test('calibration clamps r_new at 0.02 and 0.45', () => {
   const p = P();
-  const hi = M.calibrate(p, N(), 0, 100000, TODAY); // huge check -> rate would be negative
+  const hi = M.calibrate(p, N(), 0, 100000, AFTER); // huge check -> rate would be negative
   assert.equal(hi.rNew, 0.02);
-  const lo = M.calibrate(p, N(), 0, 1, TODAY); // tiny check -> rate would exceed 100%
+  const lo = M.calibrate(p, N(), 0, 1, AFTER); // tiny check -> rate would exceed 100%
   assert.equal(lo.rNew, 0.45);
   near(lo.rateOverride, (M.rate(p) + 0.45) / 2, 1e-9);
 });
@@ -255,12 +255,12 @@ test('calibration clamps r_new at 0.02 and 0.45', () => {
 test('calibration refuses when cash is missing and counts the nights', () => {
   const nights = N();
   nights[0].cash = null; nights[2].cash = '';
-  const c = M.calibrate(P(), nights, 0, 800, TODAY);
+  const c = M.calibrate(P(), nights, 0, 800, AFTER);
   assert.equal(c.ok, false);
   assert.equal(c.reason, 'missingCash');
   assert.equal(c.missingCash, 2);
-  assert.equal(M.calibrate(P(), N(), 0, 0, TODAY).reason, 'noactual');
-  assert.equal(M.calibrate(P(), N(), 9, 800, TODAY).reason, 'nonights');
+  assert.equal(M.calibrate(P(), N(), 0, 0, AFTER).reason, 'noactual');
+  assert.equal(M.calibrate(P(), N(), 9, 800, AFTER).reason, 'nonights');
 });
 
 test('weekly hours run Monday to Sunday and flag over 40', () => {
@@ -338,7 +338,7 @@ test('cents helpers', () => {
 test('regression: calibration counts non-numeric cash as missing (not silently $0)', () => {
   const nights = N();
   nights[1].cash = 'abc';
-  const c = M.calibrate(P(), nights, 0, 800, TODAY);
+  const c = M.calibrate(P(), nights, 0, 800, AFTER);
   assert.equal(c.ok, false);
   assert.equal(c.reason, 'missingCash');
   assert.equal(c.missingCash, 1);
@@ -459,4 +459,64 @@ test('fixed 15 and 30 stay fixed-length; num(freq) is never used for the string 
   assert.equal(M.calendarMode({ freq: 'semimonthly', periodStart: '2026-09-16' }), 'semimonthly');
   assert.equal(M.calendarMode({ freq: 'monthly', periodStart: '2026-09-16' }), 'monthly');
   assert.equal(M.periodLength({ freq: 'monthly', periodStart: '' }), 30); // invalid start: fixed fallback
+});
+
+/* ---------- review fixes ---------- */
+test('calibrate refuses a pay period that has not finished', () => {
+  const r = M.calibrate(P(), N(), 0, 800, TODAY); // period ends 10-04, today is 09-28
+  assert.deepEqual(r, { ok: false, reason: 'notFinal', missingCash: 0 });
+  assert.equal(M.calibrate(P(), N(), 0, 800, '2026-10-04').reason, 'notFinal'); // the last day still counts as in progress
+  assert.equal(M.calibrate(P(), N(), 0, 800, '2026-10-05').ok, true);
+});
+
+test('the accuracy screen defaults to the newest FINISHED period', async () => {
+  const { defaultCalibPeriod } = await import('../app/js/ui/periods.js');
+  const finished = (i) => M.isFinal(P(), i, TODAY);
+  assert.equal(defaultCalibPeriod([0, -1, -2], finished), -1); // period 0 is in progress: skip it
+  assert.equal(defaultCalibPeriod([0, -1, -2], (i) => M.isFinal(P(), i, AFTER)), 0); // once it ends it is the newest finished
+  assert.equal(defaultCalibPeriod([0], finished), 0); // nothing finished: still pick something (the screen disables Compare)
+  assert.equal(defaultCalibPeriod([], finished), null);
+});
+
+test('dates outside years 1000-9998 are rejected, so calendar periods never loop', () => {
+  assert.ok(Number.isNaN(M.parseISO('9999-06-15')));
+  assert.ok(Number.isNaN(M.parseISO('0999-06-15')));
+  assert.ok(Number.isFinite(M.parseISO('1000-01-01')));
+  assert.ok(Number.isFinite(M.parseISO('9998-12-31')));
+  const p = { freq: 'semimonthly', periodStart: '2026-09-16' };
+  const t0 = Date.now();
+  for (let i = 0; i < 200; i++) M.periodIndex(p, '9998-12-31');
+  assert.ok(Date.now() - t0 < 200, 'periodIndex for a far date is fast');
+  assert.ok(Number.isNaN(M.periodIndex(p, '9999-12-31')));
+  assert.equal(M.periodRange(p, M.periodIndex(p, '9998-12-31')).end >= '9998-12-31', true);
+  assert.equal(M.calendarMode({ freq: 'monthly', periodStart: '9999-01-01' }), null);
+});
+
+test('example data follows today: a live pay period, same example money', () => {
+  const p = M.exampleProfile('2031-03-12'), ns = M.exampleNights('2031-03-12');
+  assert.equal(p.periodStart, '2031-03-05');
+  assert.equal(p.periodEnd, '2031-03-18');
+  assert.equal(M.periodIndex(p, '2031-03-12'), 0);
+  assert.deepEqual(ns.map((n) => n.date), ['2031-03-05', '2031-03-08', '2031-03-10', '2031-03-11']);
+  assert.ok(ns.every((n) => M.periodIndex(p, n.date) === 0));
+  const c = M.computeNight(ns[2], p, 10);
+  assert.equal(c.total, 585); assert.equal(c.hours, 8); assert.equal(c.cashInHand + c.fromCash, 210);
+  const today = M.todayISO();
+  const q = M.exampleProfile(), qn = M.exampleNights();
+  assert.equal(M.periodIndex(q, today), 0);
+  assert.ok(qn.every((n) => n.date <= today && M.periodIndex(q, n.date) === 0));
+  assert.equal(M.isFinal(q, 0, today), false);
+});
+
+test('indexNights matches a plain filter, oldest first, and handles the edit preview call', () => {
+  const p = P();
+  const nights = [...N(), { id: 9, date: '2026-10-06' }, { id: 10, date: '2026-09-01' }, { id: 11, date: 'bad' }];
+  const ix = M.indexNights(p, nights);
+  [-3, -2, -1, 0, 1, 2].forEach((i) => {
+    assert.deepEqual(M.nightsInPeriod(p, nights, i, ix), M.nightsInPeriod(p, nights, i));
+  });
+  assert.deepEqual(M.nightsInPeriod(p, nights, 0, ix).map((n) => n.id), [1, 2, 3, 4]);
+  // shiftsPerPeriod with and without an index agree, and a passed idx only matters for the default guess
+  const q = { ...P(), shifts: '' };
+  assert.deepEqual(M.shiftsPerPeriod(q, nights, AFTER, 0, ix), M.shiftsPerPeriod(q, nights, AFTER));
 });

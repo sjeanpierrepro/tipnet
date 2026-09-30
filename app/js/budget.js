@@ -6,11 +6,13 @@
 //   categories: [{id, name, monthly}]                            a monthly spending limit
 //   goals:      [{id, name, target, saved, perPaycheck}]         something you are saving toward
 //   spends:     [{id, date, amount, categoryId, note?}]          money spent, logged by the user
-//   paidBills:  {"<periodIndex>:<billId>": true}                 bills already paid in a pay period
+//   paidBills:  {"<billId>@<due date>": true}                    bills already paid, keyed by the bill and the day it fell due
+//                                                                (so changing your pay schedule never un-pays a bill)
+//   balance:    {amount, asOf} (absent if none)     money you said you had, and when (ISO date and time)
 // Everything here is an estimate. It is a planning aid, not financial advice.
 import {
   num, toCents, fromCents, round2, parseISO, addDays, dayDiff,
-  periodIndex, periodRange, isFinal, periodTotals, shiftsPerPeriod, todayISO,
+  periodIndex, periodRange, isFinal, periodTotals, shiftsPerPeriod, todayISO, indexNights,
   computeNight, fixedTotal,
 } from './math.js';
 
@@ -43,8 +45,65 @@ export function exampleBudget() {
   };
 }
 
-/** Tolerant normalizer: anything in, a valid budget out. Never throws. */
-export function migrateBudget(x) {
+/* ---------- paid bills ---------- */
+/** The key a "Paid" tick is stored under: the bill and the day it fell due. */
+export const paidKey = (billId, dateISO) => billId + '@' + dateISO;
+export const isPaid = (budget, bill) => !!(budget.paidBills && budget.paidBills[paidKey(bill.id, bill.date)]);
+const OLD_KEY = /^(-?\d+):(.+)$/; // old style "<periodIndex>:<billId>"
+
+/**
+ * Turns old "<periodIndex>:<billId>" ticks into "<billId>@<due date>" using the CURRENT pay schedule.
+ * A tick is kept only if that bill falls due exactly once in that pay period; anything unclear is dropped.
+ * Returns a new paidBills object. New-style keys pass through untouched.
+ */
+export function convertPaidKeys(paid, bills, profile) {
+  const out = {};
+  const ok = profile && Number.isFinite(parseISO(profile.periodStart));
+  Object.keys(paid || {}).forEach((k) => {
+    if (paid[k] !== true) return;
+    const m = OLD_KEY.exec(k);
+    if (!m) { out[k] = true; return; }
+    if (!ok) return;
+    const bill = (bills || []).find((b) => b.id === m[2]);
+    if (!bill) return;
+    const r = periodRange(profile, Number(m[1]));
+    const due = billsDue({ bills: [bill] }, r.start, r.end);
+    if (due.length === 1) out[paidKey(bill.id, due[0].date)] = true;
+  });
+  return out;
+}
+/** True when paidBills still holds old-style keys (so the caller knows to convert and save). */
+export const hasOldPaidKeys = (budget) => Object.keys((budget && budget.paidBills) || {}).some((k) => OLD_KEY.test(k));
+
+/* ---------- saved balance ---------- */
+/** Keeps a balance only if it has a real amount and a real date-time. */
+export function cleanBalance(b) {
+  if (!b || typeof b !== 'object') return null;
+  const amount = parseFloat(b.amount);
+  if (!Number.isFinite(amount) || typeof b.asOf !== 'string' || !Number.isFinite(Date.parse(b.asOf))) return null;
+  return { amount: round2(amount), asOf: b.asOf };
+}
+export const BALANCE_STALE_DAYS = 3;
+/** True when the saved balance is more than about 3 days old. No balance is never "stale". */
+export function balanceIsStale(balance, now = new Date()) {
+  if (!balance) return false;
+  return now.getTime() - Date.parse(balance.asOf) > BALANCE_STALE_DAYS * 864e5;
+}
+/** A spend counts against the saved balance if it is dated on or after the balance day and was logged after the balance. */
+function spentSinceBalance(spends, balance, today) {
+  const asOfDay = todayISO(new Date(balance.asOf));
+  const at = Date.parse(balance.asOf);
+  return sumC((spends || []).filter((s) => s.date <= today && (s.loggedAt
+    ? s.date >= asOfDay && Date.parse(s.loggedAt) > at
+    : s.date > asOfDay)), (s) => toCents(num(s.amount)));
+}
+
+/**
+ * Tolerant normalizer: anything in, a valid budget out. Never throws.
+ * Pass the profile so old "<periodIndex>:<billId>" paid ticks can be converted to due dates (see convertPaidKeys);
+ * without it they are kept as they are until something that has the profile converts them.
+ */
+export function migrateBudget(x, profile) {
   const out = emptyBudget();
   if (!x || typeof x !== 'object') return out;
   const list = (v) => (Array.isArray(v) ? v.filter((i) => i && typeof i === 'object') : []);
@@ -64,11 +123,15 @@ export function migrateBudget(x) {
   out.spends = list(x.spends).filter((s) => Number.isFinite(parseISO(s.date))).map((s, i) => {
     const sp = { id: id(s.id, 's', i), date: s.date, amount: money(s.amount), categoryId: s.categoryId == null ? '' : String(s.categoryId) };
     if (typeof s.note === 'string' && s.note) sp.note = s.note;
+    if (typeof s.loggedAt === 'string' && Number.isFinite(Date.parse(s.loggedAt))) sp.loggedAt = s.loggedAt;
     return sp;
   });
   if (x.paidBills && typeof x.paidBills === 'object' && !Array.isArray(x.paidBills)) {
     Object.keys(x.paidBills).forEach((k) => { if (x.paidBills[k] === true) out.paidBills[k] = true; });
+    if (profile && hasOldPaidKeys(out)) out.paidBills = convertPaidKeys(out.paidBills, out.bills, profile);
   }
+  const bal = cleanBalance(x.balance);
+  if (bal) out.balance = bal;
   return out;
 }
 
@@ -147,12 +210,13 @@ const hasCash = (n) => n.cash !== '' && n.cash != null && Number.isFinite(parseF
  * The check can only be worked out for nights with cash entered (check = take-home - cash in hand), so the
  * projection scales from those nights only. With none this period it falls back to the average past check.
  */
-export function expectedIncome(profile, nights, today = todayISO()) {
+export function expectedIncome(profile, nights, today = todayISO(), index = indexNights(profile, nights)) {
   const idx = periodIndex(profile, today);
-  const t = periodTotals(profile, nights, idx, today);
-  const expected = shiftsPerPeriod(profile, nights, today).n;
-  const done = [...new Set(nights.map((n) => periodIndex(profile, n.date)))].filter((i) => isFinal(profile, i, today));
-  const past = done.map((i) => periodTotals(profile, nights, i, today));
+  // Worked out once: with a history or an entered count it is the same for every period, and with neither there are no past periods.
+  const expected = shiftsPerPeriod(profile, nights, today, undefined, index).n;
+  const t = periodTotals(profile, nights, idx, today, expected, index);
+  const done = [...index.keys()].filter((i) => isFinal(profile, i, today));
+  const past = done.map((i) => periodTotals(profile, nights, i, today, expected, index));
   const mean = (list, f) => (list.length ? fromCents(Math.round(list.reduce((s, x) => s + toCents(f(x)), 0) / list.length)) : null);
   const avg = mean(past, (x) => x.net);
   const avgChk = mean(past.filter((x) => x.allCash), (x) => x.chk);
@@ -170,10 +234,10 @@ export function expectedIncome(profile, nights, today = todayISO()) {
  * Every night has cash: the period's check as worked out. Some do: scale the nights with cash up to all N nights,
  * (sum of onCheck + fixed share) x N / withCash - fixed deductions. None do: the average past check, else null.
  */
-function finishedCheckC(profile, nights, k, today, avgCheck) {
-  const t = periodTotals(profile, nights, k, today);
+function finishedCheckC(profile, nights, k, today, avgCheck, index) {
+  const n = shiftsPerPeriod(profile, nights, today, k, index).n;
+  const t = periodTotals(profile, nights, k, today, n, index);
   if (t.allCash) return { c: toCents(t.chk), from: 'finished' };
-  const n = shiftsPerPeriod(profile, nights, today, k).n;
   const withCash = t.ns.map((night) => computeNight(night, profile, n)).filter((c) => c.onCheck != null);
   if (withCash.length) {
     const sumC = withCash.reduce((s, c) => s + toCents(c.onCheck) + toCents(c.fixedPerShift), 0);
@@ -216,11 +280,13 @@ function goalPieces(budget) {
 
 /**
  * How much you can spend before your next payday, with every piece shown so the UI can explain it.
- * options.cashOnHand: cash you actually have (overrides the cash TipNet adds up from your nights).
+ * Money you have: options.cashOnHand if given, else the saved balance (budget.balance) minus spending logged since it was saved,
+ * else the cash tips TipNet adds up from this pay period's nights (minus spending logged this pay period).
+ * options.index: an indexNights() result to reuse.
  * Money from the check is NOT counted until payday. Category money left is pro-rated:
  * (left in category) x (days until payday / days left in the month, capped at 1).
- * Bills are matched to the pay period their due date lands in, so paidBills keys are "<periodIndex>:<billId>".
- * Returns {payday, daysAway, income:{source:'entered'|'cash', amount, cash, spent (logged this period, 'cash' only)}, bills:[...], billsTotal,
+ * Paid bills are looked up by paidKey(bill id, due date).
+ * Returns {payday, daysAway, income:{source:'entered'|'balance'|'cash', amount, cash, spent (logged since the balance / this period; 0 for 'entered')}, bills:[...], billsTotal,
  *  goals:[{id,name,amount}], goalsTotal, categories:[{id,name,remaining,reserved}], categoriesTotal,
  *  safe (can be negative), perDay,
  *  (payday = first pay date after today; bills counted are unpaid ones due up to the day before it)
@@ -232,18 +298,24 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
   const np = paydayInfo(profile, today);
   const { date: payday, daysAway } = np;
   const delay = payDelayOf(profile);
-  const inc = expectedIncome(profile, nights, today);
+  const index = options.index || indexNights(profile, nights);
+  const inc = expectedIncome(profile, nights, today, index);
   const co = options.cashOnHand;
   const entered = co !== undefined && co !== null && co !== '' && Number.isFinite(parseFloat(co));
-  // Without an entered balance: cash tips this period, minus what you logged spending this period
-  // (that money is gone, and it already counts against its category below).
-  const spentC = entered ? 0 : sumC((budget.spends || []).filter((s) => s.date >= range.start && s.date <= today), (s) => toCents(num(s.amount)));
-  const cashC = entered ? toCents(num(co)) : toCents(inc.cashSoFar);
+  const saved = entered ? null : cleanBalance(budget.balance);
+  // Money you have: what you typed, or your saved balance minus what you logged spending since, or cash tips this period
+  // minus what you logged spending this period. Money already spent also counts against its category below.
+  let spentC = 0, cashC;
+  if (entered) cashC = toCents(num(co));
+  else if (saved) { cashC = toCents(saved.amount); spentC = spentSinceBalance(budget.spends, saved, today); }
+  else {
+    cashC = toCents(inc.cashSoFar);
+    spentC = sumC((budget.spends || []).filter((s) => s.date >= range.start && s.date <= today), (s) => toCents(num(s.amount)));
+  }
   const incomeC = cashC - spentC;
 
   // Unpaid bills in a date range. Earlier unpaid bills in this period still count: you still owe them.
-  const paid = budget.paidBills || {};
-  const unpaid = (from, to) => billsDue(budget, from, to).filter((b) => !paid[periodIndex(profile, b.date) + ':' + b.id]);
+  const unpaid = (from, to) => billsDue(budget, from, to).filter((b) => !isPaid(budget, b));
   const bills = unpaid(range.start, addDays(payday, -1));
   const billsC = sumC(bills, (b) => toCents(num(b.amount)));
 
@@ -272,11 +344,11 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
   if (np.periodIndex === idx) {
     projC = inc.projectedCheck == null ? null : toCents(inc.projectedCheck);
     checkFrom = inc.projectedFrom === 'nights' ? 'current' : inc.projectedFrom;
-  } else ({ c: projC, from: checkFrom } = finishedCheckC(profile, nights, np.periodIndex, today, inc.avgCheckPerPeriod));
+  } else ({ c: projC, from: checkFrom } = finishedCheckC(profile, nights, np.periodIndex, today, inc.avgCheckPerPeriod, index));
 
   return {
     payday, daysAway,
-    income: { source: entered ? 'entered' : 'cash', amount: fromCents(incomeC), cash: fromCents(cashC), spent: fromCents(spentC) },
+    income: { source: entered ? 'entered' : saved ? 'balance' : 'cash', amount: fromCents(incomeC), cash: fromCents(cashC), spent: fromCents(spentC) },
     bills, billsTotal: fromCents(billsC),
     goals: goals.map((g) => ({ id: g.id, name: g.name, amount: fromCents(g.amountC) })), goalsTotal: fromCents(goalsC),
     categories: cats.map((c) => ({ id: c.id, name: c.name, remaining: c.remaining, reserved: fromCents(c.reservedC) })),

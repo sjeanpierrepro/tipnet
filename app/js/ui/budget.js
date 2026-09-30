@@ -1,22 +1,20 @@
 // Budget tab (paid add-on): safe to spend, next paycheck, bills, spending, goals, subscription.
 // Locked users see an honest preview and can buy or paste a license key. The free app is unchanged.
-import { todayISO, periodIndex, periodRange, toCents } from '../math.js';
-import { safeToSpend, hasPayDelay, billsDue, categoryStatus, goalProgress, exampleBudget, migrateBudget } from '../budget.js';
-import { BILLING } from '../billing-config.js';
-import { isUnlocked, activateKey, revalidate, deactivate, displayEntitlement, checkoutUrl, devEntitlement, isDevHost, getProvider } from '../billing.js';
-import { el, clear, field, exampleBanner, moneyInput, select, numOf, clean, money, money0, fmtDate, fmtShort, toast, arm, save, bus, getState } from './common.js';
+import { todayISO, periodIndex, periodRange, toCents, round2, indexNights } from '../math.js';
+import { safeToSpend, hasPayDelay, billsDue, categoryStatus, goalProgress, exampleBudget, migrateBudget, paidKey, isPaid, convertPaidKeys, hasOldPaidKeys, balanceIsStale } from '../budget.js';
+import { BILLING, isUnlocked, activateKey, revalidate, deactivate, displayEntitlement, checkoutUrl, devEntitlement, isDevHost, getProvider } from '../billing.js';
+import { el, clear, field, exampleBanner, moneyInput, select, numOf, clean, money, money0, fmtDate, fmtShort, toast, arm, save, bus, getState, debounce } from './common.js';
 
 const MANAGE_URL = 'https://app.lemonsqueezy.com/my-orders';
 
 /* ---------- screen-local state (cleared by reset) ---------- */
-let cashText = '';      // "money you have right now", this visit only
 let editing = null;     // {kind, id} of the row being edited
 let keyMsg = '';        // license key error
 let keyText = '';       // what was pasted, kept so a failed try does not wipe it (never saved)
 let busy = false;
 let billsOpen = false; // keeps the "Edit or remove bills" list open after a save or cancel
 
-export function reset() { cashText = ''; editing = null; keyMsg = ''; keyText = ''; busy = false; billsOpen = false; }
+export function reset() { editing = null; keyMsg = ''; keyText = ''; busy = false; billsOpen = false; }
 
 const newId = (p) => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
 const ent = () => getState().settings.entitlement || null;
@@ -143,9 +141,10 @@ function entityForm(kind, item) {
   const ins = {}, fs = [];
   K.fields.forEach((f) => {
     const v = item ? item[f.k] : '';
-    const input = f.type === 'text' ? el('input', { type: 'text', autocomplete: 'off', placeholder: f.ph || '', maxlength: '40', value: v || '' })
-      : f.type === 'day' ? el('input', { type: 'text', inputmode: 'numeric', autocomplete: 'off', placeholder: '1', value: item ? String(v) : '' })
-        : moneyInput({ placeholder: '0.00', value: item && v ? String(v) : '' });
+    const fk = 'ef-' + kind + '-' + (item ? item.id : 'new') + '-' + f.k; // stable, so focus survives a rerender
+    const input = f.type === 'text' ? el('input', { type: 'text', autocomplete: 'off', placeholder: f.ph || '', maxlength: '40', value: v || '', 'data-focus-key': fk })
+      : f.type === 'day' ? el('input', { type: 'text', inputmode: 'numeric', autocomplete: 'off', placeholder: '1', value: item ? String(v) : '', 'data-focus-key': fk })
+        : moneyInput({ placeholder: '0.00', value: item && v ? String(v) : '', 'data-focus-key': fk });
     ins[f.k] = input; fs.push([f, field(f.label, input)]);
   });
   const btn = el('button', { type: 'submit', class: 'btn btn-small' }, item ? 'Save changes' : 'Add ' + K.noun);
@@ -180,27 +179,50 @@ const editBtn = (kind, id, label) => el('button', { type: 'button', class: 'btn 
 const isEditing = (kind, id) => editing && editing.kind === kind && editing.id === id;
 
 /* ---------- (a) safe to spend ---------- */
-function heroCard(S) {
+/** "Tue 9:40 pm" (or "Sep 22, 9:40 pm" once it is more than a week old). */
+function asOfText(iso) {
+  const d = new Date(iso);
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).replace(/\s/g, ' ').toLowerCase();
+  const old = Date.now() - d.getTime() > 6 * 864e5;
+  return (old ? fmtShort(todayISO(d)) + ',' : d.toLocaleDateString('en-US', { weekday: 'short' })) + ' ' + time;
+}
+
+/** r0: the safeToSpend result the screen already worked out. Typing a balance saves it and works out a fresh one (once, after a pause). */
+function heroCard(S, r0) {
   const host = el('section', { class: 'result stack' });
-  const cashIn = moneyInput({ placeholder: 'Blank = cash tips so far', value: cashText });
-  const draw = () => {
-    const r = safeToSpend(S.budget, S.profile, S.nights, todayISO(), { cashOnHand: clean(cashText) });
+  const saved = S.budget.balance;
+  const cashIn = moneyInput({ id: 'budget-balance', 'data-focus-key': 'budget-balance', placeholder: 'Blank = cash tips so far', value: saved ? String(saved.amount) : '' });
+  const draw = (r) => {
     const neg = r.safe < 0;
+    const bal = S.budget.balance;
     clear(host).append(...[
       el('div', { class: 'hero-label' }, 'Safe to spend until payday (' + fmtDate(r.payday) + ')'),
       el('div', { class: 'hero num', 'aria-live': 'polite' }, money(r.safe)),
       el('div', { class: 'hint' }, neg ? 'estimated, ' + plural(r.daysAway, 'day') + ' to payday' : 'about ' + money(r.perDay) + ' a day for ' + plural(r.daysAway, 'day') + ' (estimated)'),
+      bal ? el('p', { class: 'hint' }, 'Your balance as of ' + asOfText(bal.asOf) + (r.income.spent > 0 ? ', minus ' + money(r.income.spent) + ' you logged since.' : '.')) : null,
+      bal && balanceIsStale(bal) ? el('p', { class: 'note' }, 'Update your balance: it is a few days old, so this number may be off. Type what you have now in the box above.') : null,
       hasPayDelay(S.profile) ? null : el('p', { class: 'hint' }, 'Assumes you’re paid the day after the pay period ends. ',
-        el('button', { type: 'button', class: 'btn-link', onclick: () => bus.go('setup') }, 'Add your payday in Setup.')),
+        el('button', { type: 'button', class: 'btn-link', 'data-focus-key': 'budget-payday-link', onclick: () => bus.go('setup') }, 'Add your payday in Setup.')),
       r.income.source === 'cash' ? el('p', { class: 'hint' }, 'This counts only your cash tips from this pay period. Enter what you have in the bank and in cash above for a truer number.') : null,
       neg ? el('p', { class: 'note' }, 'What you have now is less than what is coming out before payday. That is common between checks. Your next paycheck is not counted here, so this usually evens out on payday. If you want it to be positive sooner, you could pay a bill after payday, or lower a spending amount.') : null,
       breakdown(S, r)].filter(Boolean));
   };
   const box = el('div', { class: 'card stack-sm' },
     field('Money you have right now (bank + cash)', cashIn, { optional: true,
-      hint: 'Not saved: enter it fresh each time. If you leave it blank, TipNet uses your cash tips from this pay period, minus spending you logged.' }));
-  cashIn.addEventListener('input', () => { cashText = cashIn.value; draw(); });
-  draw();
+      hint: 'Saved on this device with the time you entered it, so it is still here next visit. Update it when you check your bank. If you leave it blank, TipNet uses your cash tips from this pay period, minus spending you logged.' }));
+  let dirty = false;
+  const commit = () => {
+    if (!dirty) return;
+    dirty = false;
+    const n = parseFloat(clean(cashIn.value));
+    S.budget.balance = Number.isFinite(n) ? { amount: round2(n), asOf: new Date().toISOString() } : null;
+    save();
+    draw(safeToSpend(S.budget, S.profile, S.nights, todayISO()));
+  };
+  const later = debounce(commit, 400);
+  cashIn.addEventListener('input', () => { dirty = true; later(); });
+  cashIn.addEventListener('change', () => later.flush());
+  draw(r0);
   return el('div', { class: 'stack' }, box, host); // the input comes first so the number below always reflects it
 }
 
@@ -210,8 +232,8 @@ function breakdown(S, r) {
     el('summary', { class: 'btn-link' }, 'How this is worked out'),
     el('dl', { class: 'breakdown', style: 'padding-top:var(--s-2)' },
       ...(r.income.source === 'entered' ? [row('Money you entered', money(r.income.amount))]
-        : [row('Cash tips this pay period', money(r.income.cash)),
-          r.income.spent > 0 ? row('Spending you logged this pay period', '−' + money(r.income.spent)) : null].filter(Boolean)),
+        : [row(r.income.source === 'balance' ? 'Your saved balance' : 'Cash tips this pay period', money(r.income.cash)),
+          r.income.spent > 0 ? row(r.income.source === 'balance' ? 'Spending you logged since' : 'Spending you logged this pay period', '−' + money(r.income.spent)) : null].filter(Boolean)),
       row('Bills due before payday (' + r.bills.length + ' unpaid)', '−' + money(r.billsTotal)),
       ...r.bills.map((b) => row('   ' + b.name + ', ' + fmtShort(b.date), '−' + money(b.amount), 'hint')),
       row('Savings goals this paycheck', '−' + money(r.goalsTotal)),
@@ -228,8 +250,8 @@ const CHECK_HINT = {
   finished: 'The projected check comes from the pay period that just ended. If some of its nights have no cash entered, TipNet scales up from the nights that do.',
   average: 'No night in the pay period this check pays for has cash entered yet, so the projected check is your average check from past pay periods.',
 };
-function nextCheckCard(S) {
-  const a = safeToSpend(S.budget, S.profile, S.nights, todayISO(), { cashOnHand: clean(cashText) }).after;
+function nextCheckCard(S, r0) {
+  const a = r0.after;
   const known = a.projectedCheck != null;
   return el('section', { class: 'card stack-sm' },
     el('div', { class: 'card-title' }, 'Next paycheck, ' + fmtShort(a.periodStart) + ' to ' + fmtShort(a.periodEnd)),
@@ -244,19 +266,19 @@ function nextCheckCard(S) {
 }
 
 /* ---------- (c) bills ---------- */
-function billsCard(S) {
+function billsCard(S, r0) {
   const B = S.budget, p = S.profile, today = todayISO();
   const idx = periodIndex(p, today);
   // Same window safe to spend and the next paycheck card count, so no bill they include is missing here.
   const nextEnd = periodRange(p, idx + 1).end;
-  const afterEnd = safeToSpend(B, p, S.nights, today).after.periodEnd;
+  const afterEnd = r0.after.periodEnd;
   const upcoming = billsDue(B, periodRange(p, idx).start, afterEnd > nextEnd ? afterEnd : nextEnd);
   const rows = upcoming.map((b) => {
-    const key = periodIndex(p, b.date) + ':' + b.id;
-    const cb = el('input', { type: 'checkbox', checked: !!B.paidBills[key] });
+    const key = paidKey(b.id, b.date); // the bill and its due date, so a new pay schedule never un-pays it
+    const cb = el('input', { type: 'checkbox', checked: !!B.paidBills[key], 'data-focus-key': 'paid-' + key });
     cb.addEventListener('change', () => { if (cb.checked) B.paidBills[key] = true; else delete B.paidBills[key]; save(); bus.rerender(); });
     return el('li', { class: 'list-row' },
-      el('div', { class: 'main' }, b.name, el('div', { class: 'hint' }, 'Due ' + fmtDate(b.date) + (b.date < today && !B.paidBills[key] ? ', past due' : ''))),
+      el('div', { class: 'main' }, b.name, el('div', { class: 'hint' }, 'Due ' + fmtDate(b.date) + (b.date < today && !isPaid(B, b) ? ', past due' : ''))),
       el('div', { class: 'amount' }, money0(b.amount)),
       el('label', { class: 'check', style: 'padding:6px 12px' }, cb, 'Paid'));
   });
@@ -268,7 +290,7 @@ function billsCard(S) {
         removeBtn('Delete ' + b.name, () => {
           const gone = b, goneMarks = {};
           B.bills = B.bills.filter((x) => x.id !== b.id);
-          Object.keys(B.paidBills).forEach((k) => { if (k.endsWith(':' + b.id)) { goneMarks[k] = B.paidBills[k]; delete B.paidBills[k]; } });
+          Object.keys(B.paidBills).forEach((k) => { if (k.startsWith(b.id + '@')) { goneMarks[k] = B.paidBills[k]; delete B.paidBills[k]; } });
           save(); bus.rerender();
           toast('Bill removed.', { undo: () => { if (!B.bills.some((x) => x.id === gone.id)) B.bills.push(gone); Object.assign(B.paidBills, goneMarks); save(); bus.rerender(); } });
         })))));
@@ -292,13 +314,17 @@ function spendingCard(S) {
         bar(c.pct, c.name + ' spending this month'),
         el('div', { class: 'hint' }, money(c.spent) + ' of ' + money(c.monthly) + ' this month')),
       el('div', { class: 'row-actions' }, editBtn('category', c.id, 'Edit ' + c.name),
-        removeBtn('Delete ' + c.name, () => { B.categories = B.categories.filter((x) => x.id !== c.id); save(); bus.rerender(); toast('Category removed.'); })));
+        removeBtn('Delete ' + c.name, () => {
+          const at = B.categories.findIndex((x) => x.id === c.id); if (at < 0) return;
+          const [gone] = B.categories.splice(at, 1); save(); bus.rerender();
+          toast('Category removed.', { undo: () => { if (!B.categories.some((x) => x.id === gone.id)) B.categories.splice(Math.min(at, B.categories.length), 0, gone); save(); bus.rerender(); } });
+        })));
   });
 
   let logBox;
   if (B.categories.length) {
-    const amt = moneyInput({ placeholder: '0.00' });
-    const cat = select(B.categories.map((c) => [c.id, c.name]), B.categories[0].id);
+    const amt = moneyInput({ placeholder: '0.00', 'data-focus-key': 'spend-amount' });
+    const cat = select(B.categories.map((c) => [c.id, c.name]), B.categories[0].id, { 'data-focus-key': 'spend-category' });
     const note = el('input', { type: 'text', autocomplete: 'off', maxlength: '60', placeholder: 'Coffee, groceries…' });
     const date = el('input', { type: 'date', value: today });
     const af = field('Amount', amt);
@@ -309,7 +335,7 @@ function spendingCard(S) {
       e.preventDefault();
       const n = numOf(amt.value);
       if (!(n > 0)) { af.setError('Enter how much you spent.'); amt.focus(); return; }
-      B.spends.push({ id: newId('s'), date: date.value || today, amount: n, categoryId: cat.value, ...(note.value.trim() ? { note: note.value.trim() } : {}) });
+      B.spends.push({ id: newId('s'), date: date.value || today, amount: n, categoryId: cat.value, loggedAt: new Date().toISOString(), ...(note.value.trim() ? { note: note.value.trim() } : {}) });
       save(); bus.rerender(); toast('Logged ' + money(n) + '.');
     });
     logBox = el('div', { class: 'card stack-sm' }, el('div', { class: 'card-title' }, 'Log spending'), form);
@@ -339,7 +365,7 @@ function goalsCard(S) {
   const rows = B.goals.map((g) => {
     if (isEditing('goal', g.id)) return el('li', { class: 'list-row wrap' }, el('div', { class: 'main' }, entityForm('goal', g)));
     const pr = goalProgress(g);
-    const add = moneyInput({ placeholder: 'Amount', 'aria-label': 'Amount to add to ' + g.name });
+    const add = moneyInput({ placeholder: 'Amount', 'aria-label': 'Amount to add to ' + g.name, 'data-focus-key': 'goal-add-' + g.id });
     const addBtn = el('button', { type: 'button', class: 'btn btn-secondary btn-small' }, 'Add to saved');
     addBtn.addEventListener('click', () => {
       const n = numOf(add.value);
@@ -355,7 +381,11 @@ function goalsCard(S) {
         el('div', { class: 'hint' }, money(g.saved) + ' of ' + money(g.target) + ', ' + money(g.perPaycheck) + ' per paycheck. ' + togo),
         el('div', { class: 'cluster' }, el('div', { style: 'flex:1;min-width:120px' }, add), addBtn)),
       el('div', { class: 'row-actions' }, editBtn('goal', g.id, 'Edit ' + g.name),
-        removeBtn('Delete ' + g.name, () => { B.goals = B.goals.filter((x) => x.id !== g.id); save(); bus.rerender(); toast('Goal removed.'); })));
+        removeBtn('Delete ' + g.name, () => {
+          const at = B.goals.findIndex((x) => x.id === g.id); if (at < 0) return;
+          const [gone] = B.goals.splice(at, 1); save(); bus.rerender();
+          toast('Goal removed.', { undo: () => { if (!B.goals.some((x) => x.id === gone.id)) B.goals.splice(Math.min(at, B.goals.length), 0, gone); save(); bus.rerender(); } });
+        })));
   });
   return el('section', { class: 'card stack' },
     el('h2', null, 'Savings goals'),
@@ -401,12 +431,16 @@ export function subscriptionLine() {
 /* ---------- unlocked view ---------- */
 function unlockedView(S) {
   const B = S.budget;
+  // Old paid ticks were keyed by pay period number. Re-key them by due date, once, using the current pay schedule.
+  if (hasOldPaidKeys(B)) { B.paidBills = convertPaidKeys(B.paidBills, B.bills, S.profile); save(); }
+  // Worked out once per render and shared by the cards below (none of them needs it recomputed).
+  const r0 = safeToSpend(B, S.profile, S.nights, todayISO(), { index: indexNights(S.profile, S.nights) });
   const empty = !B.bills.length && !B.categories.length && !B.goals.length && !B.spends.length;
   const start = el('button', { type: 'button', class: 'btn', onclick: () => { S.budget = migrateBudget(exampleBudget()); save(); bus.rerender(); } }, 'Start with example budget');
   return el('div', { class: 'stack' },
     exampleBanner(),
     empty ? el('div', { class: 'banner' }, el('p', null, 'Your budget is empty. Add your bills, spending categories and goals below, or start from an example and change it.'), start) : null,
-    heroCard(S), nextCheckCard(S), billsCard(S), spendingCard(S), goalsCard(S), subscriptionCard());
+    heroCard(S, r0), nextCheckCard(S, r0), billsCard(S, r0), spendingCard(S), goalsCard(S), subscriptionCard());
 }
 
 export function render(root) {

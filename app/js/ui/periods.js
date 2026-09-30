@@ -1,5 +1,5 @@
 // Pay periods screen: nights grouped by pay period, edit/delete, and "Check my accuracy".
-import { computeNight, periodTotals, periodIndex, shiftsPerPeriod, calibrate, todayISO, isFinal } from '../math.js';
+import { computeNight, periodTotals, periodIndex, shiftsPerPeriod, calibrate, todayISO, isFinal, indexNights } from '../math.js';
 import { el, clear, field, moneyInput, select, numOf, money, money0, pct, fmtDate, periodLabel, exampleBanner, toast, arm, save, bus, getState } from './common.js';
 import { nightFields, draftFromNight, storedNight } from './tonight.js';
 
@@ -23,7 +23,7 @@ function editor(S, n) {
   const d = draftFromNight(n, p);
   const preview = el('p', { class: 'hint', 'aria-live': 'polite' });
   const upd = () => {
-    const c = computeNight(storedNight(d, p, n.id), p, shiftsPerPeriod(p, S.nights).n);
+    const c = computeNight(storedNight(d, p, n.id), p, shiftsPerPeriod(p, S.nights, todayISO(), periodIndex(p, d.date || n.date)).n);
     preview.textContent = 'Estimated take-home for this night: ' + money(c.net) + '.';
   };
   const f = nightFields(p, d, { onInput: () => { f.setTotalError(''); upd(); } });
@@ -64,10 +64,11 @@ function nightRow(S, n, shifts) {
       del));
 }
 
-function group(S, idx) {
-  const p = S.profile, today = todayISO();
-  const t = periodTotals(p, S.nights, idx, today);
-  const shifts = shiftsPerPeriod(p, S.nights, today, idx).n;
+/** The shift count for period idx. Entered and history counts are the same for every period, so they are worked out once (in `base`). */
+function group(S, idx, ctx) {
+  const p = S.profile, today = ctx.today;
+  const shifts = ctx.base.source === 'default' ? shiftsPerPeriod(p, S.nights, today, idx, ctx.index).n : ctx.base.n;
+  const t = periodTotals(p, S.nights, idx, today, shifts, ctx.index);
   const rows = t.ns.map((n) => nightRow(S, n, shifts));
   const editingRow = rows.length && t.ns.some((n) => n.id === editingId);
   return el('section', { class: 'stack-sm' },
@@ -78,20 +79,39 @@ function group(S, idx) {
       : el('ul', { class: 'list' }, rows));
 }
 
-function calibCard(S, idxs) {
+/** Newest FINISHED pay period (idxs is newest first), or the newest one if none has finished. */
+export function defaultCalibPeriod(idxs, finished) {
+  const done = idxs.find((i) => finished(i));
+  return done !== undefined ? done : (idxs.length ? idxs[0] : null);
+}
+const NOT_FINAL_TEXT = 'This pay period is still in progress, so there is no paycheck to compare yet. Come back once it ends and the check lands.';
+
+function calibCard(S, idxs, today) {
   const p = S.profile;
-  if (calPeriod == null || !idxs.includes(calPeriod)) calPeriod = idxs.length ? idxs[0] : null;
-  const sel = select(idxs.length ? idxs.map((i) => [i, periodLabel(p, i)]) : [['', 'No pay periods yet']], calPeriod == null ? '' : calPeriod, { id: 'cal-period' });
-  sel.addEventListener('change', () => { calPeriod = Number(sel.value); });
-  const actual = moneyInput({ placeholder: '0.00' });
+  const finished = (i) => isFinal(p, i, today);
+  if (calPeriod == null || !idxs.includes(calPeriod)) calPeriod = defaultCalibPeriod(idxs, finished);
+  const sel = select(idxs.length ? idxs.map((i) => [i, periodLabel(p, i) + (finished(i) ? '' : ' (in progress)')]) : [['', 'No pay periods yet']], calPeriod == null ? '' : calPeriod, { id: 'cal-period' });
+  const actual = moneyInput({ placeholder: '0.00', id: 'cal-actual' });
   const msg = el('p', { class: 'note', 'aria-live': 'polite', hidden: !calMsg }, calMsg ? calMsg.text : '');
-  const run = el('button', { type: 'button', class: 'btn btn-small' }, 'Compare and adjust');
-  const undo = el('button', { type: 'button', class: 'btn btn-secondary btn-small' }, 'Undo adjustments');
+  const run = el('button', { type: 'button', class: 'btn btn-small', id: 'cal-run' }, 'Compare and adjust');
+  const inProgress = () => idxs.length > 0 && !finished(Number(sel.value));
+  const syncRun = () => { run.disabled = inProgress(); };
+  sel.addEventListener('change', () => {
+    calPeriod = Number(sel.value);
+    syncRun();
+    if (inProgress()) { calMsg = { text: NOT_FINAL_TEXT }; msg.hidden = false; msg.textContent = NOT_FINAL_TEXT; }
+    else if (calMsg && calMsg.text === NOT_FINAL_TEXT) { calMsg = null; msg.hidden = true; msg.textContent = ''; }
+  });
+  if (inProgress() && !calMsg) calMsg = { text: idxs.some(finished) ? NOT_FINAL_TEXT : 'No pay period has finished yet. ' + NOT_FINAL_TEXT };
+  msg.hidden = !calMsg; msg.textContent = calMsg ? calMsg.text : '';
+  syncRun();
+  const undo = el('button', { type: 'button', class: 'btn btn-secondary btn-small', id: 'cal-undo' }, 'Undo adjustments');
   const show = (text) => { calMsg = { text }; msg.hidden = false; msg.textContent = text; };
   run.addEventListener('click', () => {
     const idx = Number(sel.value);
-    const r = idxs.length ? calibrate(p, S.nights, idx, numOf(actual.value)) : { ok: false, reason: 'nonights' };
+    const r = idxs.length ? calibrate(p, S.nights, idx, numOf(actual.value), today) : { ok: false, reason: 'nonights' };
     if (!r.ok) {
+      if (r.reason === 'notFinal') return show(NOT_FINAL_TEXT);
       if (r.reason === 'missingCash') {
         const m = r.missingCash;
         return show(m + ' night' + (m > 1 ? 's' : '') + ' in this period ' + (m > 1 ? 'have' : 'has') + ' no cash amount, so the check can’t be predicted. Add cash to every night first.');
@@ -123,9 +143,12 @@ function calibCard(S, idxs) {
 }
 
 export function render(root) {
-  const S = getState(), p = S.profile;
-  const idxs = [...new Set(S.nights.map((n) => periodIndex(p, n.date)))].sort((a, b) => b - a);
-  const list = idxs.length ? idxs.map((i) => group(S, i))
+  const S = getState(), p = S.profile, today = todayISO();
+  // One pass over the nights, shared by every period below (a long history stays fast).
+  const index = indexNights(p, S.nights);
+  const ctx = { today, index, base: shiftsPerPeriod(p, S.nights, today, undefined, index) };
+  const idxs = [...index.keys()].sort((a, b) => b - a);
+  const list = idxs.length ? idxs.map((i) => group(S, i, ctx))
     : [el('div', { class: 'card' }, el('p', { class: 'hint' }, 'No nights yet. Log your first shift on the Tonight tab.'))];
-  root.append(el('div', { class: 'stack' }, exampleBanner(), list, calibCard(S, idxs)));
+  root.append(el('div', { class: 'stack' }, exampleBanner(), list, calibCard(S, idxs, today)));
 }
