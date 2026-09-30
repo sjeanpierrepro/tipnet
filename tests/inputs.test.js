@@ -69,3 +69,27 @@ test('parseHoursInput: 7:30 is 7.5, plain and worded hours work, junk is 0', () 
   assert.equal(parseHoursInput('abc'), 0);
   assert.equal(parseHoursInput('730'), 730);
 });
+
+test('parseHoursInput: decimal commas; ambiguous thousands only rejected in strict mode (CSV)', async () => {
+  const { parseHours } = await import('../app/js/csv.js');
+  assert.equal(parseHoursInput('7,5'), 7.5);
+  assert.equal(parseHoursInput('7,25'), 7.25);
+  assert.equal(parseHoursInput('-7,5'), -7.5);
+  assert.equal(
+    parseHoursInput('1,250'),
+    1250,
+    'screens: the comma is ignored and 1250 is refused as over 24',
+  );
+  for (const v of ['1,250', '1,250.5', '1,2345', '1,250,000'])
+    assert.ok(Number.isNaN(parseHoursInput(v, { strict: true })), v);
+  // the CSV importer uses the same parser: never negative, same answers otherwise
+  for (const [v, want] of [
+    ['7,5', 7.5],
+    ['7:30', 7.5],
+    ['7h 30m', 7.5],
+    ['-8', 8],
+    ['', 0],
+  ])
+    assert.equal(parseHours(v), want, v);
+  assert.ok(Number.isNaN(parseHours('1,250')));
+});

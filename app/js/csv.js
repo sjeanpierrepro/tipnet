@@ -1,5 +1,6 @@
 // CSV import helpers. Everything is parsed locally; nothing is uploaded.
 import { toCents, fromCents, formatISO } from './math.js';
+import { parseHoursInput } from './inputs.js';
 
 /** RFC 4180-ish parser. Returns an array of rows (arrays of strings). Handles BOM, quotes, "" escapes,
  *  commas and newlines inside quotes, CRLF/LF/CR. Blank lines are dropped. */
@@ -67,19 +68,10 @@ export function parseMoney(v) {
 }
 
 /** "7.5" -> 7.5, "7,5" -> 7.5 (a lone comma before 1-2 digits is a decimal), "7:30" -> 7.5, "7h 30m" -> 7.5, junk -> 0.
- *  Never negative. "1,250" or "1,250.5" is ambiguous (thousands? decimal?) and returns NaN so the caller can reject the row. */
+ *  Never negative (a negative cell is caught by looksNegative). "1,250" or "1,250.5" is ambiguous (thousands? decimal?)
+ *  and returns NaN so the caller can reject the row. The shared parser from inputs.js, in its strict mode. */
 export function parseHours(v) {
-  let s = String(v == null ? '' : v).trim();
-  let x;
-  if (/^\d*,\d+$/.test(s) || /^\d+,\d+\.\d+$/.test(s)) {
-    if (/^\d*,\d{1,2}$/.test(s)) s = s.replace(',', '.');
-    else return NaN;
-  } else if (/^\d+(?:,\d{3})+(?:\.\d+)?$/.test(s)) return NaN;
-  if ((x = /^(\d+):(\d{1,2})(?::\d{1,2})?$/.exec(s))) return +x[1] + +x[2] / 60;
-  if ((x = /^(\d+(?:\.\d+)?)\s*h(?:ours?|rs?)?\s*(?:(\d+)\s*m(?:in(?:ute)?s?)?)?$/i.exec(s)))
-    return +x[1] + (x[2] ? +x[2] / 60 : 0);
-  const n = parseFloat(s.replace(/[^0-9.]/g, ''));
-  return Number.isFinite(n) ? n : 0;
+  return Math.abs(parseHoursInput(v, { strict: true }));
 }
 
 const validYMD = (y, m, d) => {

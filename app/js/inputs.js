@@ -79,16 +79,20 @@ export function negativeCheckReason(c) {
 }
 
 /**
- * Read an hours/shifts field. "7:30" = 7.5, "7h 30m" = 7.5, "7.5" = 7.5, "1,5" is not special-cased.
- * A leading minus stays negative ("-5" = -5, "-7:30" = -7.5), so the screens can refuse it instead of flipping it.
- * Empty or junk -> 0. This is the one hours parser in the app; the CSV import should use it too.
+ * Read an hours/shifts field. "7:30" = 7.5, "7h 30m" = 7.5, "7.5" = 7.5, "7,5" = 7.5 (a lone comma before 1-2 digits
+ * is a decimal comma). A leading minus stays negative ("-5" = -5, "-7:30" = -7.5), so the screens can refuse it
+ * instead of flipping it. Empty or junk -> 0. This is the one hours parser in the app (the CSV import uses it too).
+ * "1,250" or "1,250.5" is ambiguous (thousands? decimal?): with { strict: true } (CSV import) it returns NaN so the row
+ * can be rejected; otherwise the comma is ignored (1250, which the screens refuse as more than 24 hours).
  */
-export function parseHoursInput(v) {
+export function parseHoursInput(v, { strict = false } = {}) {
   let s = String(v == null ? '' : v).trim();
   const neg = /^[-−]/.test(s);
   if (neg) s = s.slice(1).trim();
   const sign = neg ? -1 : 1;
   let x;
+  if (/^\d*,\d{1,2}$/.test(s)) s = s.replace(',', '.');
+  else if (strict && (/^\d*,\d+(?:\.\d+)?$/.test(s) || /^\d+(?:,\d{3})+(?:\.\d+)?$/.test(s))) return NaN;
   if ((x = /^(\d+):(\d{1,2})(?::\d{1,2})?$/.exec(s))) return sign * (+x[1] + +x[2] / 60);
   if ((x = /^(\d+(?:\.\d+)?)\s*h(?:ours?|rs?)?\s*(?:(\d+)\s*m(?:in(?:ute)?s?)?)?$/i.exec(s)))
     return sign * (+x[1] + (x[2] ? +x[2] / 60 : 0));

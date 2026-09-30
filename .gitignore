@@ -7,3 +7,4 @@ Thumbs.db
 .idea/
 coverage/
 CLAUDE.md
+*.pid
