@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { boot, realState } from './harness.js';
 import { encodeBackup } from '../../app/js/storage.js';
+import * as storage from '../../app/js/storage.js';
 
 const dateInputs = (page) => page.$$('input[type=date]', page.app);
 const next = (page) => page.click(page.button('Next'));
@@ -139,10 +140,11 @@ test('guided setup: Skip swaps the example paystub for a blank one, and Tonight 
     );
     assert.equal(S.nightsExample, false);
     assert.match(page.text(), /import nights from a spreadsheet once your paystub numbers are in/);
-    assert.equal(page.$('input[type=file]', page.app), null, 'no importer before the basics');
+    assert.equal(page.$('input[type=file]:not(#bk-file)', page.app), null, 'no importer before the basics');
     assert.equal(S.nights.length, 0);
     assert.equal(S.settings.setupDone, undefined, 'skipping is not finishing');
     assert.match(page.text(), /Tonight shows your take-home once they are in/);
+    assert.match(page.text(), /Still needed: your pay period start date, your gross pay/);
     const [start] = dateInputs(page);
     page.type(start, '2026-01-01');
     assert.equal(page.state().profile.periodEnd, '');
@@ -164,6 +166,40 @@ test('guided setup: Skip swaps the example paystub for a blank one, and Tonight 
     page.tab('tonight');
     assert.ok(page.$('form button[type=submit]', page.app), 'Tonight unlocked');
     assert.match(page.text(), /Tips you made tonight/);
+  } finally {
+    await page.close();
+  }
+});
+
+test('Skip: without a pay period start date TipNet is not set up, Setup asks for it, and a reload does not invent one', async () => {
+  let saved;
+  let page = await boot();
+  try {
+    page.click(page.button('Skip guided setup'));
+    page.type(page.must(page.$('#pr-p1'), 'main rate'), '12');
+    page.type(page.byText('.field', 'Gross pay', page.app).querySelector('input'), '1800');
+    const cb = page.must(page.$('#no-ded'), 'no deductions box');
+    cb.checked = true;
+    page.change(cb);
+    assert.match(page.text(), /Still needed: your pay period start date\. Tonight shows/);
+    page.tab('tonight');
+    assert.match(page.text(), /Finish setup/, 'locked: no start date');
+    assert.doesNotMatch(page.text(), /Invalid Date/);
+    page.tab('periods');
+    assert.doesNotMatch(page.text(), /Invalid Date|NaN/);
+    await storage.flush();
+    saved = page.win.localStorage.getItem('tipnet.v2');
+  } finally {
+    await page.close();
+  }
+  page = await boot({ seed: JSON.parse(saved) });
+  try {
+    assert.equal(page.state().profile.periodStart, '', 'not set to today behind the user’s back');
+    assert.match(page.text(), /Still needed: your pay period start date/, 'lands on Setup');
+    page.type(dateInputs(page)[0], '2026-09-01');
+    assert.equal(page.$('#not-ready-text').closest('[role=status]').hidden, true);
+    page.tab('tonight');
+    assert.ok(page.$('form button[type=submit]', page.app), 'Tonight unlocked');
   } finally {
     await page.close();
   }

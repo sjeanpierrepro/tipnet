@@ -12,6 +12,7 @@ import * as tonight from '../../app/js/ui/tonight.js';
 import * as periods from '../../app/js/ui/periods.js';
 import * as budget from '../../app/js/ui/budget.js';
 import * as setup from '../../app/js/ui/setup.js';
+import * as backup from '../../app/js/ui/backup.js';
 import { BILLING } from '../../app/js/billing.js';
 
 export const APP_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../app');
@@ -75,6 +76,7 @@ export async function boot({ url = 'http://localhost/', seed = null, payments = 
   periods.reset();
   budget.reset();
   setup.reset();
+  backup.iosNote.shown = false;
   common.install.deferred = null;
   common.install.listeners.clear();
   common.install.last = null;

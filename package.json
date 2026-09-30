@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
+    "test:dates": "node tools/test-dates.mjs",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write ."
   },

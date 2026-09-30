@@ -158,7 +158,8 @@ test('lockFinishedNights stamps only finished periods, purely, with the Setup of
 
 test('app open across a period boundary: locking first keeps a later Setup edit out of the finished period', async () => {
   const S = await import('../app/js/storage.js');
-  const st = S.setState({ profile: P(), nights: N() });
+  // today is passed in everywhere: loading must not lock with the real clock, or this test breaks once 10-04 is past
+  const st = S.setState({ profile: P(), nights: N() }, { today: TODAY });
   assert.equal(S.lockFinished({ force: true, today: TODAY }), 0);
   assert.ok(st.nights.every((n) => !n.snap));
   // the period ends while the app stays open; the next hook (visibility / render / any input) locks it

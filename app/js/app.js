@@ -11,8 +11,8 @@ import {
   toast,
   restoreRequest,
 } from './ui/common.js';
-import { budgetVisible } from './billing.js';
-import { restoreFromCode, eraseEverything } from './ui/backup.js';
+import { budgetVisible, reloadConfig } from './billing.js';
+import { restoreFromCode, eraseEverything, backupReminder } from './ui/backup.js';
 import * as tonight from './ui/tonight.js';
 import * as periods from './ui/periods.js';
 import * as setup from './ui/setup.js';
@@ -100,6 +100,10 @@ function render() {
     clear(root);
     try {
       SCREENS[current].render(root);
+      if (current === 'tonight' || current === 'setup') {
+        const nudge = backupReminder(); // "Last backup: never. Save a backup file" once there are 5+ real nights
+        if (nudge) root.prepend(nudge);
+      }
     } catch (e) {
       console.error(e);
       clear(root);
@@ -180,6 +184,14 @@ function setupServiceWorker() {
       else location.reload();
     });
   }
+  // billing-config.js changed on the server (the worker answered from its cache and then found a newer copy): re-read it
+  // so switching payments on shows up without waiting for the next open.
+  navigator.serviceWorker.addEventListener('message', (e) => {
+    if (e.data && e.data.type === 'BILLING_CONFIG_CHANGED')
+      reloadConfig().then((ok) => {
+        if (ok) render();
+      });
+  });
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (reloading || !waiting) return; // first install also fires this; only reload after the user asked
     reloading = true;
@@ -233,11 +245,29 @@ async function boot() {
     setInstallPrompt(e);
   });
   window.addEventListener('appinstalled', () => setInstallPrompt(null));
+  // flush writes the quick localStorage copy first (synchronously), then IndexedDB, so a closing page keeps its entry.
   window.addEventListener('pagehide', () => storage.flush());
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') storage.flush();
     else if (storage.lockFinished()) render(); // back after a period boundary: lock it, then redraw
   });
+  // Another copy of TipNet (a second tab, or the installed app and a browser tab) saved: show its data here too.
+  // Changes made here that were not saved yet are merged in, not lost.
+  storage.setExternalHandler(({ conflict }) => {
+    applyTheme(storage.getState().settings.theme);
+    render();
+    if (conflict) toast('TipNet was updated in another window. Showing the latest.');
+  });
+  window.addEventListener('storage', (e) => {
+    if (e.key === null || e.key === 'tipnet.v2') storage.syncFromStorage();
+  });
+  // A failed save (storage full or blocked) says so; the data stays in memory while TipNet is open.
+  const saveError = document.getElementById('save-error');
+  storage.setSaveHandler((ok) => {
+    if (saveError) saveError.hidden = ok;
+  });
+  const retry = document.getElementById('save-retry');
+  if (retry) retry.addEventListener('click', () => storage.flush());
   // Capture phase runs before the screens' own handlers, so a Setup edit made after midnight cannot reach a finished period first.
   ['input', 'change', 'click'].forEach((t) =>
     document.addEventListener(

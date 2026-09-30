@@ -329,13 +329,17 @@ export function setupFirstCard({ title = 'Finish setup first', text, example } =
 
 /* ---------- saving ---------- */
 let persistAsked = false;
-/** Debounced save of the cached state. Asks the browser to keep our data on the first save. */
+/**
+ * Debounced save of the cached state. Asks the browser to keep our data on the first save.
+ * Resolves true once the change is really written, false if saving failed (see the banner in app.js).
+ */
 export function save() {
-  scheduleSave();
+  const done = scheduleSave();
   if (!persistAsked) {
     persistAsked = true;
     requestPersist();
   }
+  return done;
 }
 
 /* ---------- theme ---------- */

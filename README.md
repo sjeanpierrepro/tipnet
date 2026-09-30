@@ -19,7 +19,7 @@ All the numbers stay on your phone or computer. Your bar cannot see them. No acc
 Open the link your bar gives you. The first time, you may see a prompt to "Install app" or "Add to home screen"—tap it. After that, open it from your home screen or desktop like any app. It works offline.
 
 ### On your own computer (testing or setup)
-You need Node 20 or higher. In your terminal, from the TipNet folder, first install test dependencies once:
+You need Node 20.19 or newer 20.x, 22.13 or newer 22.x, or Node 24 or higher (the "engines" line in package.json). In your terminal, from the TipNet folder, first install test dependencies once:
 
 ```
 npm ci
@@ -29,6 +29,12 @@ Then run all the tests:
 
 ```
 npm test
+```
+
+To check that no test depends on today's date, run the same tests as if today were a few awkward dates (right after a pay period ends, New Year's Day, a leap day). The publishing check runs this too:
+
+```
+npm run test:dates
 ```
 
 To see TipNet running locally:

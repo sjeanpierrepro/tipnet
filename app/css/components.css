@@ -69,6 +69,16 @@ textarea {
 .brand span {
   color: var(--accent);
 }
+.app-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.save-error {
+  width: calc(100% - 2 * var(--s-3));
+  max-width: calc(560px - 2 * var(--s-3));
+  margin: var(--s-2) auto 0;
+}
 #app,
 .column {
   width: 100%;
@@ -873,4 +883,9 @@ fieldset.field > legend {
   .job-row .grid-2 {
     grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
   }
+}
+
+/* ---------- "Last backup" reminder (Tonight and Setup) ---------- */
+.backup-nudge {
+  margin-bottom: var(--s-3);
 }

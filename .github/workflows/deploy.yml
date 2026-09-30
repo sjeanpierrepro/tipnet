@@ -27,6 +27,8 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm test
+      # The same suite as if today were a few awkward dates (tools/test-dates.mjs), so no test depends on the real calendar.
+      - run: npm run test:dates
 
   deploy:
     needs: test

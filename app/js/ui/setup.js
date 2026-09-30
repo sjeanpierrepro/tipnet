@@ -33,7 +33,6 @@ import {
   exampleBanner,
   toast,
   save,
-  debounce,
   bus,
   getState,
   applyTheme,
@@ -151,14 +150,12 @@ function presetSelect(presets, current, id, fallback = 'other') {
 }
 
 /* ============ context shared by the cards on one render ============ */
+let saveSeq = 0; // the newest edit's save decides the "All changes saved" line
 function makeCtx(blank = false) {
   const S = getState();
   if (blank && !gProfile) gProfile = blankProfile();
   const live = [];
   const saved = el('p', { class: 'hint', role: 'status', 'aria-live': 'polite' });
-  const showSaved = debounce(() => {
-    saved.textContent = 'All changes saved on this device.';
-  }, 700);
   const ctx = {
     S,
     p: blank ? gProfile : S.profile,
@@ -182,8 +179,14 @@ function makeCtx(blank = false) {
       S.profileExample = false;
       if (resetRate) S.profile.rateOverride = null;
       saved.textContent = 'Saving…';
-      save();
-      showSaved();
+      // "All changes saved" only after the write really worked (a full or blocked storage says so instead)
+      const n = ++saveSeq;
+      save().then((ok) => {
+        if (n === saveSeq)
+          saved.textContent = ok
+            ? 'All changes saved on this device.'
+            : 'Couldn’t save on this device. Your changes are kept while TipNet is open.';
+      });
       live.forEach((f) => f());
     },
   };
@@ -1257,20 +1260,31 @@ function guided(root, ctx) {
   );
 }
 
+/** What Tonight still needs before it can estimate, in the order of the page ([] once set up). */
+export function stillNeeded(S) {
+  if (isSetUp(S)) return [];
+  const p = S.profile;
+  const out = [];
+  if (!Number.isFinite(parseISO(p.periodStart))) out.push('your pay period start date');
+  if (!(num(p.gross) > 0)) out.push('your gross pay');
+  if (!(p.deductions || []).some((d) => num(d.amount) > 0) && !S.settings.noDeductions)
+    out.push('at least one deduction (or tick “My paystub has no deductions”)');
+  if (!(num(((p.payTypes || [])[0] || {}).rate) > 0)) out.push('your main rate');
+  return out;
+}
+const listText = (a) => (a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1]);
 /** Full page while not set up (after "Skip guided setup"): what Tonight still needs. Updates as the fields change. */
 function notReadyNote(ctx) {
   const S = ctx.S;
-  const box = el(
-    'div',
-    { class: 'banner', role: 'status' },
-    el(
-      'p',
-      null,
-      'Add your gross pay, at least one deduction (or tick “My paystub has no deductions”) and your main rate. Tonight shows your take-home once they are in.',
-    ),
-  );
+  const text = el('p', { id: 'not-ready-text' });
+  const box = el('div', { class: 'banner', role: 'status' }, text);
   const sync = () => {
-    box.hidden = isSetUp(S);
+    const need = stillNeeded(S);
+    box.hidden = !need.length;
+    const t = need.length
+      ? 'Still needed: ' + listText(need) + '. Tonight shows your take-home once they are in.'
+      : '';
+    if (text.textContent !== t) text.textContent = t;
   };
   ctx.live.push(sync);
   sync();

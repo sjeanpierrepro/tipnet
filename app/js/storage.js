@@ -170,6 +170,8 @@ function cleanNights(list) {
         pay,
         barback: n.barback === undefined ? true : !!n.barback,
       };
+      if (typeof n.tips === 'number' && Number.isFinite(n.tips) && n.tips >= 0)
+        o.tips = Math.round(n.tips * 100) / 100;
       if (typeof n.note === 'string' && n.note) o.note = n.note.slice(0, 500);
       const snap = cleanSnap(n.snap);
       if (snap) o.snap = snap;
@@ -197,6 +199,20 @@ function cleanSettings(x) {
   // "Late nights" rule: shifts logged before this hour count as the night before (0 = off). Kept only when it's a whole hour 0-12.
   if (Number.isInteger(s.dayCutoffHour) && s.dayCutoffHour >= 0 && s.dayCutoffHour <= 12)
     out.dayCutoffHour = s.dayCutoffHour;
+  // The guided setup in progress (see keepGuided in ui/setup.js), so a reload comes back to the same step. Its profile is
+  // cleaned like the real one, but blank dates stay blank: the person has not typed them yet.
+  if (isObj(s.guidedDraft)) {
+    const g = s.guidedDraft;
+    const d = { step: [0, 1, 2].includes(g.step) ? g.step : 0 };
+    if (g.noDeductions === true) d.noDeductions = true;
+    if (isObj(g.profile)) d.profile = cleanProfile(g.profile, { startFallback: '', entryDefault: 'tips' });
+    out.guidedDraft = d;
+  }
+  // Backups: when the last backup code or file was made (ms), and until when the "Last backup" reminder is dismissed.
+  const ms = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0 && v < 1e14;
+  if (ms(s.lastBackupAt)) out.lastBackupAt = s.lastBackupAt;
+  if (ms(s.backupNudgeUntil)) out.backupNudgeUntil = s.backupNudgeUntil;
+  if (s.iosNoteSeen === true) out.iosNoteSeen = true; // the iPhone "Safari may clear data" note was shown once
   // The license entitlement is device-only. decodeBackup strips it before migrate; here we only keep its known plain fields.
   if (isObj(s.entitlement)) {
     const e = {};
@@ -209,19 +225,56 @@ function cleanSettings(x) {
   return out;
 }
 
+/** The profile fields, each coerced to a safe shape. startFallback: the start date used when it is missing or broken. */
+function cleanProfile(p, { startFallback, entryDefault }) {
+  const out = {};
+  out.periodStart = validDate(p.periodStart) ? p.periodStart : startFallback;
+  out.periodEnd = validDate(p.periodEnd) ? p.periodEnd : '';
+  out.gross = Math.max(0, numOr0(p.gross));
+  out.shifts = Math.max(0, Math.round(numOr0(p.shifts)));
+  const ro = p.rateOverride;
+  out.rateOverride = typeof ro === 'number' && Number.isFinite(ro) && ro >= 0 && ro <= 1 ? ro : null;
+  // freq: fixed day counts 7/14/15/30 or the calendar modes 'semimonthly'/'monthly'; anything else falls back to 14.
+  let freq = p.freq;
+  if (typeof freq === 'string' && /^[0-9]+$/.test(freq)) freq = Number(freq);
+  out.freq = [7, 14, 15, 30, 'semimonthly', 'monthly'].includes(freq) ? freq : 14;
+  // payDelay: whole days after the period end that the check arrives (0-21). Absent/blank stays absent (treated as 1).
+  const pd = p.payDelay;
+  if (!(
+    pd === undefined ||
+    pd === null ||
+    pd === '' ||
+    typeof pd === 'boolean' ||
+    !Number.isFinite(Number(pd))
+  ))
+    out.payDelay = Math.min(21, Math.max(0, Math.round(Number(pd))));
+  out.deductions = cleanDeductions(p.deductions);
+  out.payTypes = cleanPayTypes(p.payTypes);
+  const to = isObj(p.tipout) ? p.tipout : {};
+  out.tipout = {
+    on: !!to.on,
+    mode: to.mode === 'flat' ? 'flat' : 'pct',
+    value: numOr0(to.value),
+    basis: text(to.basis, 'before') || 'before',
+    from: text(to.from, 'cash') || 'cash',
+  };
+  out.entryMode = ENTRY_MODES.includes(p.entryMode) ? p.entryMode : entryDefault;
+  return out;
+}
+
 /**
  * Accepts anything (null, prototype v1 shapes both old and new, v2). Returns a fresh, valid v2 state.
  * Never throws for missing or garbage input; returns the seed state instead. Every field is coerced to a
  * safe shape (bad rows are dropped) so the math and screens can always render the result.
  */
-export function migrate(input) {
+export function migrate(input, { today = todayISO() } = {}) {
   try {
-    return migrateUnsafe(input);
+    return migrateUnsafe(input, today);
   } catch (e) {
     return seedState();
   }
 }
-function migrateUnsafe(input) {
+function migrateUnsafe(input, today) {
   let S;
   try {
     S = isObj(input) ? clone(input) : null;
@@ -253,46 +306,16 @@ function migrateUnsafe(input) {
     });
     p.deductions = d;
   }
-  const out = {};
-  // A missing or broken start date would leave every pay period undefined; fall back to today.
-  out.periodStart = validDate(p.periodStart) ? p.periodStart : todayISO();
-  out.periodEnd = validDate(p.periodEnd) ? p.periodEnd : '';
-  out.gross = Math.max(0, numOr0(p.gross));
-  out.shifts = Math.max(0, Math.round(numOr0(p.shifts)));
-  const ro = p.rateOverride;
-  out.rateOverride = typeof ro === 'number' && Number.isFinite(ro) && ro >= 0 && ro <= 1 ? ro : null;
-  // freq: fixed day counts 7/14/15/30 or the calendar modes 'semimonthly'/'monthly'; anything else falls back to 14.
-  let freq = p.freq;
-  if (typeof freq === 'string' && /^[0-9]+$/.test(freq)) freq = Number(freq);
-  out.freq = [7, 14, 15, 30, 'semimonthly', 'monthly'].includes(freq) ? freq : 14;
-  // payDelay: whole days after the period end that the check arrives (0-21). Absent/blank stays absent (treated as 1).
-  const pd = p.payDelay;
-  if (!(
-    pd === undefined ||
-    pd === null ||
-    pd === '' ||
-    typeof pd === 'boolean' ||
-    !Number.isFinite(Number(pd))
-  ))
-    out.payDelay = Math.min(21, Math.max(0, Math.round(Number(pd))));
-  out.deductions = cleanDeductions(p.deductions);
-  out.payTypes = cleanPayTypes(p.payTypes);
-  const to = isObj(p.tipout) ? p.tipout : {};
-  out.tipout = {
-    on: !!to.on,
-    mode: to.mode === 'flat' ? 'flat' : 'pct',
-    value: numOr0(to.value),
-    basis: text(to.basis, 'before') || 'before',
-    from: text(to.from, 'cash') || 'cash',
-  };
   // Existing users keep the meaning of their nightly number: anyone with real nights or their own profile typed totals.
   const realNights = !S.nightsExample && rawNights.length > 0;
-  out.entryMode = ENTRY_MODES.includes(p.entryMode)
-    ? p.entryMode
-    : realNights || !S.profileExample
-      ? 'total'
-      : 'tips';
-  const nights = lockFinishedNights(out, cleanNights(rawNights)).nights;
+  // A missing or broken start date: the example gets today (its dates are made up anyway). A real profile keeps it
+  // blank, so Setup asks for it instead of inventing a pay schedule; TipNet does not count as set up until it is in.
+  const out = cleanProfile(p, {
+    startFallback: S.profileExample ? today : '',
+    entryDefault: realNights || !S.profileExample ? 'total' : 'tips',
+  });
+  const cleaned = cleanNights(rawNights);
+  const nights = validDate(out.periodStart) ? lockFinishedNights(out, cleaned, today).nights : cleaned;
   return {
     schemaVersion: SCHEMA_VERSION,
     profileExample: !!S.profileExample,
@@ -308,9 +331,9 @@ function migrateUnsafe(input) {
 /* ---------- set up or not ---------- */
 /** Real nights: saved by the user (or imported / restored), not the example ones. */
 export const hasRealNights = (S) => !!S && !S.nightsExample && Array.isArray(S.nights) && S.nights.length > 0;
-/** The paystub basics an estimate needs: gross pay, a main rate, and a deduction (or "no deductions" ticked). */
+/** The paystub basics an estimate needs: a pay period start date, gross pay, a main rate, and a deduction (or "no deductions" ticked). */
 export function hasBasics(p, settings) {
-  if (!p) return false;
+  if (!p || !validDate(p.periodStart)) return false;
   const main = (p.payTypes || [])[0];
   return (
     num(p.gross) > 0 &&
@@ -326,13 +349,14 @@ export function hasBasics(p, settings) {
  */
 export function isSetUp(S) {
   if (!S || !S.profile) return false;
+  if (!validDate(S.profile.periodStart)) return false; // without it there are no pay periods to estimate
   if (hasRealNights(S)) return true;
   if (S.profileExample) return false;
   if (S.settings && S.settings.setupDone) return true;
   return hasBasics(S.profile, S.settings);
 }
 
-/* ---------- backup codes: base64 of the JSON state, UTF-8 safe ---------- */
+/* ---------- backups: a code (base64 of the JSON state, UTF-8 safe) or a .json file with the same data ---------- */
 function toB64(str) {
   const bytes = new TextEncoder().encode(str);
   let bin = '';
@@ -346,78 +370,168 @@ function fromB64(b64) {
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
 }
-export function encodeBackup(state) {
-  // The license key stays on this device: a backup code is pasted into notes and chats.
-  const copy = { ...state, settings: { ...(state.settings || {}) } };
+/**
+ * What a backup holds: the whole state except device-only settings. The license key stays on this device (a backup
+ * code is pasted into notes and chats), and a half-finished guided setup is not worth carrying to another phone.
+ */
+export function backupData(state) {
+  const copy = { ...state, settings: { ...((state && state.settings) || {}) } };
   delete copy.settings.entitlement;
-  return toB64(JSON.stringify(copy));
+  delete copy.settings.guidedDraft;
+  delete copy._savedAt;
+  delete copy._writer;
+  return copy;
+}
+export function encodeBackup(state) {
+  return toB64(JSON.stringify(backupData(state)));
+}
+/** The text of a backup file (tipnet-backup-YYYY-MM-DD.json): the same data as a backup code, as plain JSON. */
+export function backupFileText(state) {
+  return JSON.stringify(backupData(state));
+}
+/** Checks a parsed backup and migrates it. Throws unless it looks like TipNet data. Never keeps device-only data. */
+function fromBackupObject(d) {
+  if (!d || typeof d !== 'object' || !d.profile || !Array.isArray(d.nights)) throw new Error('shape');
+  // A backup is text anyone can write by hand, so it never carries device-only data.
+  // The license (entitlement) belongs to this device and is only ever set by activating a key.
+  if (d.settings && typeof d.settings === 'object') {
+    delete d.settings.entitlement;
+    delete d.settings.guidedDraft;
+  }
+  const out = migrate(d);
+  delete out.settings.entitlement;
+  delete out.settings.guidedDraft;
+  return out;
 }
 /** Returns a migrated v2 state. Throws Error('bad-backup') if the code is not a TipNet backup. Accepts prototype codes. */
 export function decodeBackup(code) {
   try {
     const clean = String(code).replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
-    const d = JSON.parse(fromB64(clean));
-    if (!d || typeof d !== 'object' || !d.profile || !Array.isArray(d.nights)) throw new Error('shape');
-    // A backup code is text anyone can write by hand, so it never carries device-only data.
-    // The license (entitlement) belongs to this device and is only ever set by activating a key.
-    if (d.settings && typeof d.settings === 'object') delete d.settings.entitlement;
-    const out = migrate(d);
-    delete out.settings.entitlement;
-    return out;
+    return fromBackupObject(JSON.parse(fromB64(clean)));
   } catch (e) {
     throw new Error('bad-backup', { cause: e });
   }
 }
+/** Reads a backup file's text (JSON; a backup code saved as a file works too). Throws Error('bad-backup'). */
+export function decodeBackupFile(textIn) {
+  const t = String(textIn == null ? '' : textIn)
+    .replace(/^\uFEFF/, '')
+    .trim();
+  if (t.startsWith('{')) {
+    try {
+      return fromBackupObject(JSON.parse(t));
+    } catch (e) {
+      throw new Error('bad-backup', { cause: e });
+    }
+  }
+  return decodeBackup(t);
+}
 
 /* ---------- IndexedDB wrapper (browser only; every access guarded) ---------- */
+/*
+ * Two copies of TipNet can be open at once (two tabs, or the installed app and a browser tab) and share this storage.
+ * Each save is stamped with _savedAt and this copy's writer id. Before writing, a copy checks whether the stored data is
+ * newer than what it last loaded or saved; if so it merges (see mergeStates) instead of overwriting, and the screen is
+ * redrawn with the result. Other copies hear about a save through BroadcastChannel('tipnet') and the 'storage' event.
+ */
 let cache = null;
-let dbPromise = null;
+/** Stops waiting for IndexedDB after this long (it can hang when another tab holds an old version open). */
+let idbWaitMs = 2000;
+let db = null;
+let opening = null;
+const writerId = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+let base = null; // the state as this copy last loaded or saved it: what "changed here" is measured against
+let lastKnown = 0; // _savedAt of that copy
+let onExternal = null;
+let onSaveResult = null;
+let channel = null;
 
+/** Resolves with p's value, or with fallback when p takes longer than ms (or fails). */
+function within(p, ms, fallback) {
+  return new Promise((resolve) => {
+    let done = false;
+    let t = null;
+    const finish = (v) => {
+      if (done) return;
+      done = true;
+      clearTimeout(t);
+      resolve(v);
+    };
+    t = setTimeout(() => finish(fallback), ms);
+    Promise.resolve(p).then(finish, () => finish(fallback));
+  });
+}
+/** The open database, or null when there is none or it did not answer in time. A slow open keeps going in the background. */
 function openDB() {
-  if (dbPromise) return dbPromise;
-  dbPromise = new Promise((resolve) => {
-    try {
-      if (typeof indexedDB === 'undefined' || !indexedDB) return resolve(null);
-      const req = indexedDB.open(DB_NAME, 1);
-      req.onupgradeneeded = () => {
-        try {
-          req.result.createObjectStore(STORE);
-        } catch (e) {
-          /* ignore */
-        }
-      };
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => resolve(null);
-      req.onblocked = () => resolve(null);
-    } catch (e) {
-      resolve(null);
-    }
-  });
-  return dbPromise;
+  if (db) return Promise.resolve(db);
+  if (!opening) {
+    opening = new Promise((resolve) => {
+      try {
+        if (typeof indexedDB === 'undefined' || !indexedDB) return resolve(null);
+        const req = indexedDB.open(DB_NAME, 1);
+        req.onupgradeneeded = () => {
+          try {
+            req.result.createObjectStore(STORE);
+          } catch (e) {
+            /* ignore */
+          }
+        };
+        req.onsuccess = () => {
+          db = req.result;
+          try {
+            db.onversionchange = () => {
+              db.close();
+              db = null;
+              opening = null;
+            };
+          } catch (e) {
+            /* ignore */
+          }
+          resolve(db);
+        };
+        req.onerror = () => {
+          opening = null; // try again next time
+          resolve(null);
+        };
+        req.onblocked = () => resolve(null); // carry on without it; onsuccess may still arrive later
+      } catch (e) {
+        resolve(null);
+      }
+    });
+  }
+  return within(opening, idbWaitMs, null);
 }
-function idbGet(db) {
-  return new Promise((resolve) => {
-    try {
-      const r = db.transaction(STORE, 'readonly').objectStore(STORE).get(STATE_KEY);
-      r.onsuccess = () => resolve(r.result === undefined ? null : r.result);
-      r.onerror = () => resolve(null);
-    } catch (e) {
-      resolve(null);
-    }
-  });
+function idbGet(d) {
+  return within(
+    new Promise((resolve) => {
+      try {
+        const r = d.transaction(STORE, 'readonly').objectStore(STORE).get(STATE_KEY);
+        r.onsuccess = () => resolve(r.result === undefined ? null : r.result);
+        r.onerror = () => resolve(null);
+      } catch (e) {
+        resolve(null);
+      }
+    }),
+    idbWaitMs,
+    null,
+  );
 }
-function idbPut(db, value) {
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction(STORE, 'readwrite');
-      tx.objectStore(STORE).put(value, STATE_KEY);
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-      tx.onabort = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
+function idbPut(d, value) {
+  return within(
+    new Promise((resolve) => {
+      try {
+        const tx = d.transaction(STORE, 'readwrite');
+        tx.objectStore(STORE).put(value, STATE_KEY);
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => resolve(false);
+        tx.onabort = () => resolve(false);
+      } catch (e) {
+        resolve(false);
+      }
+    }),
+    idbWaitMs,
+    false,
+  );
 }
 function lsGet(key) {
   try {
@@ -448,22 +562,164 @@ export function pickNewest(idbCopy, lsCopy) {
   return savedAtOf(lsCopy) > savedAtOf(idbCopy) ? lsCopy : idbCopy;
 }
 
+/* ---------- merging two copies ---------- */
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+/** One level deep: each key takes this copy's value if only this copy changed it, otherwise the other copy's. */
+function mergeObj(b, mine, theirs) {
+  const out = clone(theirs);
+  Object.keys(mine).forEach((k) => {
+    if (!same(mine[k], b[k]) && same(theirs[k], b[k])) out[k] = clone(mine[k]);
+  });
+  Object.keys(b).forEach((k) => {
+    if (!(k in mine) && same(theirs[k], b[k])) delete out[k]; // removed here, untouched there
+  });
+  return out;
+}
+/** Nights by id: added here are added; edited or deleted here apply unless the other copy changed that night too. */
+function mergeNightLists(b, mine, theirs) {
+  const B = new Map(b.map((n) => [n.id, n]));
+  const T = new Map(theirs.map((n) => [n.id, n]));
+  const M = new Set(mine.map((n) => n.id));
+  let out = theirs.map((n) => clone(n));
+  let fresh = 0;
+  mine.forEach((n) => {
+    const was = B.get(n.id);
+    const there = T.get(n.id);
+    if (!was) {
+      if (!there) out.push(clone(n));
+      else if (!same(there, n)) {
+        // the same new id on both sides (unlikely): keep both nights
+        let id;
+        do id = 'n' + Date.now().toString(36) + '_' + fresh++;
+        while (T.has(id) || M.has(id));
+        out.push({ ...clone(n), id });
+      }
+    } else if (!same(was, n) && there && same(there, was))
+      out = out.map((x) => (x.id === n.id ? clone(n) : x));
+  });
+  B.forEach((was, id) => {
+    if (!M.has(id) && T.has(id) && same(T.get(id), was)) out = out.filter((x) => x.id !== id);
+  });
+  return out;
+}
+/**
+ * Pure. Three-way merge of two saved states: b is what this copy started from, mine is this copy now, theirs is what
+ * another copy saved since. Nights merge one by one and settings and budget key by key; for anything else a change
+ * made here wins only if the other copy left it alone. Nothing the other copy saved is dropped.
+ */
+export function mergeStates(b, mine, theirs) {
+  const B = isObj(b) ? b : {};
+  const out = clone(theirs);
+  Object.keys(mine).forEach((k) => {
+    if (k === 'nights' || k === '_savedAt' || k === '_writer' || same(mine[k], B[k])) return;
+    if (same(theirs[k], B[k])) out[k] = clone(mine[k]);
+    else if ((k === 'settings' || k === 'budget') && isObj(mine[k]) && isObj(theirs[k]) && isObj(B[k]))
+      out[k] = mergeObj(B[k], mine[k], theirs[k]);
+  });
+  out.nights = mergeNightLists(
+    Array.isArray(B.nights) ? B.nights : [],
+    Array.isArray(mine.nights) ? mine.nights : [],
+    Array.isArray(theirs.nights) ? theirs.nights : [],
+  );
+  delete out._savedAt;
+  delete out._writer;
+  return out;
+}
+const withoutTab = (S) => ({ ...S, settings: { ...S.settings, lastTab: null } });
+/**
+ * Take in a copy saved by another window, if it is newer than what this copy last loaded or saved. Synchronous.
+ * Returns {changed, conflict (this copy had changes of its own, now merged), visible (the screen should redraw)}.
+ */
+function absorb(copy) {
+  const none = { changed: false, conflict: false, visible: false };
+  if (!cache || !copy || savedAtOf(copy) <= lastKnown || copy._writer === writerId) return none;
+  const theirs = migrate(copy);
+  const mine = cache;
+  const hadChanges = !base || !same(mine, base);
+  const next = hadChanges ? migrate(mergeStates(base, mine, theirs)) : theirs;
+  const visible = !same(withoutTab(next), withoutTab(mine));
+  cache = next;
+  base = clone(theirs);
+  lastKnown = savedAtOf(copy);
+  lockedOn = null;
+  return { changed: true, conflict: hadChanges && !same(next, theirs), visible };
+}
+function notify(r) {
+  if (r.visible && onExternal) {
+    try {
+      onExternal({ conflict: r.conflict });
+    } catch (e) {
+      /* the screen redraw failed; the data is still right */
+    }
+  }
+}
+function ensureChannel() {
+  if (channel || typeof BroadcastChannel === 'undefined') return;
+  try {
+    channel = new BroadcastChannel('tipnet');
+    if (channel.unref) channel.unref(); // Node (tests): do not keep the process alive
+    channel.onmessage = (e) => {
+      const d = e && e.data;
+      if (d && d.type === 'saved' && d.writer !== writerId && d.savedAt > lastKnown) syncFromStorage();
+    };
+  } catch (e) {
+    channel = null;
+  }
+}
+/** fn({conflict}) runs after another window's save changed what this copy shows (app.js redraws and says so). */
+export function setExternalHandler(fn) {
+  onExternal = fn;
+}
+/** fn(ok) runs after every save attempt (app.js shows or hides the "Couldn't save" banner). */
+export function setSaveHandler(fn) {
+  onSaveResult = fn;
+}
+/**
+ * Another window saved (BroadcastChannel message or 'storage' event): read the newest stored copy and take it in.
+ * This copy's unsaved changes are merged and written back. Resolves true when something changed.
+ */
+export async function syncFromStorage() {
+  if (!cache) return false;
+  let idbCopy = null;
+  try {
+    const d = await openDB();
+    if (d) idbCopy = await idbGet(d);
+  } catch (e) {
+    idbCopy = null;
+  }
+  const r = absorb(pickNewest(idbCopy, lsGet(LS_KEY)));
+  if (!r.changed) return false;
+  if (r.conflict) await flush();
+  notify(r);
+  return true;
+}
+
 /**
  * load(): reads IndexedDB (then localStorage v2, then legacy 'tipnet.v1'), migrates, fills the
- * in-memory cache and returns it. Never throws; falls back to the example state.
+ * in-memory cache and returns it. Never throws; falls back to the example state. If IndexedDB does not answer within
+ * about 2 seconds, TipNet starts from the localStorage copy and takes in the IndexedDB copy later if that one is newer.
  */
 export async function load() {
+  ensureChannel();
   let idbRaw = null;
   try {
-    const db = await openDB();
-    if (db) idbRaw = await idbGet(db);
+    const d = await openDB();
+    if (d) idbRaw = await idbGet(d);
   } catch (e) {
     idbRaw = null;
   }
   let raw = pickNewest(idbRaw, lsGet(LS_KEY));
   if (!raw) raw = lsGet(LEGACY_KEY);
   cache = migrate(raw);
+  base = clone(cache);
+  lastKnown = savedAtOf(raw);
   lockedOn = null;
+  if (!db && opening) {
+    // IndexedDB was slow: take in its copy once it opens (if newer), without holding up the first screen
+    opening.then((d) => {
+      if (d) syncFromStorage();
+    });
+  }
   return cache;
 }
 /** Synchronous access to the cached state. Call load() first (returns the seed if not yet loaded). */
@@ -481,22 +737,33 @@ export function lockFinished({ force = false, today = todayISO() } = {}) {
   if (!force && lockedOn === today) return 0;
   lockedOn = today;
   const S = getState();
+  if (!validDate(S.profile.periodStart)) return 0; // no pay schedule yet: nothing has finished
   const r = lockFinishedNights(S.profile, S.nights, today);
   if (!r.stamped) return 0;
   S.nights = r.nights;
   scheduleSave();
   return r.stamped;
 }
-/** Replace the whole state (e.g. after restore or erase) and schedule a save. */
-export function setState(next) {
-  cache = migrate(next);
+/** Replace the whole state (e.g. after restore or erase) and schedule a save. today: for tests (default: the real date). */
+export function setState(next, { today } = {}) {
+  cache = migrate(next, today ? { today } : undefined);
   lockedOn = null;
   scheduleSave();
   return cache;
 }
 
 let timer = null;
+let pending = null; // {promise, resolve} shared by every scheduleSave until the next flush
+/** Save soon (changes close together are written once). Resolves with the result of that write (true = saved). */
 export function scheduleSave(delay = 400) {
+  if (!pending) {
+    let resolve;
+    const promise = new Promise((r) => {
+      resolve = r;
+    });
+    pending = { promise, resolve };
+  }
+  const p = pending.promise;
   try {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
@@ -506,23 +773,70 @@ export function scheduleSave(delay = 400) {
   } catch (e) {
     /* ignore */
   }
+  return p;
 }
-/** Write now. Resolves true if something durable was written. */
+const stamped = (json, at) => ({ ...JSON.parse(json), _savedAt: at, _writer: writerId });
+/**
+ * Write now. Resolves true if something durable was written. The quick localStorage copy is written first and
+ * synchronously (so it lands even while the page is closing), then IndexedDB. If another window saved since this copy
+ * last loaded or saved, that data is merged in first instead of being overwritten.
+ */
 export async function flush() {
   if (timer) {
     clearTimeout(timer);
     timer = null;
   }
-  if (!cache) return false;
+  const waiters = pending;
+  pending = null;
   let ok = false;
-  try {
-    const snapshot = { ...clone(cache), _savedAt: Date.now() }; // same stamp in both stores, so load can pick the newer
-    const db = await openDB();
-    if (db) ok = await idbPut(db, snapshot);
-    if (!ok) ok = lsSet(LS_KEY, snapshot);
-    else lsSet(LS_KEY, snapshot); // belt and braces: keeps a fallback copy
-  } catch (e) {
-    ok = false;
+  if (cache) {
+    try {
+      // 1. localStorage: take in a newer copy from another window, then write. Nothing before this is asynchronous.
+      // The screen is redrawn right away, so nothing typed from here on lands in the replaced state.
+      notify(absorb(lsGet(LS_KEY)));
+      let at = Math.max(Date.now(), lastKnown + 1);
+      let json = JSON.stringify(cache);
+      const lsOk = lsSet(LS_KEY, stamped(json, at));
+      if (lsOk) {
+        base = JSON.parse(json);
+        lastKnown = at;
+      }
+      // 2. IndexedDB (may be slow or missing).
+      let idbOk = false;
+      const d = await openDB();
+      if (d) {
+        const r = absorb(await idbGet(d)); // newer only when localStorage could not be written (full)
+        if (r.changed) {
+          notify(r);
+          at = Math.max(Date.now(), lastKnown + 1);
+          json = JSON.stringify(cache);
+          lsSet(LS_KEY, stamped(json, at));
+        }
+        idbOk = await idbPut(d, stamped(json, at));
+        if (idbOk) {
+          base = JSON.parse(json);
+          lastKnown = at;
+        }
+      }
+      ok = lsOk || idbOk;
+      if (ok && channel) {
+        try {
+          channel.postMessage({ type: 'saved', writer: writerId, savedAt: at });
+        } catch (e) {
+          /* ignore */
+        }
+      }
+    } catch (e) {
+      ok = false;
+    }
+  }
+  if (waiters) waiters.resolve(ok);
+  if (onSaveResult) {
+    try {
+      onSaveResult(ok);
+    } catch (e) {
+      /* ignore */
+    }
   }
   return ok;
 }
@@ -541,4 +855,10 @@ export async function requestPersist() {
 /** Test/dev helper: drop the cache without touching disk. */
 export function _resetCache() {
   cache = null;
+  base = null;
+  lastKnown = 0;
+}
+/** Test helper: how long to wait for IndexedDB before carrying on without it (ms). */
+export function _setIdbWait(ms) {
+  idbWaitMs = ms;
 }

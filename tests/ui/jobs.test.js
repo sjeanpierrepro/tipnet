@@ -402,32 +402,23 @@ test('guided setup keeps what was typed in the saved state (settings.guidedDraft
   }
 });
 
-// Needs storage.js to keep settings.guidedDraft through migrate (reported to the storage owner); skipped until then.
-const storageKeepsDraft = !!storage.migrate({
-  ...storage.seedState(),
-  settings: { theme: 'auto', guidedDraft: { step: 1 } },
-}).settings.guidedDraft;
-test(
-  'guided setup: after a reload the same step comes back with the typed numbers',
-  { skip: storageKeepsDraft ? false : 'storage.js does not keep settings.guidedDraft yet' },
-  async () => {
-    const S = storage.seedState();
-    const g = storage.seedState().profile;
-    g.gross = 1500;
-    g.periodStart = '2026-09-01';
-    S.settings.guidedDraft = { step: 1, profile: g };
-    const page = await boot({ seed: S });
-    try {
-      page.tab('setup');
-      assert.match(page.text(), /Deductions/);
-      assert.equal(page.$('[aria-current="step"]').textContent, '2. Deductions');
-      page.click(page.button('Back'));
-      assert.equal(page.$('input[placeholder="e.g. 2,000"]', page.app).value, '1500');
-    } finally {
-      await page.close();
-    }
-  },
-);
+test('guided setup: after a reload the same step comes back with the typed numbers', async () => {
+  const S = storage.seedState();
+  const g = storage.seedState().profile;
+  g.gross = 1500;
+  g.periodStart = '2026-09-01';
+  S.settings.guidedDraft = { step: 1, profile: g };
+  const page = await boot({ seed: S });
+  try {
+    page.tab('setup');
+    assert.match(page.text(), /Deductions/);
+    assert.equal(page.$('[aria-current="step"]').textContent, '2. Deductions');
+    page.click(page.button('Back'));
+    assert.equal(page.$('input[placeholder="e.g. 2,000"]', page.app).value, '1500');
+  } finally {
+    await page.close();
+  }
+});
 
 test('Tonight: a date far in the future or before 2000 is refused; $0 tips cannot carry cash', async () => {
   const page = await boot({ seed: jobsState() });

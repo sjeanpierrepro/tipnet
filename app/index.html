@@ -71,7 +71,16 @@
         </button>
       </nav>
       <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
-      <main id="app" role="tabpanel" aria-labelledby="tab-tonight" tabindex="-1"></main>
+      <div id="save-error" class="banner banner-warn save-error" role="alert" hidden>
+        <p>
+          Couldn't save on this device. Your changes are kept while TipNet is open — try again or free up
+          storage.
+        </p>
+        <button type="button" id="save-retry" class="btn btn-secondary btn-small">Try again</button>
+      </div>
+      <main class="app-main">
+        <div id="app" role="tabpanel" aria-labelledby="tab-tonight" tabindex="-1"></div>
+      </main>
       <footer class="app-footer">
         TipNet gives estimates, not tax advice. Your numbers stay on this device.
         <a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a>

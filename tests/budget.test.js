@@ -353,7 +353,7 @@ test('paydayInfo: short periods with a long pay delay pick the earliest check st
   assert.equal(r.after.projectedCheck, null);
 });
 
-test('paydayInfo never hangs on a missing or broken start date; restore repairs it', async () => {
+test('paydayInfo never hangs on a missing or broken start date; a restore leaves it blank for Setup', async () => {
   const B = await import('../app/js/budget.js');
   const S = await import('../app/js/storage.js');
   for (const bad of [
