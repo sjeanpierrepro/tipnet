@@ -1,7 +1,7 @@
 /* TipNet service worker. Bump VERSION on every release so clients fetch a fresh shell.
    It does NOT skipWaiting on its own: the page shows "Update available: Refresh" and
    posts {type:'SKIP_WAITING'} (or the string 'SKIP_WAITING') when the user agrees. */
-const VERSION = 'tipnet-v14';
+const VERSION = 'tipnet-v15';
 
 const SHELL = [
   './',
@@ -27,6 +27,7 @@ const SHELL = [
   'js/billing.js',
   'js/billing-config.js',
   'js/budget.js',
+  'js/inputs.js',
   'js/integrations/source.js',
   'js/ui/tonight.js',
   'js/ui/periods.js',

@@ -160,7 +160,7 @@ function migrateUnsafe(input) {
     nights: cleanNights(rawNights),
     calib: (Array.isArray(S.calib) ? S.calib : []).filter(isObj).slice(-50)
       .map((c) => ({ label: text(c.label), pred: numOr0(c.pred), actual: numOr0(c.actual), err: numOr0(c.err) })),
-    budget: migrateBudget(S.budget), // old states and old backup codes have none: they get an empty budget
+    budget: migrateBudget(S.budget, out), // old states and old backup codes have none: they get an empty budget; the profile converts old "Paid" ticks
     settings: cleanSettings(S.settings),
   };
 }
