@@ -121,7 +121,19 @@ export function toast(message, { undo, ms } = {}) {
   if (!host) return;
   const t = el('div', { class: 'toast' }, el('span', null, message));
   let timer;
-  const close = () => { clearTimeout(timer); t.remove(); };
+  const duration = ms || (undo ? 8000 : 3500);
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  const close = () => { clearTimeout(timer); document.removeEventListener('keydown', onKey); t.remove(); };
+  // Stay open while the pointer is over it or something inside has keyboard focus; the clock restarts when both are gone.
+  let over = false, focused = false;
+  const restart = () => { clearTimeout(timer); if (!over && !focused) timer = setTimeout(close, duration); };
+  t.addEventListener('pointerenter', () => { over = true; restart(); });
+  t.addEventListener('pointerleave', () => { over = false; restart(); });
+  t.addEventListener('mouseenter', () => { over = true; restart(); });
+  t.addEventListener('mouseleave', () => { over = false; restart(); });
+  t.addEventListener('focusin', () => { focused = true; restart(); });
+  t.addEventListener('focusout', () => { focused = false; restart(); });
+  document.addEventListener('keydown', onKey);
   if (undo) {
     t.append(el('button', { type: 'button', onclick: () => {
       close(); undo();
@@ -131,7 +143,7 @@ export function toast(message, { undo, ms } = {}) {
     } }, 'Undo'));
   }
   host.append(t);
-  timer = setTimeout(close, ms || (undo ? 5000 : 3500));
+  restart();
 }
 
 /* ---------- two-tap buttons ---------- */
@@ -180,8 +192,11 @@ export function applyTheme(theme) {
 export const install = { deferred: null, listeners: new Set() };
 export function setInstallPrompt(e) { install.deferred = e; install.listeners.forEach((f) => f()); }
 
+/** Set to open the restore-a-backup box on the Setup screen (read and cleared there). */
+export const restoreRequest = { open: false };
+
 /* ---------- example banner (shown on Tonight, Pay periods, Setup) ---------- */
-export function exampleBanner() {
+export function exampleBanner({ restore = true } = {}) {
   const S = getState();
   if (!S.profileExample && !S.nightsExample) return null;
   const text = S.profileExample
@@ -189,6 +204,10 @@ export function exampleBanner() {
     : 'The nights listed are examples. Clear them before you start logging.';
   return el('div', { class: 'banner' },
     el('p', null, text),
+    S.profileExample && restore ? el('button', {
+      type: 'button', class: 'btn-link',
+      onclick: () => { restoreRequest.open = true; bus.go('setup'); bus.rerender(); },
+    }, 'Moving from another phone? Restore a backup code') : null,
     S.nightsExample ? el('button', {
       type: 'button', class: 'btn btn-secondary btn-small',
       onclick: () => { S.nights = []; S.calib = []; S.nightsExample = false; save(); bus.rerender(); toast('Example nights cleared.'); },

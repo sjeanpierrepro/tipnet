@@ -1,7 +1,7 @@
 // Tonight screen: one number in, estimated take-home out. Also exports the night form used by "edit night".
 import { computeNight, periodTotals, periodIndex, shiftsPerPeriod, weeklyHours, payAmount, todayISO, num } from '../math.js';
 import { businessDate, cutoffFromSettings, checkCash, negativeCheckReason } from '../inputs.js';
-import { el, clear, field, moneyInput, clean, numOf, money, money0, minus, pct, fmtDate, periodLabel, exampleBanner, save, getState, uid } from './common.js';
+import { el, clear, field, moneyInput, clean, numOf, money, money0, minus, pct, fmtDate, periodLabel, exampleBanner, save, getState, uid, debounce } from './common.js';
 
 let draft = null; // survives tab switches so half-typed entries are not lost
 let draftIsExample = false; // draft was pre-filled with the example night
@@ -12,6 +12,8 @@ const historyOf = (S) => (S.nightsExample ? [] : S.nights);
 
 /** Drop the in-progress entry (e.g. after Erase everything or Restore). */
 export function resetDraft() { draft = null; draftIsExample = false; }
+/** The "Late nights" rule changed: re-date the in-progress entry, unless the user picked a date themselves. */
+export function redateDraft(S) { if (draft && !draft.dateTouched) draft.date = businessDate(new Date(), cutoffFromSettings(S.settings)); }
 
 export function blankDraft(S) {
   const d = { total: '', cash: '', pay: {}, barback: true, date: businessDate(new Date(), cutoffFromSettings(S.settings)) };
@@ -94,7 +96,7 @@ export function nightFields(p, d, { big = false, onInput: onInputRaw = () => {},
   refreshCash();
   kids.push(cashField);
   const date = el('input', { type: 'date', value: d.date, 'data-focus-key': key + '-date' });
-  date.addEventListener('input', () => { d.date = date.value || todayISO(); onInput(); });
+  date.addEventListener('input', () => { d.date = date.value || todayISO(); d.dateTouched = true; onInput(); });
   kids.push(field('Date', date));
   return { root: el('div', { class: 'stack' }, kids), totalInput, setTotalError };
 }
@@ -165,7 +167,10 @@ export function render(root) {
   if (!draft) { draft = blankDraft(S); draftIsExample = exampleMode(S); }
   const d = draft;
   const banner = exampleBanner();
-  const resultHost = el('div', { 'aria-live': 'polite' });
+  const resultHost = el('div'); // the full card is not a live region: it changes on every keystroke
+  const liveSummary = el('p', { class: 'sr-only', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true' });
+  let lastSummary = '', started = false;
+  const announce = debounce(() => { liveSummary.textContent = lastSummary; }, 800);
   const savedMsg = el('p', { class: 'hint', role: 'status' });
 
   const update = () => {
@@ -180,6 +185,9 @@ export function render(root) {
       ot = el('p', { class: 'note' }, 'You have logged about ' + (Math.round(wk.hours * 10) / 10) + ' hours this week (Monday to Sunday). If some were overtime, add Overtime as its own pay type in Setup and log those hours there. TipNet does not work out overtime pay for you.');
     }
     clear(resultHost).append(resultCard(c, S, ot));
+    lastSummary = c.total ? 'Estimated take-home ' + money(c.net) : '';
+    if (!started) { started = true; liveSummary.textContent = lastSummary; return; } // first fill is silent
+    announce(); // only a short summary is announced, after typing pauses
   };
   const fields = nightFields(p, d, { big: true, onInput: () => { savedMsg.textContent = ''; fields.setTotalError(''); update(); } });
 
@@ -203,6 +211,6 @@ export function render(root) {
     if (m) m.textContent = 'Saved. ' + money(net) + ' take-home for ' + fmtDate(night.date) + '.' + (cashWas === 'negative' || cashWas === 'over' ? ' The cash amount was not saved.' : '');
   });
 
-  root.append(el('div', { class: 'stack' }, banner, stripCard(S), form, resultHost));
+  root.append(el('div', { class: 'stack' }, banner, stripCard(S), form, liveSummary, resultHost));
   update();
 }

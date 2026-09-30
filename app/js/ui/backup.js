@@ -62,7 +62,7 @@ export function eraseEverything() {
   flush();
 }
 
-export function renderBackup(host) {
+export function renderBackup(host, { restoreOnly = false } = {}) {
   const S = getState();
   const box = el('textarea', { id: 'bk-code', placeholder: 'Paste a backup code here, then tap Restore.', spellcheck: 'false', autocapitalize: 'off', rows: '4' });
   const msg = el('p', { class: 'note', 'aria-live': 'polite', hidden: true });
@@ -98,6 +98,14 @@ export function renderBackup(host) {
     },
   });
 
+  if (restoreOnly) { // guided setup: just the paste box and Restore, nothing to copy or erase yet
+    host.append(el('section', { class: 'card stack', id: 'restore-card' },
+      el('h2', null, 'Restore a backup'),
+      el('p', { class: 'note' }, 'On your old phone, open TipNet, go to Setup, and tap Copy backup code. Paste that code here.'),
+      el('div', { class: 'field' }, el('label', { for: 'bk-code' }, 'Backup code'), box),
+      el('div', { class: 'cluster' }, restore), msg));
+    return;
+  }
   host.append(el('section', { class: 'card stack' },
     el('h2', null, 'Backup'),
     el('p', { class: 'note' }, 'Your nights live only in this browser. Copy a backup code now and then, and paste it here on a new phone to restore.'),
