@@ -232,6 +232,14 @@ export function paydayInfo(profile, today = todayISO()) {
   }
   return none;
 }
+/** The most recent payday on or before today (the check before the next one). Unpaid bills since then still count. */
+export function lastPayday(profile, today = todayISO()) {
+  const np = paydayInfo(profile, today);
+  const d = addDays(periodRange(profile, np.periodIndex - 1).end, payDelayOf(profile));
+  return Number.isFinite(np.periodIndex) && d <= today
+    ? d
+    : periodRange(profile, periodIndex(profile, today)).start;
+}
 /** {date, daysAway} of the next payday. */
 export function nextPayday(profile, today = todayISO()) {
   const { date, daysAway } = paydayInfo(profile, today);
@@ -423,7 +431,7 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
 
   // Unpaid bills in a date range. Earlier unpaid bills in this period still count: you still owe them.
   const unpaid = (from, to) => billsDue(budget, from, to).filter((b) => !isPaid(budget, b));
-  const bills = unpaid(range.start, addDays(payday, -1));
+  const bills = unpaid(lastPayday(profile, today), addDays(payday, -1));
   const billsC = sumC(bills, (b) => toCents(num(b.amount)));
 
   const goals = goalPieces(budget, payday);

@@ -66,10 +66,15 @@ export function parseMoney(v) {
   return neg ? -n : n;
 }
 
-/** "7.5" -> 7.5, "7:30" -> 7.5, "7h 30m" -> 7.5, junk -> 0. Never negative. */
+/** "7.5" -> 7.5, "7,5" -> 7.5 (a lone comma before 1-2 digits is a decimal), "7:30" -> 7.5, "7h 30m" -> 7.5, junk -> 0.
+ *  Never negative. "1,250" or "1,250.5" is ambiguous (thousands? decimal?) and returns NaN so the caller can reject the row. */
 export function parseHours(v) {
-  const s = String(v == null ? '' : v).trim();
+  let s = String(v == null ? '' : v).trim();
   let x;
+  if (/^\d*,\d+$/.test(s) || /^\d+,\d+\.\d+$/.test(s)) {
+    if (/^\d*,\d{1,2}$/.test(s)) s = s.replace(',', '.');
+    else return NaN;
+  } else if (/^\d+(?:,\d{3})+(?:\.\d+)?$/.test(s)) return NaN;
   if ((x = /^(\d+):(\d{1,2})(?::\d{1,2})?$/.exec(s))) return +x[1] + +x[2] / 60;
   if ((x = /^(\d+(?:\.\d+)?)\s*h(?:ours?|rs?)?\s*(?:(\d+)\s*m(?:in(?:ute)?s?)?)?$/i.exec(s)))
     return +x[1] + (x[2] ? +x[2] / 60 : 0);
@@ -110,14 +115,15 @@ export function parseDate(v, refYear = new Date().getFullYear()) {
 
 /**
  * Mapping presets. A mapping is {date, total, cash, card, hours, employee} where each value is a
- * lowercase header name to match (or null), resolved by guessMapping/resolveMapping.
+ * lowercase header name to match (or null; "tips" is cash + card together, "total" is tips plus pay), resolved by guessMapping/resolveMapping.
  */
 export const MAPPING_PRESETS = {
   generic: {
     label: 'Generic CSV',
     headers: {
       date: ['date', 'business date', 'day', 'shift date'],
-      total: ['total', 'total made', 'total tips', 'earnings', 'total earned'],
+      total: ['total', 'total made', 'earnings', 'total earned'],
+      tips: ['tips', 'total tips', 'tips total', 'tip total', 'tips (cash + card)', 'total tip'],
       cash: ['cash', 'cash tips', 'cash tip'],
       card: ['card', 'card tips', 'credit tips', 'credit card tips', 'non-cash tips'],
       hours: ['hours', 'regular hours', 'hours worked', 'total hours'],
@@ -146,6 +152,21 @@ export function guessMapping(headerRow, preset = 'generic') {
     }
     out[field] = idx >= 0 ? idx : null;
   });
+  // Any other header that mentions "tip" (and is not a cash or card column) is tips, never the total.
+  if (out.tips == null && spec.tips)
+    out.tips = hs.findIndex(
+      (h, i) =>
+        /\btips?\b/.test(h) &&
+        !/cash|card|credit/.test(h) &&
+        i !== out.cash &&
+        i !== out.card &&
+        i !== out.total,
+    );
+  if (out.tips === -1) out.tips = null;
+  if (out.total != null && /tip/.test(hs[out.total]) && out.tips == null) {
+    out.tips = out.total;
+    out.total = null;
+  }
   return out;
 }
 /** Turn a saved mapping of header NAMES back into indexes for a new file (or null if headers are gone). */
@@ -156,6 +177,11 @@ export function namesToMapping(headerRow, names) {
     const i = names[f] == null ? -1 : hs.indexOf(String(names[f]).toLowerCase());
     out[f] = i >= 0 ? i : null;
   });
+  // A mapping saved before the Tips choice existed may have a tips column stored as "Total made".
+  if (out.total != null && out.tips == null && /tip/.test(hs[out.total])) {
+    out.tips = out.total;
+    out.total = null;
+  }
   return out;
 }
 /** Convert index mapping to header-name mapping for storing in settings.csvMapping. */
@@ -180,15 +206,17 @@ export function listEmployees(rows, mapping) {
 
 /**
  * buildNights(rows, mapping, opts) -> {nights, skipped}
- *  rows: DATA rows (no header) as arrays. mapping: column indexes {date,total,cash,card,hours,employee}.
- *  opts: {employee, refYear, rate (hourly $ for hours*rate), payId (id of main pay type; hours are stored there),
- *         barback (default true)}
- *  total = total column, else cash + card + hours * rate. Several rows on the same date are summed.
- *  Night: {id, date, total, cash|null, pay:{[payId]:hours}, barback}. skipped: [{row, reason}] (row = 1-based data row;
- *  reason is 'date', 'amount', or 'negative' for a negative cash, card, total or hours value).
+ *  rows: DATA rows (no header) as arrays. mapping: column indexes {date,total,tips,cash,card,hours,employee}.
+ *  opts: {employee, refYear, rate (hourly $ for hours*rate), payId (id of the first HOURLY pay type; hours are stored there;
+ *         null = no hourly pay type, so hours are ignored), barback (default true)}
+ *  total = total column, else tips (or cash + card) + hours * rate. When the Tips column is mapped the night also stores
+ *  `tips`. Several rows on the same date are summed.
+ *  Night: {id, date, total, cash|null, [tips], pay:{[payId]:hours}, barback}. skipped: [{row, reason}] (row = 1-based data row;
+ *  reason is 'date', 'amount', 'hours' (unreadable, ambiguous or over 24), or 'negative' for a negative money or hours value).
  */
 export function buildNights(rows, mapping, opts = {}) {
   const { employee, refYear, rate = 0, payId = 'p1', barback = true } = opts;
+  const useHours = payId != null;
   const byDate = new Map();
   const skipped = [];
   rows.forEach((r, i) => {
@@ -201,75 +229,100 @@ export function buildNights(rows, mapping, opts = {}) {
     }
     const cash = mapping.cash != null ? parseMoney(r[mapping.cash]) : null;
     const card = mapping.card != null ? parseMoney(r[mapping.card]) : null;
-    const hours = mapping.hours != null ? parseHours(r[mapping.hours]) : 0;
+    const tips = mapping.tips != null ? parseMoney(r[mapping.tips]) : null;
+    const hours = mapping.hours != null && useHours ? parseHours(r[mapping.hours]) : 0;
     let total = mapping.total != null ? parseMoney(r[mapping.total]) : null;
     // A negative amount or hours (refund, void, typo) is not a night we can trust: skip the row and say why.
-    const negHours = mapping.hours != null && looksNegative(r[mapping.hours]);
+    const negHours = mapping.hours != null && useHours && looksNegative(r[mapping.hours]);
     if (
       (cash != null && cash < 0) ||
       (card != null && card < 0) ||
+      (tips != null && tips < 0) ||
       (total != null && total < 0) ||
       negHours
     ) {
       skipped.push({ row: rowNo, reason: 'negative' });
       return;
     }
+    if (Number.isNaN(hours) || hours > 24) {
+      skipped.push({ row: rowNo, reason: 'hours' });
+      return;
+    }
     if (total == null) {
-      if (cash == null && card == null && !(hours && rate)) {
+      const tipsAmt = tips != null ? tips : cash != null || card != null ? (cash || 0) + (card || 0) : null;
+      if (tipsAmt == null && !(hours && rate)) {
         skipped.push({ row: rowNo, reason: 'amount' });
         return;
       }
-      total = fromCents(toCents(cash || 0) + toCents(card || 0) + toCents(hours * rate));
+      total = fromCents(toCents(tipsAmt || 0) + toCents(hours * rate));
     }
-    const cur = byDate.get(date) || { date, totalC: 0, cashC: null, hours: 0 };
+    const cur = byDate.get(date) || { date, totalC: 0, cashC: null, tipsC: null, hours: 0 };
     cur.totalC += toCents(total);
     if (cash != null) cur.cashC = (cur.cashC || 0) + toCents(cash);
+    if (tips != null) cur.tipsC = (cur.tipsC || 0) + toCents(tips);
     cur.hours += hours;
     byDate.set(date, cur);
   });
   const base = Date.now();
   const nights = [...byDate.values()]
     .sort((a, b) => (a.date < b.date ? -1 : 1))
-    .map((c, i) => ({
-      id: base + i,
-      date: c.date,
-      total: fromCents(c.totalC),
-      cash: c.cashC == null ? null : fromCents(c.cashC),
-      pay: c.hours ? { [payId]: c.hours } : {},
-      barback,
-    }));
+    .map((c, i) => {
+      const n = {
+        id: base + i,
+        date: c.date,
+        total: fromCents(c.totalC),
+        cash: c.cashC == null ? null : fromCents(c.cashC),
+        pay: c.hours ? { [payId]: c.hours } : {},
+        barback,
+      };
+      if (c.tipsC != null) n.tips = fromCents(c.tipsC);
+      return n;
+    });
   return { nights, skipped };
 }
 
-/** Split incoming nights into new ones and ones whose date already exists. */
+/** Split incoming nights into new ones and ones whose date already exists.
+ *  duplicates: [{incoming, existing (the first night on that date), existingAll (every night on that date)}]. */
 export function dedupeNights(incoming, existing) {
-  const byDate = new Map(existing.map((n) => [n.date, n]));
+  const byDate = new Map();
+  existing.forEach((n) => byDate.set(n.date, (byDate.get(n.date) || []).concat(n)));
   const fresh = [],
     duplicates = [];
   incoming.forEach((n) =>
-    byDate.has(n.date) ? duplicates.push({ incoming: n, existing: byDate.get(n.date) }) : fresh.push(n),
+    byDate.has(n.date)
+      ? duplicates.push({ incoming: n, existing: byDate.get(n.date)[0], existingAll: byDate.get(n.date) })
+      : fresh.push(n),
   );
   return { fresh, duplicates };
 }
 /**
- * Merge incoming nights into existing. overwrite=true updates same-date nights (keeping the existing id,
- * barback choice, other pay types, and cash when the import has none); false skips them. Returns new array + counts.
+ * Merge incoming nights into existing. overwrite=true replaces EVERY existing night on a duplicate date with the imported
+ * night. With exactly one existing night it keeps that night's id, barback choice, other pay types, and cash when the
+ * import has none; with several it uses the imported night as is (first night's id and barback choice). false keeps them all
+ * and skips those dates. Returns new array + counts (replaced = dates replaced, removed = existing nights removed).
  */
 export function mergeNights(existing, incoming, { overwrite = false } = {}) {
   const { fresh, duplicates } = dedupeNights(incoming, existing);
   let out = existing.slice();
+  let removed = 0;
   if (overwrite) {
     const dupDates = new Set(duplicates.map((d) => d.incoming.date));
     out = out.filter((n) => !dupDates.has(n.date));
+    removed = existing.length - out.length;
     out.push(
-      ...duplicates.map(({ incoming: inc, existing: ex }) => ({
-        ...ex,
-        ...inc,
-        id: ex.id,
-        cash: inc.cash ?? ex.cash ?? null,
-        pay: { ...ex.pay, ...inc.pay },
-        barback: ex.barback,
-      })),
+      ...duplicates.map(({ incoming: inc, existing: ex, existingAll: all }) => {
+        if (all.length !== 1) return { ...inc, id: ex.id, barback: ex.barback };
+        const merged = {
+          ...ex,
+          ...inc,
+          id: ex.id,
+          cash: inc.cash ?? ex.cash ?? null,
+          pay: { ...ex.pay, ...inc.pay },
+          barback: ex.barback,
+        };
+        if (inc.tips === undefined) delete merged.tips; // the old tips no longer match the new total
+        return merged;
+      }),
     );
   }
   out.push(...fresh);
@@ -277,6 +330,7 @@ export function mergeNights(existing, incoming, { overwrite = false } = {}) {
     nights: out,
     added: fresh.length,
     replaced: overwrite ? duplicates.length : 0,
+    removed,
     skipped: overwrite ? 0 : duplicates.length,
   };
 }

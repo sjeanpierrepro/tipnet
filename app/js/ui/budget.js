@@ -4,6 +4,7 @@ import { todayISO, periodIndex, periodRange, toCents, round2, indexNights } from
 import { isSetUp } from '../storage.js';
 import {
   safeToSpend,
+  lastPayday,
   hasPayDelay,
   billsDue,
   categoryStatus,
@@ -682,19 +683,20 @@ function nextCheckCard(S, r0) {
     el(
       'div',
       { class: 'card-title' },
-      'Next paycheck, ' + fmtShort(a.periodStart) + ' to ' + fmtShort(a.periodEnd),
+      'After payday (' + fmtShort(a.periodStart) + ' – ' + fmtShort(a.periodEnd) + ')',
     ),
     el(
       'dl',
       { class: 'breakdown' },
       row('Projected check (estimated)', known ? money(a.projectedCheck) : 'Not known yet'),
-      row('Bills due that period (' + a.bills.length + ')', '−' + money(a.billsTotal)),
+      row('Bills due in that window (' + a.bills.length + ')', '−' + money(a.billsTotal)),
       row('Savings goals', '−' + money(a.goalsTotal)),
       row('What is left', known ? money(a.left) : '–', 'total'),
     ),
     el(
       'p',
       { class: 'hint' },
+      'These dates are the days you will be spending this check, from payday to the next payday. They are not the pay period the check is for. ',
       known
         ? CHECK_HINT[a.checkFrom] || CHECK_HINT.current
         : 'Log a night with its cash in hand and TipNet can estimate your check. The check is what is left after the cash you already took home.',
@@ -711,11 +713,12 @@ function billsCard(S, r0) {
   // Same window safe to spend and the next paycheck card count, so no bill they include is missing here.
   const nextEnd = periodRange(p, idx + 1).end;
   const afterEnd = r0.after.periodEnd;
-  const upcoming = billsDue(B, periodRange(p, idx).start, afterEnd > nextEnd ? afterEnd : nextEnd);
+  const upcoming = billsDue(B, lastPayday(p, today), afterEnd > nextEnd ? afterEnd : nextEnd);
   const rows = upcoming.map((b) => {
     const key = paidKey(b.id, b.date); // the bill and its due date, so a new pay schedule never un-pays it
     const cb = el('input', {
       type: 'checkbox',
+      'aria-label': b.name + ' paid',
       checked: !!B.paidBills[key],
       'data-focus-key': 'paid-' + key,
     });
@@ -998,6 +1001,7 @@ function goalsCard(S) {
     const dkey = goalKey(g.id, payday);
     const done = el('input', {
       type: 'checkbox',
+      'aria-label': 'Set aside for ' + g.name + ' this paycheck',
       checked: isGoalDone(B, g.id, payday),
       'data-focus-key': 'goal-done-' + g.id,
     });
@@ -1227,6 +1231,8 @@ export function render(root) {
         setupFirstCard({
           text: 'Your budget works from your take-home, so TipNet needs your paystub first. It takes about 3 minutes.',
         }),
+        // A real (non-dev) subscription stays manageable, so "Remove from this device" is never out of reach.
+        ent() && ent().plan !== 'dev' ? subscriptionCard() : null,
       ),
     );
     return;

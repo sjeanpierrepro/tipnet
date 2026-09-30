@@ -15,7 +15,8 @@ import { lockFinished } from '../storage.js';
 
 const FIELDS = [
   ['date', 'Date', true],
-  ['total', 'Total made', false],
+  ['tips', 'Tips (cash + card)', false],
+  ['total', 'Total made (tips + pay)', false],
   ['cash', 'Cash tips', false],
   ['card', 'Card tips', false],
   ['hours', 'Hours', false],
@@ -25,6 +26,7 @@ const REASONS = {
   date: 'no date we could read',
   amount: 'no amount',
   negative: 'a negative amount or hours',
+  hours: 'hours we could not read, or more than 24',
 };
 
 export function renderImporter(host) {
@@ -165,12 +167,12 @@ export function renderImporter(host) {
         preview.append(el('p', { class: 'hint' }, 'Choose the Date column to see a preview.'));
         return;
       }
-      if (m.total == null && m.cash == null && m.card == null && m.hours == null) {
+      if (m.total == null && m.tips == null && m.cash == null && m.card == null && m.hours == null) {
         preview.append(
           el(
             'p',
             { class: 'hint' },
-            'Choose Total made, or Cash tips, Card tips and Hours, to see a preview.',
+            'Choose Tips, Total made, or Cash tips, Card tips and Hours, to see a preview.',
           ),
         );
         return;
@@ -179,12 +181,13 @@ export function renderImporter(host) {
         preview.append(el('p', { class: 'hint' }, 'Choose your name above to see a preview.'));
         return;
       }
-      const main = p.payTypes[0] || { id: 'p1', rate: 0 };
+      // Hours and the hourly rate go on your first HOURLY pay type. A per-shift type is not paid by the hour.
+      const hourly = (p.payTypes || []).find((t) => t.unit === 'hr');
       const { nights, skipped } = buildNights(dataRows(), m, {
         employee: st.employee,
         refYear: new Date().getFullYear(),
-        rate: num(main.rate),
-        payId: main.id,
+        rate: hourly ? num(hourly.rate) : 0,
+        payId: hourly ? hourly.id : null,
         barback: true,
       });
       const { duplicates } = dedupeNights(
@@ -230,23 +233,24 @@ export function renderImporter(host) {
       );
       if (nights.length > 5)
         preview.append(el('p', { class: 'hint' }, 'and ' + (nights.length - 5) + ' more.'));
-      if (skipped.length) {
-        const why = {};
-        skipped.forEach((s) => {
-          why[s.reason] = (why[s.reason] || 0) + 1;
-        });
+      if (m.hours != null && !hourly)
         preview.append(
           el(
             'p',
             { class: 'hint' },
-            skipped.length +
-              ' row' +
-              (skipped.length > 1 ? 's' : '') +
-              ' skipped (' +
-              Object.entries(why)
-                .map(([r, n]) => n + ' with ' + REASONS[r])
-                .join(', ') +
-              ').',
+            'Hours were not imported: you have no hourly pay type in Setup. Amounts come from the tips or total columns only.',
+          ),
+        );
+      if (skipped.length) {
+        const off = st.header ? 2 : 1; // the row number as your spreadsheet shows it
+        preview.append(
+          el('p', { class: 'hint' }, skipped.length + ' row' + (skipped.length > 1 ? 's' : '') + ' skipped:'),
+          el(
+            'ul',
+            { class: 'list', 'aria-label': 'Skipped rows' },
+            skipped.map((s) =>
+              el('li', { class: 'list-row hint' }, 'Row ' + (s.row + off - 1) + ': ' + REASONS[s.reason]),
+            ),
           ),
         );
       }
@@ -273,6 +277,19 @@ export function renderImporter(host) {
             ),
             mk(false, 'Keep what I have and skip those dates'),
             mk(true, 'Replace my nights on those dates'),
+            ...duplicates
+              .filter((d) => d.existingAll.length > 1)
+              .map((d) =>
+                el(
+                  'p',
+                  { class: 'hint' },
+                  'Replacing replaces ' +
+                    d.existingAll.length +
+                    ' nights on ' +
+                    fmtDate(d.incoming.date) +
+                    ' with one.',
+                ),
+              ),
           ),
         );
       }
@@ -325,7 +342,7 @@ export function renderImporter(host) {
       el(
         'p',
         { class: 'hint' },
-        'Match the columns. If you pick Total made, that is used. Otherwise TipNet adds cash tips, card tips and hours times your main hourly rate.',
+        'Match the columns. Tips is what you were tipped in all. TipNet adds hours times your hourly rate to get the total. If you pick Total made (tips plus pay), that is used as is. Or pick Cash tips and Card tips.',
       ),
       grid,
       empHost,

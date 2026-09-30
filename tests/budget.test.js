@@ -265,7 +265,8 @@ test('payDelay 0: check arrives on the last day of the period', () => {
   assert.equal(B.nextPayday(p, '2026-10-04').date, '2026-10-18'); // payday today counts as paid
   assert.equal(B.nextPayday(p, '2026-10-05').date, '2026-10-18');
   const r = B.safeToSpend(B.exampleBudget(), p, M.exampleNights(TODAY), TODAY, { cashOnHand: 2000 });
-  assert.deepEqual(dates(r.bills), ['b1@2026-10-01']); // due before 10-04
+  // due before 10-04; b3 (9-20) fell on the last payday and is still unpaid, so it still counts
+  assert.deepEqual(dates(r.bills), ['b3@2026-09-20', 'b1@2026-10-01']);
   assert.equal(r.after.periodStart, '2026-10-04');
 });
 

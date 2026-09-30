@@ -65,12 +65,12 @@ const HEAD = ['Business Date', 'Employee', 'Cash Tips', 'Card Tips', 'Hours', 'T
 
 test('guessMapping and saved-mapping round trip', () => {
   const m = guessMapping(HEAD);
-  assert.deepEqual(m, { date: 0, total: 5, cash: 2, card: 3, hours: 4, employee: 1 });
+  assert.deepEqual(m, { date: 0, total: 5, tips: null, cash: 2, card: 3, hours: 4, employee: 1 });
   const names = mappingToNames(HEAD, m);
   assert.equal(names.date, 'business date');
   assert.deepEqual(
     namesToMapping(['Total', 'Business Date', 'Employee', 'Cash Tips', 'Card Tips', 'Hours'], names),
-    { date: 1, total: 0, cash: 3, card: 4, hours: 5, employee: 2 },
+    { date: 1, total: 0, tips: null, cash: 3, card: 4, hours: 5, employee: 2 },
   );
   assert.ok(MAPPING_PRESETS.generic);
   assert.equal(MAPPING_PRESETS.toast, undefined);

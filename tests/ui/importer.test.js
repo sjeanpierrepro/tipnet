@@ -63,9 +63,9 @@ test('importer: employee filter, skipped-row reasons, and Keep skips duplicate d
     const t = page.text();
     assert.match(t, /2 nights ready to import/); // 09-01 and 09-02; Alex's row is not counted
     assert.match(t, /3 rows skipped/);
-    assert.match(t, /1 with no date we could read/);
-    assert.match(t, /1 with no amount/);
-    assert.match(t, /1 with a negative amount or hours/);
+    assert.match(t, /Row 5: no date we could read/);
+    assert.match(t, /Row 7: no amount/);
+    assert.match(t, /Row 6: a negative amount or hours/);
     assert.match(t, /1 of these dates already has a night saved/);
     page.click(page.button('Import 2 nights'));
     await page.settle();
