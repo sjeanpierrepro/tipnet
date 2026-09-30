@@ -17,9 +17,13 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the version check compares the pushed commits
       - uses: actions/setup-node@v7
         with:
           node-version: 22
+      # Fails when app/ files changed but VERSION in app/sw.js did not (skips on first push and manual runs).
+      - run: node tools/check-version.mjs "${{ github.event.before }}" "${{ github.sha }}"
       - run: npm ci
       - run: npm run lint
       - run: npm test

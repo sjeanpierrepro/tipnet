@@ -14,7 +14,7 @@ import * as M from '../app/js/math.js';
 const NOW = Date.parse('2026-10-01T12:00:00Z');
 const code = (o) => Buffer.from(JSON.stringify(o), 'utf8').toString('base64');
 const PROD = { hostname: 'tipnet.example' };
-const ON = { provider: 'lemonsqueezy' };
+const ON = { provider: 'lemonsqueezy', productIds: [123] };
 
 /* ---------- 1. paywall bypass ---------- */
 test('hand-made backup code with an active entitlement does not unlock anything', () => {

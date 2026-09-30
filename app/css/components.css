@@ -741,8 +741,6 @@ h1 {
 }
 .field input[type='date'] {
   min-width: 0;
-}
-.field input[type='date'] {
   padding-left: 8px;
   padding-right: 6px;
   font-size: 15px;
@@ -786,9 +784,6 @@ details > summary.btn-link {
   display: flex;
   align-items: center;
   text-decoration: underline;
-}
-.check small {
-  display: block;
 }
 .noscript {
   padding: 16px;

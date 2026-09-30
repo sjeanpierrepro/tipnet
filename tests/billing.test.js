@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   isUnlocked,
+  budgetVisible,
   needsRevalidate,
   maskKey,
   parseLemonSqueezy,
@@ -26,7 +27,7 @@ const ent = (o = {}) => ({
 });
 const json = (body) => async () => ({ json: async () => body });
 
-const ON = { provider: 'lemonsqueezy' };
+const ON = { provider: 'lemonsqueezy', productIds: [123] };
 const un = (e, now = NOW, opts = {}) =>
   isUnlocked(e, now, { config: ON, loc: { hostname: 'tipnet.example' }, ...opts });
 
@@ -139,7 +140,11 @@ test('devEntitlement only on localhost with ?unlock=dev', () => {
 
 test('getProvider is null until configured', () => {
   assert.equal(getProvider({ provider: null }), null);
-  assert.equal(getProvider({ provider: 'lemonsqueezy' }).id, 'lemonsqueezy');
+  assert.equal(getProvider({ provider: 'lemonsqueezy', productIds: [123] }).id, 'lemonsqueezy');
+  // No product id filled in: payments stay OFF, so a key from any store can never unlock Budget.
+  assert.equal(getProvider({ provider: 'lemonsqueezy' }), null);
+  assert.equal(getProvider({ provider: 'lemonsqueezy', productIds: [] }), null);
+  assert.equal(getProvider({ provider: 'lemonsqueezy', productIds: ['', null, 'abc'] }), null);
 });
 
 test('a server error or rate limit never locks anyone', async () => {
@@ -215,4 +220,58 @@ test('revalidate: valid:false locks even when the key status is still active', a
   const g = await revalidate(stale, { provider: good, now: NOW, online: true });
   assert.equal(g.status, 'active');
   assert.equal(un(g), true);
+});
+
+const liveBody = (extra = {}, lk = {}) => ({
+  activated: true,
+  valid: true,
+  license_key: { status: 'active', test_mode: false, ...lk },
+  instance: { id: 'inst-1' },
+  meta: { product_id: 123, variant_name: 'Monthly', ...extra },
+});
+
+test('test-mode keys are rejected unless allowTestMode is on', async () => {
+  const testKey = liveBody({}, { test_mode: true });
+  assert.equal(parseLemonSqueezy(liveBody(), [123]).ok, true);
+  const bad = parseLemonSqueezy(testKey, [123]);
+  assert.equal(bad.ok, false);
+  assert.match(bad.error, /test key/);
+  assert.equal(parseLemonSqueezy(testKey, [123], true).ok, true, 'owner testing switch');
+  assert.equal(parseLemonSqueezy(liveBody({ test_mode: true }), [123]).ok, false, 'flag in meta counts too');
+  // through the provider with a fake fetch, and through activateKey
+  const p = lemonSqueezyProvider({ fetch: json(testKey), productIds: [123] });
+  assert.equal((await activateKey('K', { provider: p })).ok, false);
+  const allowed = lemonSqueezyProvider({ fetch: json(testKey), productIds: [123], allowTestMode: true });
+  assert.equal((await activateKey('K', { provider: allowed })).ok, true);
+  // getProvider passes allowTestMode from the config, and only an explicit true counts
+  const viaConfig = getProvider(
+    { provider: 'lemonsqueezy', productIds: [123], allowTestMode: true },
+    { fetch: json(testKey) },
+  );
+  assert.equal((await activateKey('K', { provider: viaConfig })).ok, true);
+  const strict = getProvider(
+    { provider: 'lemonsqueezy', productIds: [123], allowTestMode: 'yes' },
+    { fetch: json(testKey) },
+  );
+  assert.equal((await activateKey('K', { provider: strict })).ok, false);
+  // a recheck of a test key locks too
+  const re = await revalidate(ent({ validatedAt: new Date(NOW - 2 * DAY).toISOString() }), {
+    provider: p,
+    now: NOW,
+  });
+  assert.notEqual(re.status, 'active');
+});
+
+test('a key from another store is rejected, and no product id means payments are off', async () => {
+  const other = liveBody({ product_id: 999 });
+  const p = getProvider({ provider: 'lemonsqueezy', productIds: [123] }, { fetch: json(other) });
+  const r = await activateKey('K', { provider: p });
+  assert.equal(r.ok, false);
+  assert.match(r.error, /different product/);
+  // shipped settings (provider set, productIds empty): no provider, Budget tab and unlock both stay off
+  const shipped = { provider: 'lemonsqueezy', productIds: [] };
+  assert.equal(getProvider(shipped), null);
+  assert.equal(un(ent(), NOW, { config: shipped }), false);
+  assert.equal(budgetVisible(null, NOW, { config: shipped, loc: { hostname: 'tipnet.example' } }), false);
+  assert.equal((await activateKey('K', { provider: getProvider(shipped) })).ok, false);
 });

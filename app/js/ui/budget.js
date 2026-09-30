@@ -11,6 +11,9 @@ import {
   migrateBudget,
   paidKey,
   isPaid,
+  goalKey,
+  isGoalDone,
+  paydayInfo,
   convertPaidKeys,
   hasOldPaidKeys,
   balanceIsStale,
@@ -271,7 +274,7 @@ function lockedView(S) {
     el(
       'section',
       { class: 'card stack' },
-      el('h2', null, 'Budget'),
+      el('h1', null, 'Budget'),
       el(
         'p',
         null,
@@ -604,6 +607,7 @@ function heroCard(S, r0) {
 }
 
 function breakdown(S, r) {
+  const perDayCats = r.daysAway > 0 ? r.categoriesTotal / r.daysAway : 0;
   const catName = new Map(S.budget.categories.map((c) => [c.id, c.name]));
   return el(
     'details',
@@ -631,7 +635,15 @@ function breakdown(S, r) {
       row('Bills due before payday (' + r.bills.length + ' unpaid)', '−' + money(r.billsTotal)),
       ...r.bills.map((b) => row('   ' + b.name + ', ' + fmtShort(b.date), '−' + money(b.amount), 'hint')),
       row('Savings goals this paycheck', '−' + money(r.goalsTotal)),
-      ...r.goals.filter((g) => g.amount > 0).map((g) => row('   ' + g.name, '−' + money(g.amount), 'hint')),
+      ...r.goals
+        .filter((g) => g.due > 0)
+        .map((g) =>
+          row(
+            '   ' + g.name + (g.done ? ' (already set aside)' : ''),
+            g.done ? money(g.due) : '−' + money(g.due),
+            'hint',
+          ),
+        ),
       row('Set aside for spending', '−' + money(r.categoriesTotal)),
       ...r.categories
         .filter((c) => c.reserved > 0)
@@ -641,7 +653,11 @@ function breakdown(S, r) {
     el(
       'p',
       { class: 'hint', style: 'padding-top:var(--s-2)' },
-      'Set aside for spending is what is left in each category this month, scaled to the days until payday. Money from your next check is not counted until you are paid. Payday is the day your check arrives: set it in Setup, or TipNet assumes the day after your pay period ends. All figures are estimates.',
+      'Set aside for spending is about ' +
+        money(perDayCats) +
+        ' a day across your spending categories (each one is its monthly amount divided by the days in the month), for the ' +
+        plural(r.daysAway, 'day') +
+        ' until payday. Where a category has less than that left this month, TipNet sets aside only what is left. Money from your next check is not counted until you are paid. Payday is the day your check arrives: set it in Setup, or TipNet assumes the day after your pay period ends. All figures are estimates.',
     ),
   );
 }
@@ -965,6 +981,8 @@ function spendingCard(S) {
 /* ---------- (e) goals ---------- */
 function goalsCard(S) {
   const B = S.budget;
+  const payday = paydayInfo(S.profile, todayISO()).date; // a tick lasts until this payday
+  B.goalsDone = B.goalsDone || {};
   const rows = B.goals.map((g) => {
     if (isEditing('goal', g.id))
       return el('li', { class: 'list-row wrap' }, el('div', { class: 'main' }, entityForm('goal', g)));
@@ -973,6 +991,19 @@ function goalsCard(S) {
       placeholder: 'Amount',
       'aria-label': 'Amount to add to ' + g.name,
       'data-focus-key': 'goal-add-' + g.id,
+      class: 'input',
+    });
+    const dkey = goalKey(g.id, payday);
+    const done = el('input', {
+      type: 'checkbox',
+      checked: isGoalDone(B, g.id, payday),
+      'data-focus-key': 'goal-done-' + g.id,
+    });
+    done.addEventListener('change', () => {
+      if (done.checked) B.goalsDone[dkey] = true;
+      else delete B.goalsDone[dkey];
+      save();
+      bus.rerender();
     });
     const addBtn = el('button', { type: 'button', class: 'btn btn-secondary btn-small' }, 'Add to saved');
     addBtn.addEventListener('click', () => {
@@ -983,6 +1014,7 @@ function goalsCard(S) {
         return;
       }
       g.saved = (toCents(g.saved) + toCents(n)) / 100;
+      B.goalsDone[dkey] = true; // you just set money aside for this paycheck, so it stops coming out of the money you have now
       save();
       bus.rerender();
     });
@@ -1012,6 +1044,12 @@ function goalsCard(S) {
           money(g.saved) + ' of ' + money(g.target) + ', ' + money(g.perPaycheck) + ' per paycheck. ' + togo,
         ),
         el('div', { class: 'cluster' }, el('div', { style: 'flex:1;min-width:120px' }, add), addBtn),
+        el('label', { class: 'check' }, done, 'Set aside for this paycheck'),
+        el(
+          'div',
+          { class: 'hint' },
+          'Tick this once you have put the money away, or use Add to saved. It then stops coming out of the money you have now until your next payday.',
+        ),
       ),
       el(
         'div',
@@ -1152,6 +1190,7 @@ function unlockedView(S) {
   return el(
     'div',
     { class: 'stack' },
+    el('h1', null, 'Budget'),
     exampleBanner(),
     empty
       ? el(

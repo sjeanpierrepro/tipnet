@@ -1,8 +1,8 @@
-import test from 'node:test';
+import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { boot, realState } from './harness.js';
-import { exampleBudget } from '../../app/js/budget.js';
-import { addDays } from '../../app/js/math.js';
+import { exampleBudget, safeToSpend, goalKey, paydayInfo } from '../../app/js/budget.js';
+import { addDays, todayISO } from '../../app/js/math.js';
 import { flush } from '../../app/js/storage.js';
 
 const DEV = 'http://localhost/?unlock=dev';
@@ -120,6 +120,95 @@ test('budget: an armed Delete button is renamed and announced', async () => {
     await Promise.resolve();
     assert.equal(del.getAttribute('aria-label'), 'Confirm delete Groceries');
     assert.match(page.$('#budget-live').textContent, /Confirm delete Groceries/);
+  } finally {
+    await page.close();
+  }
+});
+
+test('budget: has a page heading, and the goal Amount field uses the app field style', async () => {
+  const page = await boot({ url: DEV, seed: seed() });
+  try {
+    page.tab('budget');
+    assert.equal(page.$('h1', page.app).textContent, 'Budget');
+    const amount = page.$('input[aria-label="Amount to add to Emergency fund"]');
+    assert.ok(amount.classList.contains('input'), 'uses the shared .input style (44 px tall)');
+  } finally {
+    await page.close();
+  }
+});
+
+test('budget: month end sets aside a day-based allowance and explains it', async () => {
+  mock.timers.enable({ apis: ['Date'], now: new Date(2026, 8, 30, 12, 0) }); // Sep 30
+  try {
+    const page = await boot({
+      url: DEV,
+      seed: realState((S) => {
+        S.settings.setupDone = true;
+        S.profile.freq = 14;
+        S.profile.payDelay = 1;
+        S.profile.periodEnd = '2026-10-04';
+        S.profile.periodStart = '2026-09-21'; // 14 days: period 09-21..10-04, payday 10-05
+        S.budget = exampleBudget();
+        S.budget.bills = [];
+        S.budget.goals = [];
+        S.budget.balance = { amount: 2000, asOf: new Date(2026, 8, 30, 11, 0).toISOString() };
+      }),
+    });
+    try {
+      page.tab('budget');
+      const r = safeToSpend(page.state().budget, page.state().profile, [], '2026-09-30');
+      assert.equal(r.daysAway, 5);
+      // Groceries 400, Gas 160, Fun 150, nothing spent. Sep 30 = 1 day of 30, Oct 1-4 = 4 days of 31:
+      // Sep 30: 13.33 + 5.33 + 5.00 = 23.66. Oct 1-4: 51.61 + 20.65 + 19.35 = 91.61. Total 115.27 (each rounded to the cent).
+      assert.equal(r.categoriesTotal, 115.27);
+      assert.equal(r.safe, 1884.73);
+      const text = page.text();
+      assert.match(text, /a day across your spending categories/);
+      assert.match(text, /for the 5 days until payday/);
+      assert.match(text, /\$1,884.73/);
+    } finally {
+      await page.close();
+    }
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test('budget: the goal tick stops the goal coming out of your money, and Add to saved does the same', async () => {
+  const page = await boot({
+    url: DEV,
+    seed: realState((S) => {
+      S.settings.setupDone = true;
+      S.budget = exampleBudget();
+      S.budget.bills = [];
+      S.budget.categories = [];
+      S.budget.goals = [{ id: 'g1', name: 'Fund', target: 1000, saved: 0, perPaycheck: 40 }];
+      S.budget.balance = { amount: 500, asOf: new Date().toISOString() };
+    }),
+  });
+  try {
+    page.tab('budget');
+    const payday = paydayInfo(page.state().profile, todayISO()).date;
+    const tick = () => page.$('input[data-focus-key="goal-done-g1"]');
+    assert.equal(tick().checked, false);
+    assert.equal(safeToSpend(page.state().budget, page.state().profile, [], todayISO()).goalsTotal, 40);
+    page.click(tick());
+    assert.equal(page.state().budget.goalsDone[goalKey('g1', payday)], true);
+    assert.equal(safeToSpend(page.state().budget, page.state().profile, [], todayISO()).goalsTotal, 0);
+    assert.equal(tick().checked, true);
+    await flush();
+    assert.equal(
+      JSON.parse(page.win.localStorage.getItem('tipnet.v2')).budget.goalsDone[goalKey('g1', payday)],
+      true,
+      'saved to storage',
+    );
+    page.click(tick()); // untick
+    assert.equal(page.state().budget.goalsDone[goalKey('g1', payday)], undefined);
+    // Add to saved ticks it too
+    page.type(page.$('input[data-focus-key="goal-add-g1"]'), '40');
+    page.click(page.button('Add to saved'));
+    assert.equal(page.state().budget.goals[0].saved, 40);
+    assert.equal(page.state().budget.goalsDone[goalKey('g1', payday)], true);
   } finally {
     await page.close();
   }

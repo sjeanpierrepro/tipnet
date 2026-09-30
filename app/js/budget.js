@@ -8,6 +8,8 @@
 //   spends:     [{id, date, amount, categoryId, note?}]          money spent, logged by the user
 //   paidBills:  {"<billId>@<due date>": true}                    bills already paid, keyed by the bill and the day it fell due
 //                                                                (so changing your pay schedule never un-pays a bill)
+//   goalsDone:  {"<goalId>@<payday>": true}                    goals ticked "set aside for this paycheck" (keyed by goal and the payday it was
+//                                                                ticked for, so it wears off by itself when the next payday comes)
 //   balance:    {amount, asOf} (absent if none)     money you said you had, and when (ISO date and time)
 // Everything here is an estimate. It is a planning aid, not financial advice.
 import {
@@ -92,6 +94,12 @@ export function convertPaidKeys(paid, bills, profile) {
 export const hasOldPaidKeys = (budget) =>
   Object.keys((budget && budget.paidBills) || {}).some((k) => OLD_KEY.test(k));
 
+/* ---------- goals set aside for a paycheck ---------- */
+/** The key a "Set aside for this paycheck" tick is stored under: the goal and the payday it was ticked for. */
+export const goalKey = (goalId, paydayISO) => goalId + '@' + paydayISO;
+export const isGoalDone = (budget, goalId, paydayISO) =>
+  !!(budget.goalsDone && budget.goalsDone[goalKey(goalId, paydayISO)]);
+
 /* ---------- saved balance ---------- */
 /** Keeps a balance only if it has a real amount and a real date-time. */
 export function cleanBalance(b) {
@@ -174,6 +182,12 @@ export function migrateBudget(x, profile) {
       if (x.paidBills[k] === true) out.paidBills[k] = true;
     });
     if (profile && hasOldPaidKeys(out)) out.paidBills = convertPaidKeys(out.paidBills, out.bills, profile);
+  }
+  // Old data has no goalsDone: it stays valid (nothing ticked), and the field only appears once a tick exists. Keys look like "<goalId>@<YYYY-MM-DD>".
+  if (x.goalsDone && typeof x.goalsDone === 'object' && !Array.isArray(x.goalsDone)) {
+    Object.keys(x.goalsDone).forEach((k) => {
+      if (x.goalsDone[k] === true && /@\d{4}-\d{2}-\d{2}$/.test(k)) (out.goalsDone ||= {})[k] = true;
+    });
   }
   const bal = cleanBalance(x.balance);
   if (bal) out.balance = bal;
@@ -348,11 +362,19 @@ export function goalProgress(goal) {
 }
 
 /* ---------- safe to spend ---------- */
-/** Money set aside for goals this paycheck (never more than a goal still needs), in cents. */
-function goalPieces(budget) {
+/**
+ * Money to put toward goals this paycheck (never more than a goal still needs), in cents.
+ * done: the goal is ticked "set aside for this paycheck" for this payday, so it is no longer taken out of the money you have now.
+ */
+function goalPieces(budget, payday) {
   return (budget.goals || []).map((g) => {
     const remC = Math.max(0, toCents(num(g.target)) - toCents(num(g.saved)));
-    return { id: g.id, name: g.name, amountC: Math.min(Math.max(0, toCents(num(g.perPaycheck))), remC) };
+    return {
+      id: g.id,
+      name: g.name,
+      amountC: Math.min(Math.max(0, toCents(num(g.perPaycheck))), remC),
+      done: isGoalDone(budget, g.id, payday),
+    };
   });
 }
 
@@ -361,11 +383,12 @@ function goalPieces(budget) {
  * Money you have: options.cashOnHand if given, else the saved balance (budget.balance) minus spending logged since it was saved,
  * else the cash tips TipNet adds up from this pay period's nights (minus spending logged this pay period).
  * options.index: an indexNights() result to reuse.
- * Money from the check is NOT counted until payday. Category money left is pro-rated:
- * (left in category) x (days until payday / days left in the month, capped at 1).
+ * Money from the check is NOT counted until payday. Category money is set aside by the day: for each month the days until
+ * payday touch, min(what is left of that month's allowance, monthly / days in that month x the days in the window in that month).
+ * Goals ticked done for this payday (isGoalDone) are not subtracted from the money you have now; the next paycheck still counts them.
  * Paid bills are looked up by paidKey(bill id, due date).
  * Returns {payday, daysAway, income:{source:'entered'|'balance'|'cash', amount, cash, spent (logged since the balance / this period; 0 for 'entered')}, bills:[...], billsTotal,
- *  goals:[{id,name,amount}], goalsTotal, categories:[{id,name,remaining,reserved}], categoriesTotal,
+ *  goals:[{id,name,amount (0 once done),due (full amount),done}], goalsTotal (goals not done only), categories:[{id,name,remaining,reserved}], categoriesTotal,
  *  safe (can be negative), perDay,
  *  (payday = first pay date after today; bills counted are unpaid ones due up to the day before it)
  *  after:{projectedCheck (null if unknown), checkFrom ('current'|'finished'|'average'|null), bills, billsTotal, goalsTotal, left, periodStart, periodEnd}}
@@ -403,11 +426,16 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
   const bills = unpaid(range.start, addDays(payday, -1));
   const billsC = sumC(bills, (b) => toCents(num(b.amount)));
 
-  const goals = goalPieces(budget);
-  const goalsC = sumC(goals, (g) => g.amountC);
+  const goals = goalPieces(budget, payday);
+  const goalsAllC = sumC(goals, (g) => g.amountC); // what the next paycheck sets aside
+  const goalsC = sumC(
+    goals.filter((g) => !g.done),
+    (g) => g.amountC,
+  ); // what still has to come out of the money you have now
 
-  // Category money to set aside, day by day from today to the day before payday. Days left in this month share what is
-  // left of this month's allowance; days in later months each take that month's full allowance / days in that month.
+  // Category money to set aside for the days until payday. Each month the window touches: a day-based allowance
+  // (monthly / days in that month x window days in that month), never more than what is left of that month's allowance.
+  // This month's remaining = monthly - spent (never below 0); later months have their full monthly to draw on.
   const y = +today.slice(0, 4),
     m = +today.slice(5, 7),
     d = +today.slice(8, 10);
@@ -428,8 +456,8 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
   const cats = categoryStatus(budget, today.slice(0, 7)).map((c) => {
     const remC = Math.max(0, toCents(c.remaining)),
       monthlyC = toCents(c.monthly);
-    let reservedC = Math.round((remC * thisMonthDays) / monthDaysLeft);
-    for (const L of later) reservedC += Math.round((monthlyC * L.n) / L.dim);
+    let reservedC = Math.min(remC, Math.round((monthlyC * thisMonthDays) / daysInMonth(y, m)));
+    for (const L of later) reservedC += Math.min(monthlyC, Math.round((monthlyC * L.n) / L.dim));
     return { id: c.id, name: c.name, remaining: fromCents(remC), reservedC };
   });
   const catsC = sumC(cats, (c) => c.reservedC);
@@ -468,7 +496,13 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
     },
     bills,
     billsTotal: fromCents(billsC),
-    goals: goals.map((g) => ({ id: g.id, name: g.name, amount: fromCents(g.amountC) })),
+    goals: goals.map((g) => ({
+      id: g.id,
+      name: g.name,
+      amount: fromCents(g.done ? 0 : g.amountC),
+      due: fromCents(g.amountC),
+      done: g.done,
+    })),
     goalsTotal: fromCents(goalsC),
     categories: cats.map((c) => ({
       id: c.id,
@@ -484,8 +518,8 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
       checkFrom,
       bills: nextBills,
       billsTotal: fromCents(nextBillsC),
-      goalsTotal: fromCents(goalsC),
-      left: projC == null ? null : fromCents(projC - nextBillsC - goalsC),
+      goalsTotal: fromCents(goalsAllC),
+      left: projC == null ? null : fromCents(projC - nextBillsC - goalsAllC),
       periodStart: afterStart,
       periodEnd: afterEnd,
     },

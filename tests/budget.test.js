@@ -108,17 +108,18 @@ test('goal progress', () => {
 test('safe to spend: hand-computed example', () => {
   // Cash on hand 2000. Bills in this period (09-21..10-04): only rent, due 10-01 = 1200.
   // Goal this paycheck = 40. Categories left in September: groceries 400, gas 160-85.50 = 74.50, fun 150.
-  // Payday 10-05 is 7 days away: 3 September days take all of September's 624.50, and Oct 1-4 take 4/31 of the 710 monthly total (91.61).
-  // Reserved 716.11. Safe = 2000 - 1200 - 40 - 716.11 = 43.89, or 6.27 a day.
+  // Payday 10-05 is 7 days away: 3 September days (of 30) and Oct 1-4 (4 of 31 days).
+  // Sep: 710 x 3/30 = 71 (each category's share is below what it has left: 40 + 16 + 15). Oct: 400 x 4/31 = 51.61, 160 x 4/31 = 20.65, 150 x 4/31 = 19.35 = 91.61.
+  // Reserved 71 + 91.61 = 162.61. Safe = 2000 - 1200 - 40 - 162.61 = 597.39, or 85.34 a day.
   const r = B.safeToSpend(budgetWithSpends(), P(), M.exampleNights(TODAY), TODAY, { cashOnHand: 2000 });
   assert.equal(r.income.source, 'entered');
   assert.equal(r.income.amount, 2000);
   assert.equal(r.billsTotal, 1200);
   assert.deepEqual(dates(r.bills), ['b1@2026-10-01']);
   assert.equal(r.goalsTotal, 40);
-  assert.equal(r.categoriesTotal, 716.11);
-  assert.equal(r.safe, 43.89);
-  assert.equal(r.perDay, 6.27);
+  assert.equal(r.categoriesTotal, 162.61);
+  assert.equal(r.safe, 597.39);
+  assert.equal(r.perDay, 85.34);
   assert.equal(r.daysAway, 7);
   // After payday: next period 10-05..10-18 has phone (10-15) = 65.
   const t = M.periodTotals(P(), M.exampleNights(TODAY), 0, TODAY);
@@ -140,17 +141,17 @@ test('paid bills are excluded', () => {
   b.paidBills = { 'b1@2026-10-01': true };
   const r = B.safeToSpend(b, P(), M.exampleNights(TODAY), TODAY, { cashOnHand: 2000 });
   assert.equal(r.billsTotal, 0);
-  assert.equal(r.safe, 1243.89);
+  assert.equal(r.safe, 1797.39); // 597.39 + the 1200 rent that is paid
 });
 
-test('category money is pro-rated when payday is before month end', () => {
-  // Period 09-01..09-14, today 09-05: payday 09-15 is 10 days away, 26 days left in September.
+test('category money is a day-based allowance when payday is before month end', () => {
+  // Period 09-01..09-14, today 09-05: payday 09-15 is 10 days away. September has 30 days.
   const p = { freq: 14, periodStart: '2026-09-01', shifts: 6, payTypes: [], deductions: [] };
   const b = { ...B.emptyBudget(), categories: [{ id: 'c', name: 'Fun', monthly: 260 }] };
   const r = B.safeToSpend(b, p, [], '2026-09-05', { cashOnHand: 300 });
   assert.equal(r.daysAway, 10);
-  assert.equal(r.categories[0].reserved, 100); // 260 x 10/26
-  assert.equal(r.safe, 200);
+  assert.equal(r.categories[0].reserved, 86.67); // 260 x 10/30
+  assert.equal(r.safe, 213.33); // 300 - 86.67
 });
 
 test('a goal never sets aside more than it still needs', () => {
@@ -202,7 +203,10 @@ test('without an entered balance, spending logged this period comes out of the c
   assert.equal(after.income.cash, cash);
   assert.equal(after.income.spent, 30); // the 09-01 spend was before this period
   assert.equal(after.income.amount, M.round2(cash - 30));
-  assert.equal(after.safe, before.safe); // logging spending never makes safe to spend go up
+  // Fun: 100 a month, 30 spent so 70 left. Window 7 days = 100 x 3/30 (10) + 100 x 4/31 (12.90) = 22.90, less than 70 either way.
+  assert.equal(before.categoriesTotal, 22.9);
+  assert.equal(after.categoriesTotal, 22.9);
+  assert.equal(after.safe, M.round2(before.safe - 30)); // the money spent leaves the money you have; the day allowance is unchanged
 });
 
 test('payDelay: default is 1 and clamps to 0-21', () => {
@@ -484,7 +488,7 @@ test('spends keep a valid loggedAt through migrate', () => {
   assert.equal('loggedAt' in m.spends[1], false);
 });
 
-test("category money: a window that crosses a month end reserves this month's rest plus next month per day", () => {
+test('category money: a window that crosses a month end reserves a per-day allowance for each month', () => {
   // Payday 2026-10-05, today 09-28: 3 days left in September, then Oct 1-4.
   const b = {
     ...B.emptyBudget(),
@@ -493,21 +497,23 @@ test("category money: a window that crosses a month end reserves this month's re
   };
   const r = B.safeToSpend(b, P(), [], TODAY, { cashOnHand: 1000 });
   assert.equal(r.daysAway, 7);
-  assert.equal(r.categories[0].reserved, 210 + 40); // all 210 left in Sep (3 of 3 days) + 310 x 4/31
-  // The day before, one more September day is in the window and the reserve barely moves (no month-end cliff).
+  // Sep: min(210 left, 310 x 3/30 = 31) = 31. Oct: 310 x 4/31 = 40. Total 71.
+  assert.equal(r.categories[0].reserved, 31 + 40);
+  // One September day more (09-27, 8 days): 310 x 4/30 = 41.33 + 40. One less (09-29, 6 days): 310 x 2/30 = 20.67 + 40. It moves about 10.33 a day.
   const r2 = B.safeToSpend(b, P(), [], '2026-09-27', { cashOnHand: 1000 });
-  assert.equal(r2.categories[0].reserved, 210 + 40);
+  assert.equal(r2.categories[0].reserved, 81.33);
   const r3 = B.safeToSpend(b, P(), [], '2026-09-29', { cashOnHand: 1000 });
-  assert.equal(r3.categories[0].reserved, 210 + 40);
+  assert.equal(r3.categories[0].reserved, 60.67);
 });
 
 test('category money: a window spanning two month boundaries', () => {
   // 60-day period: today 09-25, payday 11-19. Window = 6 Sep days + all 31 Oct days + 18 Nov days.
+  // Sep 310 x 6/30 = 62; Oct 310 x 31/31 = 310 (its full allowance); Nov 310 x 18/30 = 186. Total 558.
   const p = { freq: 60, periodStart: '2026-09-20', shifts: 6, payTypes: [], deductions: [] };
   const b = { ...B.emptyBudget(), categories: [{ id: 'c', name: 'Fun', monthly: 310 }] };
   const r = B.safeToSpend(b, p, [], '2026-09-25', { cashOnHand: 5000 });
   assert.equal(r.daysAway, 55);
-  assert.equal(r.categories[0].reserved, 310 + 310 + 186); // Sep rest + full Oct + 310 x 18/30
+  assert.equal(r.categories[0].reserved, 62 + 310 + 186);
 });
 
 test("category money: an overspent category reserves 0 this month but still next month's days", () => {
@@ -534,4 +540,48 @@ test("a finished period awaiting its check uses its own locked fixed total, not 
     deductions: [...p.deductions, { id: 'd9', k: 'dental', name: 'Dental', amount: 40, mode: 'fixed' }],
   };
   assert.equal(B.safeToSpend(B.emptyBudget(), p2, half, today).after.projectedCheck, before);
+});
+
+test('month end: the last days before payday set aside a day-based allowance, not the whole month', () => {
+  // Today 09-30 (1 day left in Sep), payday 10-05 is 5 days away: Sep 30 is 1 day, Oct 1-4 are 4 days.
+  // Groceries 400 (nothing spent): Sep 400 x 1/30 = 13.33, Oct 400 x 4/31 = 51.61 = 64.94. Fun 150 with 145 spent: Sep min(5, 5) = 5, Oct 150 x 4/31 = 19.35 = 24.35.
+  const b = {
+    ...B.emptyBudget(),
+    categories: [
+      { id: 'g', name: 'Groceries', monthly: 400 },
+      { id: 'f', name: 'Fun', monthly: 150 },
+    ],
+    spends: [{ id: 's', date: '2026-09-12', amount: 145, categoryId: 'f' }],
+  };
+  const r = B.safeToSpend(b, P(), [], '2026-09-30', { cashOnHand: 2000 });
+  assert.equal(r.daysAway, 5);
+  assert.equal(r.categories[0].reserved, 64.94);
+  assert.equal(r.categories[1].reserved, 24.35);
+  assert.equal(r.categoriesTotal, 89.29);
+  assert.equal(r.safe, 1910.71);
+});
+
+test('goals: a goal ticked for this payday is not subtracted; the next paycheck still counts it', () => {
+  const b = {
+    ...B.emptyBudget(),
+    goals: [{ id: 'g1', name: 'Fund', target: 1000, saved: 0, perPaycheck: 40 }],
+  };
+  const r0 = B.safeToSpend(b, P(), [], TODAY, { cashOnHand: 500 });
+  assert.equal(r0.goalsTotal, 40);
+  assert.equal(r0.safe, 460);
+  b.goalsDone = { [B.goalKey('g1', r0.payday)]: true };
+  const r1 = B.safeToSpend(b, P(), [], TODAY, { cashOnHand: 500 });
+  assert.equal(r1.goalsTotal, 0);
+  assert.equal(r1.goals[0].done, true);
+  assert.equal(r1.safe, 500);
+  assert.equal(r1.after.goalsTotal, 40); // next paycheck still sets it aside
+  // After the payday passes the tick no longer applies (it was for the old payday).
+  const later = B.safeToSpend(b, P(), [], r0.payday, { cashOnHand: 500 });
+  assert.equal(later.goalsTotal, 40);
+});
+
+test('migrateBudget: old data without goalsDone stays valid; bad goalsDone keys are dropped', () => {
+  assert.equal(B.migrateBudget({ goals: [] }).goalsDone, undefined);
+  const m = B.migrateBudget({ goalsDone: { 'g1@2026-10-05': true, junk: true, 'g2@2026-10-05': false } });
+  assert.deepEqual(m.goalsDone, { 'g1@2026-10-05': true });
 });

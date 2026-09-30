@@ -13,11 +13,18 @@ export function readConfig(raw) {
   const c = raw && typeof raw === 'object' ? raw : {};
   const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
   const str = (v) => (typeof v === 'string' ? v : '');
+  // Product ids are mandatory: without at least one, a license key from ANY Lemon Squeezy store would unlock Budget,
+  // so payments count as OFF (locked, no network calls) until the owner fills productIds in.
+  const productIds = (Array.isArray(c.productIds) ? c.productIds : []).filter(
+    (v) =>
+      (typeof v === 'number' || (typeof v === 'string' && v.trim() !== '')) && Number.isFinite(Number(v)),
+  );
   return {
-    provider: c.provider === 'lemonsqueezy' ? c.provider : null, // unknown providers count as off
+    provider: c.provider === 'lemonsqueezy' && productIds.length ? c.provider : null, // unknown providers, or no product id, count as off
     prices: { monthly: '$1.99', yearly: '$20', ...obj(c.prices) },
     checkout: { monthly: str(obj(c.checkout).monthly), yearly: str(obj(c.checkout).yearly) },
-    productIds: Array.isArray(c.productIds) ? c.productIds : [],
+    productIds,
+    allowTestMode: c.allowTestMode === true, // only an explicit true; anything else is false
     proxyUrl: str(c.proxyUrl),
   };
 }
@@ -96,9 +103,10 @@ export function needsRevalidate(ent, now = Date.now(), online = true) {
 
 /**
  * Turns a Lemon Squeezy activate/validate JSON body into {ok, status, expiresAt?, instanceId?, error?}.
- * ok means "this key is good for use right now". productIds (optional) rejects keys from other products.
+ * ok means "this key is good for use right now". productIds rejects keys from other products (the app always passes them,
+ * see readConfig). A test-mode key (from Lemon Squeezy's Test mode) is rejected unless allowTestMode is true.
  */
-export function parseLemonSqueezy(body, productIds = []) {
+export function parseLemonSqueezy(body, productIds = [], allowTestMode = false) {
   const b = body && typeof body === 'object' ? body : {};
   const lk = b.license_key || {};
   const status = lk.status || null;
@@ -120,6 +128,15 @@ export function parseLemonSqueezy(body, productIds = []) {
         error: 'This key is real, but it is for a different product, not TipNet Budget.',
       };
     }
+  }
+  // Test-mode keys cost nothing to make, so they never unlock a live app. The flag can be on the key or in the meta block.
+  const test = (b.license_key && b.license_key.test_mode === true) || (b.meta && b.meta.test_mode === true);
+  if (test && !allowTestMode) {
+    return {
+      ok: false,
+      status: 'invalid',
+      error: 'This is a test key. Use the key from a real purchase.',
+    };
   }
   if (good && ACTIVE.has(status)) {
     out.ok = true;
@@ -150,6 +167,7 @@ function friendlyError(msg) {
 export function lemonSqueezyProvider(deps = {}) {
   const f = deps.fetch || ((...a) => globalThis.fetch(...a));
   const productIds = deps.productIds || [];
+  const allowTestMode = deps.allowTestMode === true;
   const base = (deps.proxyUrl || LS_API).replace(/\/$/, '');
   async function call(path, fields) {
     let res;
@@ -186,7 +204,7 @@ export function lemonSqueezyProvider(deps = {}) {
         status: 'network',
         error: 'The payment service sent an unexpected reply. Try again later.',
       };
-    return parseLemonSqueezy(body, productIds);
+    return parseLemonSqueezy(body, productIds, allowTestMode);
   }
   return {
     id: 'lemonsqueezy',
@@ -202,11 +220,16 @@ export function lemonSqueezyProvider(deps = {}) {
   };
 }
 
-/** Provider chosen in billing-config.js, or null while payments are switched off. */
+/** Provider chosen in billing-config.js, or null while payments are switched off (which includes: no product id filled in). */
 export function getProvider(rawConfig = BILLING, deps = {}) {
   const config = readConfig(rawConfig);
   if (config.provider === 'lemonsqueezy') {
-    return lemonSqueezyProvider({ productIds: config.productIds, proxyUrl: config.proxyUrl, ...deps });
+    return lemonSqueezyProvider({
+      productIds: config.productIds,
+      allowTestMode: config.allowTestMode,
+      proxyUrl: config.proxyUrl,
+      ...deps,
+    });
   }
   return null;
 }

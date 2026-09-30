@@ -170,10 +170,19 @@ test('sw: install precaches the whole shell with cache: reload into the versione
   assert.equal(sw.calls.skipped, 0, 'does not skip waiting on its own');
 });
 
-test('sw: install survives a file that fails to download', async () => {
+test('sw: install fails when a shell file fails to download, so the old version stays in charge', async () => {
   const sw = load(async (url) => new Response('x', { status: url.endsWith('js/csv.js') ? 404 : 200 }));
-  await sw.lifecycle('install');
-  assert.equal(sw.calls.added.length, sw.get('SHELL').length - 1);
+  const old = sw.open('tipnet-v1'); // the previous, complete version
+  old.set(ORIGIN + '/index.html', new Response('old'));
+  await assert.rejects(sw.lifecycle('install'));
+  assert.ok(sw.calls.deleted.includes(sw.get('VERSION')), 'the half-filled new cache is discarded');
+  assert.ok(!sw.stores.has(sw.get('VERSION')));
+  assert.ok(
+    sw.stores.has('tipnet-v1'),
+    'the previous cache is untouched (activate never runs after a failed install)',
+  );
+  assert.ok(!sw.calls.deleted.includes('tipnet-v1'));
+  assert.equal(sw.calls.skipped, 0);
 });
 
 test('sw: activate deletes only other tipnet- caches and claims clients', async () => {

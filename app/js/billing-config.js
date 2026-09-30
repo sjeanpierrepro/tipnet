@@ -1,7 +1,7 @@
 // TipNet billing settings. The owner edits this file to turn payments on, then adds 1 to VERSION
 // in app/sw.js so installed apps pick up the change. Full click-by-click steps are in PAYMENTS.md.
 //
-// While `provider` is null, the budgeting add-on stays locked and the app never
+// While `provider` is null (or productIds is empty), the budgeting add-on stays locked and the app never
 // contacts any payment service. The free app is never affected either way.
 
 export const BILLING = {
@@ -20,10 +20,14 @@ export const BILLING = {
     yearly: '',
   },
 
-  // STEP 2 (optional but recommended): only accept license keys from YOUR product.
+  // STEP 2 (required): only accept license keys from YOUR product.
   // In Lemon Squeezy each product has a number id. Paste it in the brackets, for example [123456].
-  // Leave the brackets empty [] to accept any key that Lemon Squeezy says is valid.
+  // While the brackets are empty [], payments stay OFF: otherwise a key from any store would unlock Budget.
   productIds: [],
+
+  // For your own testing only. Lemon Squeezy Test mode makes "test keys"; the app rejects them unless this is true.
+  // Set it to true while you try a test purchase (see PAYMENTS.md), and set it back to false before going live.
+  allowTestMode: false,
 
   // Leave this empty. It is only used if browsers ever stop allowing direct calls to
   // Lemon Squeezy; see proxy/lemonsqueezy-worker.js and DECISIONS.md.
