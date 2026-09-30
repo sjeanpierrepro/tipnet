@@ -28,7 +28,6 @@ const SHELL = [
   'js/billing-config.js',
   'js/budget.js',
   'js/inputs.js',
-  'js/integrations/source.js',
   'js/ui/tonight.js',
   'js/ui/periods.js',
   'js/ui/setup.js',
