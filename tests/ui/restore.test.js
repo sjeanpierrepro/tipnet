@@ -76,7 +76,7 @@ const poison = (page) => {
 };
 
 test('error screen: shows, restores from a code, and erases with two taps', async () => {
-  const page = await boot();
+  const page = await boot({ seed: realState((S) => (S.settings.setupDone = true)) }); // opens on Tonight
   try {
     await quiet(async () => poison(page));
     assert.match(page.text(), /Something went wrong/);
@@ -106,7 +106,12 @@ test('error screen: shows, restores from a code, and erases with two taps', asyn
     page.click(erase);
     assert.doesNotMatch(page.text(), /Something went wrong/);
     assert.equal(page.state().nights.length, 0);
-    assert.ok(page.$('.result'));
+    assert.equal(
+      page.$('#tabs [aria-selected=true]').dataset.tab,
+      'setup',
+      'erased: back to the first-launch Setup',
+    );
+    assert.match(page.text(), /Set up with one recent paystub/);
   } finally {
     await page.close();
   }

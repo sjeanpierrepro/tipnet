@@ -298,7 +298,34 @@ export function debounce(fn, ms = 300) {
 }
 
 /* ---------- app bus (set by app.js) ---------- */
-export const bus = { go: () => {}, rerender: () => {}, stateReplaced: () => {} };
+/** startSetup: open Setup (the guided flow when not set up) with focus on its first field. */
+export const bus = { go: () => {}, rerender: () => {}, stateReplaced: () => {}, startSetup: () => {} };
+
+/**
+ * Shown on Tonight, Pay periods and Budget until TipNet is set up (see isSetUp in storage.js): no estimate, no entry form.
+ * example: when given, a small "See an example first" link that calls it.
+ */
+export function setupFirstCard({ title = 'Finish setup first', text, example } = {}) {
+  const go = el('button', { type: 'button', class: 'btn', id: 'setup-now' }, 'Set up now');
+  go.addEventListener('click', () => bus.startSetup());
+  const ex = example
+    ? el('button', { type: 'button', class: 'btn-link', id: 'see-example' }, 'See an example first')
+    : null;
+  if (ex) ex.addEventListener('click', example);
+  return el(
+    'section',
+    { class: 'card stack', 'aria-labelledby': 'setup-first-heading' },
+    el('h2', { id: 'setup-first-heading', tabindex: '-1' }, title),
+    el(
+      'p',
+      { class: 'note' },
+      text ||
+        'TipNet needs one recent paystub before it can estimate your real take-home. It takes about 3 minutes.',
+    ),
+    el('div', { class: 'cluster' }, go),
+    ex ? el('div', null, ex) : null,
+  );
+}
 
 /* ---------- saving ---------- */
 let persistAsked = false;

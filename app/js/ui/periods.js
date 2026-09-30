@@ -10,7 +10,10 @@ import {
   indexNights,
   snapshotFor,
   periodRange,
+  totalFromTips,
+  num,
 } from '../math.js';
+import { isSetUp } from '../storage.js';
 import {
   el,
   field,
@@ -23,6 +26,7 @@ import {
   fmtDate,
   periodLabel,
   exampleBanner,
+  setupFirstCard,
   toast,
   arm,
   save,
@@ -30,7 +34,7 @@ import {
   getState,
   keepFocus,
 } from './common.js';
-import { nightFields, draftFromNight, storedNight } from './tonight.js';
+import { nightFields, draftFromNight, storedNight, tipsMode, entryProblem } from './tonight.js';
 
 /** Pay periods shown at first; "Show older" adds this many more each time. */
 export const PAGE = 6;
@@ -55,7 +59,8 @@ export function reset() {
 }
 
 function nightSub(n, c, p) {
-  const bits = [money(c.total) + ' made'];
+  const bits = ['made ' + money(c.total)];
+  if (tipsMode(p)) bits.push('tips ' + money(c.tips));
   if (c.tipout) bits.push(money(c.tipout) + ' tip-out');
   else if ((n.snap ? n.snap.tipout.on : p.tipout.on) && !n.barback) bits.push('no barback');
   if (c.onCheck != null) bits.push(money(c.onCheck) + ' on check');
@@ -105,8 +110,9 @@ function openEditor(S, id) {
 
 function editor(S, n) {
   const p = S.profile;
-  const d = draftFromNight(n, p);
+  const d = draftFromNight(n, p); // in tips mode d.total is the tips inside the stored total (the night's own rates if locked)
   d.note = n.note || ''; // the editor's own field; draftFromNight knows nothing about notes
+  const typedAtOpen = JSON.stringify([d.total, d.pay]);
   let recalc = false;
   const preview = el('p', { class: 'hint', 'aria-live': 'polite' });
   const shiftsFor = (date) => shiftsPerPeriod(p, S.nights, todayISO(), periodIndex(p, date)).n;
@@ -123,6 +129,12 @@ function editor(S, n) {
       });
       out.snap = n.snap;
     } else if (n.snap && recalc) out.snap = snapshotFor(p, shiftsFor(out.date));
+    if (tipsMode(p)) {
+      // Tips back to a stored total, with the pay this night is shown with (its snapshot, the new one, or today's Setup).
+      // Tips and hours untouched and no recalculation: the stored total stays exactly as it was.
+      if (!recalc && JSON.stringify([d.total, d.pay]) === typedAtOpen) out.total = num(n.total);
+      else out.total = totalFromTips(numOf(d.total), out, p);
+    }
     return out;
   };
   const upd = () => {
@@ -207,8 +219,9 @@ function editor(S, n) {
   );
   form.addEventListener('submit', (e) => {
     e.preventDefault();
-    if (!(numOf(d.total) > 0)) {
-      f.setTotalError('Enter what you made that night.');
+    const missing = entryProblem(p, d, 'that night');
+    if (missing) {
+      f.setTotalError(missing);
       f.totalInput.focus();
       return;
     }
@@ -698,6 +711,20 @@ export function render(root) {
   const S = getState(),
     p = S.profile,
     today = todayISO();
+  if (!isSetUp(S)) {
+    // Example nights are not listed as if they were real: nothing here until setup is done.
+    root.append(
+      el(
+        'div',
+        { class: 'stack' },
+        el('h1', null, 'Pay periods'),
+        setupFirstCard({
+          text: 'Your nights and paychecks show up here once TipNet knows your paystub. It takes about 3 minutes.',
+        }),
+      ),
+    );
+    return;
+  }
   // One pass over the nights, shared by every period below (a long history stays fast).
   const index = indexNights(p, S.nights);
   const ctx = { today, index, base: shiftsPerPeriod(p, S.nights, today, undefined, index) };

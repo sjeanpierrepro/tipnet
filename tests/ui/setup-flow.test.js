@@ -31,7 +31,7 @@ test('guided setup: fields are blank with example placeholders, and Next/Next/Fi
     assert.match(page.text(), /Pay period and gross pay/, 'still on step 1');
     assert.equal(page.state().profileExample, true, 'example profile untouched');
     assert.equal(page.state().profile.gross, 2000);
-    assert.match(page.text(), /You are looking at example numbers/, 'banner stays');
+    assert.match(page.text(), /Set up with one recent paystub \(about 3 minutes\)/, 'welcome line stays');
   } finally {
     await page.close();
   }
@@ -103,6 +103,8 @@ test('guided setup: "My paystub has no deductions" lets step 2 pass', async () =
 test('guided setup: after Finish, Tonight estimates use the typed numbers', async () => {
   const page = await boot();
   try {
+    page.tab('tonight');
+    page.click(page.button('See an example first'));
     const example = page.$('.result .hero').textContent;
     page.tab('setup');
     page.type(dateInputs(page)[0], '2026-09-01');
@@ -113,7 +115,7 @@ test('guided setup: after Finish, Tonight estimates use the typed numbers', asyn
     page.type(page.$('input[placeholder="e.g. 12"]', page.app), '10');
     page.click(page.button('Finish setup'));
     page.tab('tonight');
-    page.type(page.$('input[inputmode=decimal]', page.app), '500');
+    page.type(page.$('[data-focus-key="night-total"]', page.app), '500');
     const hero = page.$('.result .hero').textContent;
     assert.notEqual(hero, example);
     // 10% rate on the tax-like line: the tax row shows 10.0%
@@ -123,21 +125,50 @@ test('guided setup: after Finish, Tonight estimates use the typed numbers', asyn
   }
 });
 
-test('guided setup: changing the start date of a still-example full setup clears the example end date', async () => {
+test('guided setup: Skip swaps the example paystub for a blank one, and Tonight stays locked until the basics are in', async () => {
   const page = await boot();
   try {
-    page.tab('setup');
     page.click(page.button('Skip guided setup'));
-    const [start, end] = dateInputs(page);
-    assert.ok(end.value);
+    const S = page.state();
+    assert.equal(S.profileExample, false);
+    assert.equal(S.profile.gross, 0, 'no example gross');
+    assert.ok(
+      S.profile.deductions.every((d) => d.amount === 0),
+      'no example deductions',
+    );
+    assert.equal(S.nightsExample, false);
+    assert.match(page.text(), /import nights from a spreadsheet once your paystub numbers are in/);
+    assert.equal(page.$('input[type=file]', page.app), null, 'no importer before the basics');
+    assert.equal(S.nights.length, 0);
+    assert.equal(S.settings.setupDone, undefined, 'skipping is not finishing');
+    assert.match(page.text(), /Tonight shows your take-home once they are in/);
+    const [start] = dateInputs(page);
     page.type(start, '2026-01-01');
     assert.equal(page.state().profile.periodEnd, '');
+
+    page.tab('tonight');
+    assert.match(page.text(), /Finish setup to see your take-home/);
+    assert.equal(page.$('form button[type=submit]', page.app), null, 'no Save before the basics');
+
+    page.tab('setup');
+    page.type(page.must(page.$('#pr-p1'), 'main rate'), '12');
+    page.type(page.byText('.field', 'Gross pay', page.app).querySelector('input'), '1800');
+    page.tab('tonight');
+    assert.match(page.text(), /Finish setup/, 'still locked: no deduction yet');
+    page.tab('setup');
+    const cb = page.must(page.$('#no-ded'), 'no deductions box on the full page');
+    cb.checked = true;
+    page.change(cb);
+    assert.equal(page.state().settings.noDeductions, true);
+    page.tab('tonight');
+    assert.ok(page.$('form button[type=submit]', page.app), 'Tonight unlocked');
+    assert.match(page.text(), /Tips you made tonight/);
   } finally {
     await page.close();
   }
 });
 
-test('restore: reachable from guided setup step 1 and from the Tonight example banner', async () => {
+test('restore: reachable from the first-launch Setup (twice), and lands on a working Tonight', async () => {
   const S = realState();
   S.profile.gross = 4321;
   S.settings.setupDone = true;
@@ -145,16 +176,16 @@ test('restore: reachable from guided setup step 1 and from the Tonight example b
   for (const from of ['banner', 'guided']) {
     const page = await boot();
     try {
-      if (from === 'banner') page.click(page.button('Moving from another phone?'));
-      else {
-        page.tab('setup');
-        page.click(page.button('Moving from another phone?', page.app));
-      }
+      if (from === 'guided') page.tab('setup');
+      page.click(page.button('Moving from another phone?', page.app));
       const box = page.must(page.$('#bk-code'), 'restore box');
       page.type(box, code);
       page.click(page.button('Restore from code'));
       assert.equal(page.state().profile.gross, 4321, from);
       assert.equal(page.state().profileExample, false);
+      assert.equal(page.$('#tabs [aria-selected=true]').dataset.tab, 'tonight', 'restored: Tonight');
+      assert.ok(page.$('form button[type=submit]', page.app), 'saving works');
+      assert.match(page.text(), /What you made tonight/, 'a restored old code keeps its meaning: totals');
     } finally {
       await page.close();
     }

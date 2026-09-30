@@ -169,12 +169,17 @@ export async function quiet(fn) {
 /** A hand-written backup code (base64 of JSON), like someone could paste from a note. */
 export const toCode = (obj) => Buffer.from(JSON.stringify(obj), 'utf8').toString('base64');
 
-/** A real (non-example) state to seed: the example profile numbers, no nights. mutate(state) may change it. */
+/**
+ * A real (non-example) state to seed: the example profile numbers, no nights. mutate(state) may change it.
+ * Like a state saved before entry modes existed, it has no entryMode, so it loads as an existing user's ('total').
+ * Set S.profile.entryMode = 'tips' in mutate for a tips-only user.
+ */
 export function realState(mutate) {
   const S = seedState();
   S.profileExample = false;
   S.nightsExample = false;
   S.nights = [];
+  delete S.profile.entryMode;
   if (mutate) mutate(S);
   return S;
 }

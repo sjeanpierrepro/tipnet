@@ -38,6 +38,7 @@ import {
   restoreRequest,
 } from './common.js';
 import { cutoffFromSettings } from '../inputs.js';
+import { isSetUp } from '../storage.js';
 import { renderImporter } from './importer.js';
 import { renderBackup, renderInstall } from './backup.js';
 import { redateDraft } from './tonight.js';
@@ -71,6 +72,7 @@ function blankProfile() {
   });
   b.tipout.on = false;
   b.tipout.value = 0;
+  b.entryMode = 'tips'; // new users type their tips; TipNet adds the hourly pay
   return b;
 }
 const eg = (n) => 'e.g. ' + Number(n).toLocaleString('en-US');
@@ -536,12 +538,19 @@ function dedCard(ctx) {
   });
   // Guided setup on the example: the user must type an amount, or say the stub has none.
   const noDed = el('input', { type: 'checkbox', id: 'no-ded' });
-  noDed.checked = noDeductions;
+  noDed.checked = ctx.blank ? noDeductions : !!S.settings.noDeductions;
   const dedErr = el('p', { class: 'field-error', hidden: true, role: 'alert' });
   noDed.addEventListener('change', () => {
-    noDeductions = noDed.checked;
+    if (ctx.blank) noDeductions = noDed.checked;
+    else {
+      if (noDed.checked) S.settings.noDeductions = true;
+      else delete S.settings.noDeductions;
+      ctx.touch(false);
+    }
     if (noDed.checked) dedErr.hidden = true;
   });
+  // The full page offers it too while no deduction has an amount (the "Skip guided setup" path needs it to finish).
+  const showNoDed = ctx.blank || !!S.settings.noDeductions || !p.deductions.some((d) => num(d.amount) > 0);
   const card = el(
     'section',
     { class: 'card stack' },
@@ -554,7 +563,7 @@ function dedCard(ctx) {
     rowsHost,
     el('div', { class: 'cluster' }, add, fica),
     ficaErr,
-    ctx.blank
+    showNoDed
       ? el(
           'label',
           { class: 'check', for: 'no-ded' },
@@ -579,6 +588,37 @@ function dedCard(ctx) {
 }
 
 /* ============ 3. pay types ============ */
+/**
+ * "The number I type each night is:" tips only (TipNet adds the hourly/per-shift pay) or everything. It only changes how
+ * Tonight and the night editor read the typed number; saved nights always store everything made, so they stay the same.
+ */
+function entryModeField(ctx) {
+  const { p } = ctx;
+  const cur = p.entryMode === 'total' ? 'total' : 'tips';
+  const opt = (v, text) => {
+    const r = el('input', { type: 'radio', name: 'entry-mode', value: v, id: 'em-' + v });
+    r.checked = cur === v;
+    r.addEventListener('change', () => {
+      if (!r.checked) return;
+      p.entryMode = v;
+      ctx.touch(false);
+    });
+    return el('label', { class: 'check', for: r.id }, r, el('span', null, text));
+  };
+  return el(
+    'fieldset',
+    { class: 'field' },
+    el('legend', null, 'The number I type each night is:'),
+    el(
+      'div',
+      { class: 'stack-sm' },
+      opt('tips', 'Just my tips (cash + card). TipNet adds my hourly pay.'),
+      opt('total', 'Everything: tips plus my hourly pay'),
+    ),
+    el('p', { class: 'hint' }, 'Nights you already saved stay the same.'),
+  );
+}
+
 function payCard(ctx) {
   const { p, ph } = ctx;
   const phOf = (t) => (ph ? ph.payTypes.find((x) => x.id === t.id) : null);
@@ -722,8 +762,9 @@ function payCard(ctx) {
     el(
       'p',
       { class: 'note' },
-      'Add a row for each kind of pay on your stub. The first row is your main rate and fills in on every night automatically. Hourly and per-shift pay are part of the total you enter each night. Flat amounts, like a bonus, are added on top.',
+      'Add a row for each kind of pay on your stub. The first row is your main rate and fills in on every night automatically. Flat amounts, like a bonus, are added on top.',
     ),
+    entryModeField(ctx),
     host,
     el('div', null, add),
   );
@@ -968,7 +1009,10 @@ function guided(root, ctx) {
       S.calib = [];
       S.nightsExample = false;
     }
+    if (noDeductions) S.settings.noDeductions = true;
+    noDeductions = false;
     S.settings.setupDone = true;
+    delete S.settings.guideSkipped;
     S.profileExample = false;
     guidedActive = false;
     save();
@@ -984,11 +1028,30 @@ function guided(root, ctx) {
       type: 'button',
       class: 'btn-link',
       onclick: () => {
-        S.settings.setupDone = true;
+        // Not "set up": Tonight keeps its "Finish setup" card until gross pay, a deduction (or "no deductions") and the
+        // main rate are in. The example paystub is swapped for a blank one, so no night is ever saved against example taxes.
+        if (S.profileExample) {
+          S.profile = gProfile || blankProfile();
+          S.profileExample = false;
+        }
+        if (S.nightsExample) {
+          S.nights = [];
+          S.calib = [];
+          S.nightsExample = false;
+        }
+        if (noDeductions) S.settings.noDeductions = true;
+        S.settings.guideSkipped = true;
         guidedActive = false;
         gProfile = null;
+        noDeductions = false;
+        guidedStep = 0;
         save();
         bus.rerender();
+        const h = document.querySelector('#app h1');
+        if (h) {
+          h.setAttribute('tabindex', '-1');
+          h.focus();
+        }
       },
     },
     'Skip guided setup and show everything',
@@ -1048,14 +1111,14 @@ function guided(root, ctx) {
     el(
       'div',
       { class: 'stack' },
-      exampleBanner({ restore: false }),
-      el('h1', null, 'Set up TipNet'),
-      restoreLink,
+      el('h1', { tabindex: '-1' }, 'Set up TipNet'),
       el(
         'p',
-        { class: 'hint' },
-        'Three short steps, using one recent paystub. You can change any of it later.',
+        { class: 'note', id: 'setup-welcome' },
+        'Set up with one recent paystub (about 3 minutes) so TipNet can estimate your real take-home.',
       ),
+      restoreLink,
+      el('p', { class: 'hint' }, 'Three short steps. You can change any of it later.'),
       steps,
       body,
       ctx.saved,
@@ -1066,11 +1129,32 @@ function guided(root, ctx) {
   );
 }
 
+/** Full page while not set up (after "Skip guided setup"): what Tonight still needs. Updates as the fields change. */
+function notReadyNote(ctx) {
+  const S = ctx.S;
+  const box = el(
+    'div',
+    { class: 'banner', role: 'status' },
+    el(
+      'p',
+      null,
+      'Add your gross pay, at least one deduction (or tick “My paystub has no deductions”) and your main rate. Tonight shows your take-home once they are in.',
+    ),
+  );
+  const sync = () => {
+    box.hidden = isSetUp(S);
+  };
+  ctx.live.push(sync);
+  sync();
+  return box;
+}
+
 /* ============ full setup ============ */
 export function render(root) {
   const S0 = getState();
   if (gProfile && !S0.profileExample) gProfile = null;
-  const inGuided = !S0.settings.setupDone && (S0.profileExample || guidedActive);
+  // The guided flow is for anyone not set up yet, unless they chose "Skip guided setup".
+  const inGuided = !isSetUp(S0) && !S0.settings.guideSkipped && (S0.profileExample || guidedActive);
   const ctx = makeCtx(inGuided && (S0.profileExample || !!gProfile));
   if (inGuided) {
     guidedActive = true;
@@ -1081,7 +1165,21 @@ export function render(root) {
   const importHost = el('div'),
     installHost = el('div'),
     backupHost = el('div');
-  renderImporter(importHost);
+  // Imported nights would count as "set up" and be worked out with whatever paystub is here, so the importer waits for the basics.
+  if (isSetUp(S0)) renderImporter(importHost);
+  else
+    importHost.append(
+      el(
+        'section',
+        { class: 'card stack' },
+        el('h2', null, 'Import nights from a file'),
+        el(
+          'p',
+          { class: 'hint' },
+          'You can import nights from a spreadsheet once your paystub numbers are in.',
+        ),
+      ),
+    );
   renderInstall(installHost);
   renderBackup(backupHost);
   root.append(
@@ -1090,6 +1188,7 @@ export function render(root) {
       { class: 'stack' },
       exampleBanner(),
       el('h1', null, 'Setup'),
+      notReadyNote(ctx),
       ctx.saved,
       periodCard(ctx, { title: 'From your paystub' }),
       dedCard(ctx),

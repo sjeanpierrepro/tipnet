@@ -1,6 +1,16 @@
 // TipNet boot: load data, render the current tab, wire tabs, service worker and install prompt.
 import * as storage from './storage.js';
-import { bus, clear, applyTheme, setInstallPrompt, el, arm, keepFocus, toast } from './ui/common.js';
+import {
+  bus,
+  clear,
+  applyTheme,
+  setInstallPrompt,
+  el,
+  arm,
+  keepFocus,
+  toast,
+  restoreRequest,
+} from './ui/common.js';
 import { budgetVisible } from './billing.js';
 import { restoreFromCode, eraseEverything } from './ui/backup.js';
 import * as tonight from './ui/tonight.js';
@@ -34,7 +44,7 @@ function errorScreen(root) {
   const msg = el('p', { class: 'note', 'aria-live': 'polite', hidden: true });
   const afterFix = () => {
     try {
-      bus.stateReplaced();
+      bus.stateReplaced({ to: 'tonight' }); // a working app again: Tonight (or Setup, when what is left is not set up)
     } catch (e) {
       render();
     }
@@ -197,7 +207,9 @@ async function boot() {
   applyTheme(state.settings.theme);
   bus.go = go;
   bus.rerender = render;
-  bus.stateReplaced = () => {
+  // After Erase everything / Restore. Not set up (erased, or a code with nothing in it): back to Setup, as on a first
+  // launch. to: where a working state lands (a restore from the first-launch Setup goes to Tonight).
+  bus.stateReplaced = ({ to } = {}) => {
     [periods.reset, budget.reset, tonight.resetDraft, setup.reset].forEach((f) => {
       try {
         f();
@@ -205,8 +217,16 @@ async function boot() {
         /* screen memory only */
       }
     });
-    render();
-  }; // after Erase everything / Restore
+    if (!storage.isSetUp(storage.getState())) go('setup');
+    else if (to) go(to);
+    else render();
+  };
+  bus.startSetup = () => {
+    restoreRequest.open = false;
+    go('setup');
+    const first = document.querySelector('#app input, #app select, #app textarea');
+    if (first) first.focus();
+  };
   wireTabs();
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
@@ -229,7 +249,9 @@ async function boot() {
     ),
   );
   budget.bootBilling(); // may add the localhost dev unlock, so it runs before the first render decides whether Budget shows
-  go(TABS.includes(state.settings.lastTab) ? state.settings.lastTab : 'tonight');
+  // Not set up yet (first launch, or erased): open Setup, whatever tab was last. Everyone else returns to their last tab.
+  if (!storage.isSetUp(state)) go('setup');
+  else go(TABS.includes(state.settings.lastTab) ? state.settings.lastTab : 'tonight');
   setupServiceWorker();
 }
 

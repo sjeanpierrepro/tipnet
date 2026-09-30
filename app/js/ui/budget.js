@@ -1,6 +1,7 @@
 // Budget tab (paid add-on): safe to spend, next paycheck, bills, spending, goals, subscription.
 // Locked users see an honest preview and can buy or paste a license key. The free app is unchanged.
 import { todayISO, periodIndex, periodRange, toCents, round2, indexNights } from '../math.js';
+import { isSetUp } from '../storage.js';
 import {
   safeToSpend,
   hasPayDelay,
@@ -35,6 +36,7 @@ import {
   clear,
   field,
   exampleBanner,
+  setupFirstCard,
   moneyInput,
   select,
   numOf,
@@ -1214,5 +1216,20 @@ function unlockedView(S) {
 }
 
 export function render(root) {
+  if (unlocked() && !isSetUp(getState())) {
+    // Unlocked (or the dev switch) before setup: same rule as Tonight, no numbers from example taxes. The locked view is a
+    // purchase page with a static sample, so it stays.
+    root.append(
+      el(
+        'div',
+        { class: 'stack' },
+        el('h1', null, 'Budget'),
+        setupFirstCard({
+          text: 'Your budget works from your take-home, so TipNet needs your paystub first. It takes about 3 minutes.',
+        }),
+      ),
+    );
+    return;
+  }
   root.append(unlocked() ? unlockedView(getState()) : lockedView(getState()));
 }

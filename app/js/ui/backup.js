@@ -142,7 +142,7 @@ export function renderBackup(host, { restoreOnly = false } = {}) {
     try {
       const count = restoreFromCode(box.value);
       toast('Restored ' + count + ' night' + (count === 1 ? '' : 's') + '.');
-      bus.stateReplaced();
+      bus.stateReplaced(restoreOnly ? { to: 'tonight' } : undefined); // from the first-launch Setup: straight to Tonight
     } catch (e) {
       say('That code didn’t work. Copy the whole code and try again.');
     }
@@ -165,7 +165,7 @@ export function renderBackup(host, { restoreOnly = false } = {}) {
     armedLabel: 'Tap again to erase all nights and settings',
     onConfirm: () => {
       eraseEverything();
-      toast('Erased. Example paystub numbers are loaded until you enter yours.');
+      toast('Erased. TipNet starts fresh: set it up with your paystub.');
       bus.stateReplaced();
     },
   });

@@ -8,6 +8,10 @@ import {
   payAmount,
   todayISO,
   num,
+  totalFromTips,
+  tipsFromTotal,
+  exampleProfile,
+  exampleNights,
 } from '../math.js';
 import {
   businessDate,
@@ -17,7 +21,7 @@ import {
   parseHoursInput,
   hasHoursText,
 } from '../inputs.js';
-import { lockFinished } from '../storage.js';
+import { lockFinished, isSetUp } from '../storage.js';
 import {
   el,
   clear,
@@ -32,49 +36,54 @@ import {
   fmtDate,
   periodLabel,
   exampleBanner,
+  setupFirstCard,
   save,
   getState,
   uid,
   debounce,
+  bus,
 } from './common.js';
 
 let draft = null; // survives tab switches so half-typed entries are not lost
-let draftIsExample = false; // draft was pre-filled with the example night
+let showExample = false; // before setup: "See an example first" was tapped
 
-const exampleMode = (S) => !!(S.profileExample && S.nightsExample);
 /** Nights that count as history for shift averages. Example nights never do, so the first real numbers match their preview. */
 const historyOf = (S) => (S.nightsExample ? [] : S.nights);
 
-/** Drop the in-progress entry (e.g. after Erase everything or Restore). */
+/** Tips-only entry: the nightly number is cash + card tips and TipNet adds the hourly/per-shift pay. */
+export const tipsMode = (p) => !!p && p.entryMode === 'tips';
+/** The typed amount as a number; null when blank or not a number. */
+function typedAmount(v) {
+  const c = clean(v);
+  if (c === '' || c === '-' || c === '.') return null;
+  const n = parseFloat(c);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Drop the in-progress entry and the example view (e.g. after Erase everything or Restore). */
 export function resetDraft() {
   draft = null;
-  draftIsExample = false;
+  showExample = false;
 }
 /** The "Late nights" rule changed: re-date the in-progress entry, unless the user picked a date themselves. */
 export function redateDraft(S) {
   if (draft && !draft.dateTouched) draft.date = businessDate(new Date(), cutoffFromSettings(S.settings));
 }
 
+/** An empty entry. d.total holds the typed text: tips in tips mode, tips + pay in total mode. */
 export function blankDraft(S) {
-  const d = {
+  return {
     total: '',
     cash: '',
     pay: {},
     barback: true,
     date: businessDate(new Date(), cutoffFromSettings(S.settings)),
   };
-  if (exampleMode(S)) {
-    // the example night from the spec: $585, 8 hours, $210 cash. Blank otherwise: main hours fall back to "usual".
-    d.total = '585';
-    d.cash = '210';
-    const main = S.profile.payTypes[0];
-    if (main) d.pay[main.id] = '8';
-  }
-  return d;
 }
+/** A saved night as an editable draft, in the current entry mode (tips mode shows the tips inside its total). */
 export function draftFromNight(n, p) {
   const d = {
-    total: String(n.total),
+    total: tipsMode(p) ? String(Math.max(0, tipsFromTotal(n, p))) : String(n.total),
     cash: n.cash == null ? '' : String(n.cash),
     pay: {},
     barback: n.barback !== false,
@@ -85,8 +94,12 @@ export function draftFromNight(n, p) {
   });
   return d;
 }
-/** Draft (strings) -> night with cleaned values, for live math. */
-export function liveNight(d, id, p) {
+/**
+ * Draft (strings) -> night with cleaned values, for live math. total is always everything made (tips + hourly/per-shift
+ * pay): in tips mode the typed tips are converted here, so the preview and the saved night use the same number.
+ * snap: work out the added pay with this locked night's rates (editing or replacing a locked night).
+ */
+export function liveNight(d, id, p, { snap } = {}) {
   const pay = {};
   Object.keys(d.pay).forEach((k) => {
     if (d.pay[k] === '') return;
@@ -96,19 +109,27 @@ export function liveNight(d, id, p) {
       t && t.unit !== 'amt' ? String(Math.round(parseHoursInput(d.pay[k]) * 10000) / 10000) : clean(d.pay[k]);
   });
   // Cash that is negative or more than the total is not used (the screen says why); it never blocks the night.
-  const cash = checkCash(d.total, d.cash).status === 'ok' ? clean(d.cash) : '';
-  return {
+  const cash = checkCash(d.total, d.cash, { tips: tipsMode(p) }).status === 'ok' ? clean(d.cash) : '';
+  const night = {
     id,
     date: d.date || todayISO(),
-    total: numOf(d.total) > 0 ? clean(d.total) : '',
+    total: '',
     cash,
     pay,
     barback: d.barback,
   };
+  if (tipsMode(p)) {
+    const t = typedAmount(d.total);
+    if (t != null && t >= 0) {
+      const tot = totalFromTips(t, snap ? { ...night, snap } : night, p);
+      if (tot > 0) night.total = String(tot);
+    }
+  } else if (numOf(d.total) > 0) night.total = clean(d.total);
+  return night;
 }
-/** Draft -> night to store. Freezes each pay type's amount (main type falls back to its usual). */
-export function storedNight(d, p, id) {
-  const ln = liveNight(d, id, p);
+/** Draft -> night to store (no snapshot; the caller keeps one). Freezes each pay type's amount (main type falls back to its usual). */
+export function storedNight(d, p, id, { snap } = {}) {
+  const ln = liveNight(d, id, p, { snap });
   const pay = {};
   p.payTypes.forEach((t, i) => {
     pay[t.id] = payAmount(ln, t, i);
@@ -116,7 +137,7 @@ export function storedNight(d, p, id) {
   return {
     id,
     date: ln.date,
-    total: numOf(d.total),
+    total: tipsMode(p) ? num(ln.total) : numOf(d.total),
     cash: ln.cash === '' ? null : numOf(ln.cash),
     pay,
     barback: d.barback,
@@ -135,9 +156,16 @@ export function nightFields(p, d, { big = false, onInput: onInputRaw = () => {},
   };
   const to = p.tipout || {};
   const after = to.on && to.basis === 'after';
-  const hintText = after
-    ? 'Cash + card tips + all hourly pay, after the barback tip-out.'
-    : 'Cash + card tips + all hourly pay, before anything comes out.';
+  const tips = tipsMode(p);
+  const main = p.payTypes[0];
+  const hintText = tips
+    ? (after ? 'Cash tips + card tips, after paying the barback.' : 'Cash tips + card tips.') +
+      (main && main.unit === 'shift'
+        ? ' TipNet adds your shift pay for the shifts below.'
+        : ' TipNet adds your hourly pay for the hours below.')
+    : after
+      ? 'Cash + card tips + all hourly pay, after the barback tip-out.'
+      : 'Cash + card tips + all hourly pay, before anything comes out.';
   const bind = (input, get, set) => {
     input.value = get();
     input.addEventListener('input', () => {
@@ -171,7 +199,7 @@ export function nightFields(p, d, { big = false, onInput: onInputRaw = () => {},
     totalNode = el(
       'div',
       { class: 'field' },
-      el('label', { for: totalInput.id }, 'What you made tonight'),
+      el('label', { for: totalInput.id }, tips ? 'Tips you made tonight' : 'What you made tonight'),
       el('div', { class: 'money' }, el('span', { 'aria-hidden': 'true' }, '$'), totalInput),
       el('p', { class: 'hint' }, hintText),
       errEl,
@@ -180,7 +208,7 @@ export function nightFields(p, d, { big = false, onInput: onInputRaw = () => {},
     totalNode = el(
       'div',
       { class: 'field' },
-      el('label', { for: totalInput.id }, 'What you made'),
+      el('label', { for: totalInput.id }, tips ? 'Tips you made' : 'What you made'),
       totalInput,
       el('p', { class: 'hint' }, hintText),
       errEl,
@@ -253,7 +281,7 @@ export function nightFields(p, d, { big = false, onInput: onInputRaw = () => {},
         : undefined,
     },
   );
-  refreshCash = () => cashField.setError(checkCash(d.total, d.cash).message);
+  refreshCash = () => cashField.setError(checkCash(d.total, d.cash, { tips }).message);
   refreshCash();
   kids.push(cashField);
   const date = el('input', { type: 'date', value: d.date, 'data-focus-key': key + '-date' });
@@ -280,6 +308,18 @@ export function hoursProblem(p, d) {
   }
   return '';
 }
+/**
+ * Plain message when the main amount can't be saved, else ''. when: 'tonight' | 'that night'.
+ * Total mode needs a total above 0. Tips mode takes 0 tips (a slow night still has hourly pay), but not blank or negative.
+ */
+export function entryProblem(p, d, when = 'tonight') {
+  if (!tipsMode(p)) return numOf(d.total) > 0 ? '' : 'Enter what you made ' + when + ' first.';
+  const t = typedAmount(d.total);
+  if (t == null) return 'Enter your tips first. Type 0 if you made none.';
+  if (t < 0) return 'Tips can’t be a negative number.';
+  if (!(num(liveNight(d, 'check', p).total) > 0)) return 'Enter your tips or your hours first.';
+  return '';
+}
 /** Combine an existing night with a new one on the same date (totals, cash and pay add up). */
 export function mergeNights(a, b) {
   const pay = { ...a.pay };
@@ -301,7 +341,13 @@ export function resultCard(c, S, note) {
     return el(
       'div',
       { class: 'result' },
-      el('p', { class: 'note' }, 'Enter tonight’s total above and your take-home appears here.'),
+      el(
+        'p',
+        { class: 'note' },
+        tipsMode(S.profile)
+          ? 'Enter tonight’s tips above and your take-home appears here.'
+          : 'Enter tonight’s total above and your take-home appears here.',
+      ),
     );
   const cal = S.calib.length ? S.calib[S.calib.length - 1] : null;
   const acc = cal
@@ -409,15 +455,79 @@ function stripCard(S) {
   );
 }
 
+/**
+ * Before setup, "See an example first": the example paystub and the example night ($585 made: $489 tips + 8 hours at
+ * $12, $210 cash), worked out with the real math. Built fresh from math.js, never from the user's state. No Save here.
+ */
+function exampleView(S) {
+  const today = todayISO();
+  const p = { ...exampleProfile(today), entryMode: S.profile.entryMode };
+  const nights = exampleNights(today);
+  const ex = S.profile.entryMode === 'tips' ? 'tips' : 'total';
+  const night = nights[2]; // $585, 8 hours, $210 cash
+  const exS = { profile: p, nights, calib: [], profileExample: true, nightsExample: true };
+  const c = computeNight(night, p, shiftsPerPeriod(p, []).n);
+  const heading = el('h2', { tabindex: '-1', id: 'example-heading' }, 'These are example numbers, not yours');
+  const setUp = el('button', { type: 'button', class: 'btn', id: 'example-setup' }, 'Set up with my paystub');
+  setUp.addEventListener('click', () => bus.startSetup());
+  const typed =
+    ex === 'tips'
+      ? [bullet('Tips typed (cash + card)', money(tipsFromTotal(night, p)))]
+      : [bullet('What they made (tips + hourly pay)', money(night.total))];
+  return el(
+    'div',
+    { class: 'stack' },
+    el(
+      'section',
+      { class: 'banner banner-example', 'aria-labelledby': 'example-heading' },
+      heading,
+      el(
+        'p',
+        null,
+        'A bartender paid $12 an hour worked 8 hours, made $489 in tips, and took $210 of it home in cash. Here is what TipNet estimates they keep. Your own paystub gives you your own numbers.',
+      ),
+      setUp,
+    ),
+    el(
+      'section',
+      { class: 'card stack' },
+      el('h2', { class: 'card-title' }, 'Example night'),
+      el(
+        'dl',
+        { class: 'breakdown' },
+        typed,
+        bullet('Hours at $12', '8'),
+        bullet('Cash collected', money(night.cash)),
+      ),
+    ),
+    el('h2', { class: 'sr-only' }, 'Example estimate'),
+    resultCard(c, exS),
+  );
+}
+
 export function render(root) {
   const S = getState(),
     p = S.profile;
-  // Example mode ended (Finish setup, Clear example nights, first save): drop the example pre-fill.
-  if (draft && draftIsExample && !exampleMode(S)) draft = null;
-  if (!draft) {
-    draft = blankDraft(S);
-    draftIsExample = exampleMode(S);
+  if (!isSetUp(S)) {
+    // No estimate and no entry form before setup: example taxes would give a wrong take-home.
+    if (showExample) root.append(exampleView(S));
+    else
+      root.append(
+        setupFirstCard({
+          title: 'Finish setup to see your take-home',
+          text: 'TipNet works out your take-home from one recent paystub. It takes about 3 minutes, and your numbers stay on this device.',
+          example: () => {
+            showExample = true;
+            bus.rerender();
+            const h = document.getElementById('example-heading');
+            if (h) h.focus();
+          },
+        }),
+      );
+    return;
   }
+  showExample = false;
+  if (!draft) draft = blankDraft(S);
   const d = draft;
   const banner = exampleBanner();
   const resultHost = el('div'); // the full card is not a live region: it changes on every keystroke
@@ -454,7 +564,8 @@ export function render(root) {
       );
     }
     let low = null;
-    if (c.total && c.basePay > c.total + 0.005 && c.hours > 0)
+    // Total mode only: a total below the hourly pay usually means only the tips were typed. Tips mode adds the pay itself.
+    if (!tipsMode(p) && c.total && c.basePay > c.total + 0.005 && c.hours > 0)
       low = el(
         'p',
         { class: 'note', role: 'status' },
@@ -508,7 +619,6 @@ export function render(root) {
     lockFinished({ force: true });
     save();
     draft = blankDraft(S);
-    draftIsExample = exampleMode(S);
     render(clear(root));
     const tot = root.querySelector('[data-focus-key="night-total"]');
     if (tot) tot.focus();
@@ -524,8 +634,9 @@ export function render(root) {
   };
   form.addEventListener('submit', (e) => {
     e.preventDefault();
-    if (!(numOf(d.total) > 0)) {
-      fields.setTotalError('Enter what you made tonight first.');
+    const missing = entryProblem(p, d);
+    if (missing) {
+      fields.setTotalError(missing);
       fields.totalInput.focus();
       return;
     }
@@ -535,13 +646,17 @@ export function render(root) {
       hoursErr.hidden = false;
       return;
     }
-    const cashWas = checkCash(d.total, d.cash).status;
+    const cashWas = checkCash(d.total, d.cash, { tips: tipsMode(p) }).status;
     const night = storedNight(d, p, Date.now());
     // Same inputs as the preview: shift history before this night, never the example nights.
     const net = computeNight(night, p, shiftsPerPeriod(p, historyOf(S)).n).net;
     const same = S.nightsExample ? null : S.nights.find((n) => n.date === night.date);
     if (!same) return finish(night, net, cashWas, () => S.nights.push(night));
     const choose = (verb) => () => finish(night, net, cashWas, verb);
+    // A locked night keeps its own pay rates: in tips mode the pay added with these tips is worked out with them too,
+    // so the base pay is counted once, at the rates that night is shown with.
+    const onto = (target) =>
+      tipsMode(p) && target.snap ? storedNight(d, p, night.id, { snap: target.snap }) : night;
     const add = el(
       'button',
       { type: 'button', class: 'btn', 'data-focus-key': 'dup-add' },
@@ -550,7 +665,7 @@ export function render(root) {
     add.addEventListener(
       'click',
       choose(() => {
-        S.nights[S.nights.indexOf(same)] = mergeNights(same, night);
+        S.nights[S.nights.indexOf(same)] = mergeNights(same, onto(same));
       }),
     );
     const rep = el(
@@ -562,7 +677,7 @@ export function render(root) {
       'click',
       choose(() => {
         S.nights[S.nights.indexOf(same)] = {
-          ...night,
+          ...onto(same),
           id: same.id,
           ...(same.snap ? { snap: same.snap } : {}),
         };
@@ -586,6 +701,7 @@ export function render(root) {
           null,
           'You already saved ' +
             money(same.total) +
+            (tipsMode(p) ? ' (tips ' + money(Math.max(0, tipsFromTotal(same, p))) + ')' : '') +
             ' for ' +
             fmtDate(night.date) +
             '. What should TipNet do with this one?',

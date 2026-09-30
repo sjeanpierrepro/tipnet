@@ -817,3 +817,28 @@ details > summary.btn-link {
   text-decoration: none;
   color: inherit;
 }
+
+/* ---------- entry mode choice (Setup) and the example view (Tonight, before setup) ---------- */
+fieldset.field {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+fieldset.field > legend {
+  font-weight: 600;
+  font-size: 15px;
+  padding: 0;
+  margin-bottom: 6px;
+}
+.banner-example {
+  flex-direction: column;
+  align-items: flex-start;
+  border-style: solid;
+}
+.banner-example h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.banner-example p {
+  flex: none;
+}
