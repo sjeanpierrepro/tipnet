@@ -306,7 +306,7 @@ test('summary numbers for the Setup box', () => {
 
 test('presets: groups, defaults, flags', () => {
   const groups = [...new Set(M.PRESETS.pay.map((x) => x.g))];
-  assert.deepEqual(groups, ['Hourly', 'Per shift', 'Flat amount', 'Other']);
+  assert.deepEqual(groups, ['Jobs', 'General pay', 'Extra hours', 'On top']);
   assert.deepEqual(
     [...new Set(M.PRESETS.deductions.map((x) => x.g))],
     ['Taxes', 'Benefits', 'Retirement', 'Other'],

@@ -225,7 +225,10 @@ export function lockFinishedNights(profile, nights, today = todayISO()) {
     const s = snaps.get(periodIndex(profile, n.date));
     if (!s) return n;
     stamped++;
-    return { ...n, snap: JSON.parse(JSON.stringify(s)) };
+    const locked = { ...n, snap: JSON.parse(JSON.stringify(s)) };
+    // Typed tips: the stored total becomes tips + pay at the rates it is now locked with (the rates it was shown with).
+    if (hasTips(n)) locked.total = totalFromTips(n.tips, locked, profile);
+    return locked;
   });
   return { nights: out, stamped };
 }
@@ -257,11 +260,14 @@ export function periodFixed(p, ns) {
 }
 
 /* ---------- one night (6.4) ---------- */
-/** Amount for a pay type on a night; the main (first) type falls back to its usual amount. */
+/**
+ * Amount for a pay type on a night. Old nights (saved before every amount was stored) fall back to the main type's
+ * usual amount; a night with typed tips never does (it was saved with its pay, and an empty pay means none).
+ */
 export function payAmount(night, t, i) {
   if (night.pay && night.pay[t.id] !== undefined && night.pay[t.id] !== '' && night.pay[t.id] !== null)
     return num(night.pay[t.id]);
-  return i === 0 ? num(t.usual) : 0;
+  return i === 0 && !hasTips(night) ? num(t.usual) : 0;
 }
 /** Pay from pay types for one night (uses the night's snapshot when it has one). */
 export function basePay(night, p) {
@@ -274,9 +280,21 @@ export function basePay(night, p) {
  */
 export const totalFromTips = (tips, night, p) =>
   fromCents(toCents(num(tips)) + toCents(basePay(night, p).pay));
-/** The reverse: the tips inside a stored night's total (can be below 0 for an old night typed below its hourly pay). */
+/**
+ * night.tips: the tips typed in tips mode (saved next to total). An UNLOCKED night with tips follows the current pay
+ * rates: its total is tips + today's base pay, so fixing a rate in Setup never turns tips into wages. A locked night
+ * (snap) keeps its stored total. Nights without tips (typed as totals, imported, older saves) use total as always.
+ */
+export const hasTips = (night) =>
+  !!night && typeof night.tips === 'number' && Number.isFinite(night.tips) && night.tips >= 0;
+/** Everything made on a night (tips + hourly/per-shift pay), as the math uses it. */
+export const nightTotal = (night, p) =>
+  !night.snap && hasTips(night) ? totalFromTips(night.tips, night, p) : num(night.total);
+/** The reverse: the tips inside a night's total (can be below 0 for an old night typed below its hourly pay). */
 export const tipsFromTotal = (night, p) =>
-  fromCents(toCents(num(night.total)) - toCents(basePay(night, p).pay));
+  !night.snap && hasTips(night)
+    ? night.tips
+    : fromCents(toCents(num(night.total)) - toCents(basePay(night, p).pay));
 function basePayWith(night, T) {
   let pay = 0,
     hours = 0,
@@ -309,7 +327,7 @@ export function computeNight(night, p, shifts) {
   const n = T.n > 0 ? T.n : 1;
   const r = T.r;
   const bp = basePayWith(night, T);
-  const total = toCents(num(night.total));
+  const total = toCents(nightTotal(night, p));
   const baseC = toCents(bp.pay);
   const extraC = toCents(bp.extra);
   const tipsC = Math.max(0, total - baseC);
@@ -511,36 +529,52 @@ export function summary(p, nights = [], today = todayISO()) {
 }
 
 /* ---------- presets (5.4, 5.5) ---------- */
+/*
+ * Pay presets come in two kinds (see payKind below):
+ *   job:   a job you clock in as, paid per hour or per shift. Tonight asks which job(s) you worked and for how long.
+ *   other: extra pay: overtime/holiday/differential/PTO hours, or flat amounts like a bonus (added on top).
+ * g is the group shown in the Setup dropdown.
+ */
 export const PAY_PRESETS = [
-  { k: 'hourly', name: 'Hourly', unit: 'hr', g: 'Hourly' },
-  { k: 'training', name: 'Training', unit: 'hr', g: 'Hourly' },
+  { k: 'bartender', name: 'Bartender', unit: 'hr', kind: 'job', g: 'Jobs' },
+  { k: 'server', name: 'Server', unit: 'hr', kind: 'job', g: 'Jobs' },
+  { k: 'barback', name: 'Barback', unit: 'hr', kind: 'job', g: 'Jobs' },
+  { k: 'lead', name: 'Supervisor / shift lead', unit: 'hr', kind: 'job', g: 'Jobs' },
+  { k: 'prep', name: 'Prep', unit: 'hr', kind: 'job', g: 'Jobs' },
+  { k: 'training', name: 'Training', unit: 'hr', kind: 'job', g: 'Jobs' },
+  { k: 'host', name: 'Host', unit: 'hr', kind: 'job', g: 'Jobs' },
+  { k: 'event', name: 'Private event / banquet', unit: 'shift', kind: 'job', g: 'Jobs' },
+  { k: 'otherjob', name: 'Other job', unit: 'hr', kind: 'job', g: 'Jobs' },
+  { k: 'hourly', name: 'Hourly', unit: 'hr', kind: 'job', g: 'General pay' },
+  { k: 'shift', name: 'Flat shift pay', unit: 'shift', kind: 'job', g: 'General pay' },
   {
     k: 'ot',
     name: 'Overtime',
     unit: 'hr',
-    g: 'Hourly',
+    kind: 'other',
+    g: 'Extra hours',
     rateMultiplier: 1.5,
-    notes: 'Overtime is usually 1.5x your hourly rate for hours past 40 in a week.',
+    notes: 'Overtime is usually 1.5x your main job’s rate for hours past 40 in a week.',
   },
-  { k: 'holiday', name: 'Holiday pay', unit: 'hr', g: 'Hourly' },
+  { k: 'holiday', name: 'Holiday pay', unit: 'hr', kind: 'other', g: 'Extra hours' },
   {
     k: 'diff',
     name: 'Shift lead / supervisor differential',
     unit: 'hr',
-    g: 'Hourly',
+    kind: 'other',
+    g: 'Extra hours',
     diff: 1,
     notes:
       'Enter the extra per hour on top of your base rate. These hours do not count twice toward your hours worked.',
   },
-  { k: 'pto', name: 'Paid time off / sick pay', unit: 'hr', g: 'Hourly' },
-  { k: 'event', name: 'Private event / banquet', unit: 'shift', g: 'Per shift' },
-  { k: 'shift', name: 'Flat shift pay', unit: 'shift', g: 'Per shift' },
+  { k: 'pto', name: 'Paid time off / sick pay', unit: 'hr', kind: 'other', g: 'Extra hours' },
   {
     k: 'bonus',
     name: 'Bonus',
     unit: 'amt',
     supp: 1,
-    g: 'Flat amount',
+    kind: 'other',
+    g: 'On top',
     notes: 'Federal tax is estimated at the 22% bonus rate.',
   },
   {
@@ -548,19 +582,40 @@ export const PAY_PRESETS = [
     name: 'Commission / sales incentive',
     unit: 'amt',
     supp: 1,
-    g: 'Flat amount',
+    kind: 'other',
+    g: 'On top',
     notes: 'Federal tax is estimated at the 22% bonus rate.',
   },
   {
     k: 'autograt',
     name: 'Service charge / auto-gratuity',
     unit: 'amt',
-    g: 'Flat amount',
+    kind: 'other',
+    g: 'On top',
     notes:
       'Auto-gratuities are taxed as wages, not tips, so they do not count toward the federal tip deduction.',
   },
-  { k: 'other', name: 'Other', unit: 'hr', g: 'Other' },
+  { k: 'other', name: 'Other', unit: 'amt', kind: 'other', g: 'On top' },
 ];
+/** Presets that pay for extra hours on top of a job: never a job, whatever their unit. */
+const EXTRA_HOUR_KEYS = ['ot', 'holiday', 'diff', 'pto'];
+/**
+ * 'job' or 'other' for pay type t at position i of profile.payTypes. Nothing extra is stored: the kind follows from the
+ * data, so old profiles need no migration. The first pay type is always the main job. Otherwise per-hour and per-shift
+ * pay is a job unless its preset is overtime, holiday, differential or paid time off; a flat amount is always other pay.
+ */
+export function payKind(t, i) {
+  if (i === 0) return 'job';
+  if (!t || t.unit === 'amt') return 'other';
+  if (EXTRA_HOUR_KEYS.includes(t.k) || t.diff) return 'other';
+  return 'job';
+}
+/** The jobs in a profile, main job first. */
+export const jobsOf = (p) => ((p && p.payTypes) || []).filter((t, i) => payKind(t, i) === 'job');
+/** Everything else: overtime/holiday/differential/PTO hours and flat amounts. */
+export const otherPayOf = (p) => ((p && p.payTypes) || []).filter((t, i) => payKind(t, i) === 'other');
+export const JOB_PRESETS = PAY_PRESETS.filter((x) => x.kind === 'job');
+export const OTHER_PAY_PRESETS = PAY_PRESETS.filter((x) => x.kind === 'other');
 const PRETAX_NOTE = 'Your stub’s taxes already account for this, so nothing else to enter.';
 export const DEDUCTION_PRESETS = [
   { k: 'fed', name: 'Federal income tax', mode: 'pct', g: 'Taxes' },
@@ -600,7 +655,8 @@ export function applyDeductionPreset(d, k) {
 /** Returns a new pay type from the preset; `mainRate` supplies the overtime multiple. */
 export function applyPayPreset(t, k, mainRate = 0) {
   const pr = findPayPreset(k) || PAY_PRESETS[PAY_PRESETS.length - 1];
-  const out = { ...t, k: pr.k, name: pr.k === 'other' ? '' : pr.name, unit: pr.unit, supp: pr.supp ? 1 : 0 };
+  const blankName = pr.k === 'other' || pr.k === 'otherjob';
+  const out = { ...t, k: pr.k, name: blankName ? '' : pr.name, unit: pr.unit, supp: pr.supp ? 1 : 0 };
   if (pr.rateMultiplier && mainRate) out.rate = +(num(mainRate) * pr.rateMultiplier).toFixed(2);
   if (pr.unit === 'amt') {
     out.rate = 0;
@@ -636,7 +692,7 @@ const EXAMPLE_DEDUCTIONS = [
   { id: 'd4', k: 'health', name: 'Health insurance', amount: 60, mode: 'fixed' },
 ];
 const EXAMPLE_PAY_TYPES = [
-  { id: 'p1', k: 'hourly', name: 'Bartending', rate: 12, unit: 'hr', usual: 7 },
+  { id: 'p1', k: 'bartender', name: 'Bartender', rate: 12, unit: 'hr', usual: 7 },
   { id: 'p2', k: 'training', name: 'Training', rate: 15, unit: 'hr', usual: 0 },
   { id: 'p3', k: 'bonus', name: 'Bonus', rate: 0, unit: 'amt', usual: 0, supp: 1 },
 ];
