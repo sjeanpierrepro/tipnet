@@ -60,3 +60,20 @@ export function negativeCheckReason(c) {
   const beforeTax = c.kept + c.extra - c.cashInHand;
   return beforeTax - c.tax < 0 ? 'taxes' : 'fixed';
 }
+
+/**
+ * Read an hours/shifts field. "7:30" = 7.5, "7h 30m" = 7.5, "7.5" = 7.5, "1,5" is not special-cased.
+ * Empty or junk -> 0. Same rules as the CSV import's hours column.
+ */
+export function parseHoursInput(v) {
+  const s = String(v == null ? '' : v).trim();
+  let x;
+  if ((x = /^(\d+):(\d{1,2})(?::\d{1,2})?$/.exec(s))) return +x[1] + +x[2] / 60;
+  if ((x = /^(\d+(?:\.\d+)?)\s*h(?:ours?|rs?)?\s*(?:(\d+)\s*m(?:in(?:ute)?s?)?)?$/i.exec(s)))
+    return +x[1] + (x[2] ? +x[2] / 60 : 0);
+  const n = parseFloat(s.replace(/[^0-9.]/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** True when the text has something in it (so "0" counts, blank does not). */
+export const hasHoursText = (v) => String(v == null ? '' : v).trim() !== '';

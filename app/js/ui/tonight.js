@@ -9,7 +9,14 @@ import {
   todayISO,
   num,
 } from '../math.js';
-import { businessDate, cutoffFromSettings, checkCash, negativeCheckReason } from '../inputs.js';
+import {
+  businessDate,
+  cutoffFromSettings,
+  checkCash,
+  negativeCheckReason,
+  parseHoursInput,
+  hasHoursText,
+} from '../inputs.js';
 import { lockFinished } from '../storage.js';
 import {
   el,
@@ -79,10 +86,14 @@ export function draftFromNight(n, p) {
   return d;
 }
 /** Draft (strings) -> night with cleaned values, for live math. */
-export function liveNight(d, id) {
+export function liveNight(d, id, p) {
   const pay = {};
   Object.keys(d.pay).forEach((k) => {
-    if (d.pay[k] !== '') pay[k] = clean(d.pay[k]);
+    if (d.pay[k] === '') return;
+    const t = p && p.payTypes.find((x) => x.id === k);
+    // hours and shifts read "7:30" as 7.5; dollar amounts keep the plain number cleaning
+    pay[k] =
+      t && t.unit !== 'amt' ? String(Math.round(parseHoursInput(d.pay[k]) * 10000) / 10000) : clean(d.pay[k]);
   });
   // Cash that is negative or more than the total is not used (the screen says why); it never blocks the night.
   const cash = checkCash(d.total, d.cash).status === 'ok' ? clean(d.cash) : '';
@@ -97,7 +108,7 @@ export function liveNight(d, id) {
 }
 /** Draft -> night to store. Freezes each pay type's amount (main type falls back to its usual). */
 export function storedNight(d, p, id) {
-  const ln = liveNight(d, id);
+  const ln = liveNight(d, id, p);
   const pay = {};
   p.payTypes.forEach((t, i) => {
     pay[t.id] = payAmount(ln, t, i);
@@ -231,7 +242,17 @@ export function nightFields(p, d, { big = false, onInput: onInputRaw = () => {},
       d.cash = v;
     },
   );
-  const cashField = field('Cash in hand', cash, { optional: true });
+  const collected = !!(to.on && to.basis === 'before' && to.from === 'cash');
+  const cashField = field(
+    collected ? 'Cash tips collected (before paying the barback)' : 'Cash you’re taking home',
+    cash,
+    {
+      optional: true,
+      hint: collected
+        ? 'Count all the cash you made tonight, then TipNet takes the barback’s cash out.'
+        : undefined,
+    },
+  );
   refreshCash = () => cashField.setError(checkCash(d.total, d.cash).message);
   refreshCash();
   kids.push(cashField);
@@ -243,6 +264,31 @@ export function nightFields(p, d, { big = false, onInput: onInputRaw = () => {},
   });
   kids.push(field('Date', date));
   return { root: el('div', { class: 'stack' }, kids), totalInput, setTotalError };
+}
+
+/** Plain message when an hourly field is over 24 hours, else ''. Shift counts are not limited. */
+export function hoursProblem(p, d) {
+  for (let i = 0; i < p.payTypes.length; i++) {
+    const t = p.payTypes[i];
+    if (t.unit !== 'hr' || !hasHoursText(d.pay[t.id])) continue;
+    if (parseHoursInput(d.pay[t.id]) > 24)
+      return (
+        'That is more than 24 hours in one night. Check the hours' +
+        (p.payTypes.length > 1 ? ' for ' + (t.name || 'Pay type ' + (i + 1)) : '') +
+        '. Use 7:30 or 7.5 for seven and a half hours.'
+      );
+  }
+  return '';
+}
+/** Combine an existing night with a new one on the same date (totals, cash and pay add up). */
+export function mergeNights(a, b) {
+  const pay = { ...a.pay };
+  Object.keys(b.pay).forEach((k) => {
+    pay[k] = Math.round(((pay[k] || 0) + b.pay[k]) * 10000) / 10000;
+  });
+  const cash =
+    a.cash == null && b.cash == null ? null : Math.round(((a.cash || 0) + (b.cash || 0)) * 100) / 100;
+  return { ...a, total: Math.round((a.total + b.total) * 100) / 100, cash, pay };
 }
 
 function bullet(dt, dd, cls) {
@@ -286,7 +332,7 @@ export function resultCard(c, S, note) {
       el(
         'div',
         { class: 'strip strip-2' },
-        el('div', null, el('span', { class: 'label' }, 'Cash in hand'), el('b', null, money(c.cashInHand))),
+        el('div', null, el('span', { class: 'label' }, 'Cash you keep'), el('b', null, money(c.cashInHand))),
         el('div', null, el('span', { class: 'label' }, 'On your check'), el('b', null, money(c.onCheck))),
       ),
     );
@@ -335,7 +381,8 @@ function stripCard(S) {
   const p = S.profile,
     today = todayISO();
   const idx = periodIndex(p, today);
-  const t = periodTotals(p, S.nights, idx, today);
+  const nights = S.nightsExample && !S.profileExample ? [] : S.nights;
+  const t = periodTotals(p, nights, idx, today);
   const strip = el(
     'div',
     { class: 'strip' },
@@ -386,11 +433,13 @@ export function render(root) {
     liveSummary.textContent = lastSummary;
   }, 800);
   const savedMsg = el('p', { class: 'hint', role: 'status' });
+  const hoursErr = el('p', { class: 'field-error', hidden: true, role: 'alert' });
+  const dupHost = el('div');
 
   const update = () => {
     const hist = historyOf(S);
     const shifts = shiftsPerPeriod(p, hist).n;
-    const night = liveNight(d, 'draft');
+    const night = liveNight(d, 'draft', p);
     const c = computeNight(night, p, shifts);
     let ot = null;
     const others = hist.filter((n) => n.id !== 'draft');
@@ -404,7 +453,24 @@ export function render(root) {
           ' hours this week (Monday to Sunday). If some were overtime, add Overtime as its own pay type in Setup and log those hours there. TipNet does not work out overtime pay for you.',
       );
     }
-    clear(resultHost).append(resultCard(c, S, ot));
+    let low = null;
+    if (c.total && c.basePay > c.total + 0.005 && c.hours > 0)
+      low = el(
+        'p',
+        { class: 'note', role: 'status' },
+        'Your hourly pay for ' +
+          Math.round(c.hours * 100) / 100 +
+          ' hours is ' +
+          money(c.basePay) +
+          ', more than the ' +
+          money(c.total) +
+          ' you entered. Did you include your hourly pay?',
+      );
+    hoursErr.textContent = hoursProblem(p, d);
+    hoursErr.hidden = !hoursErr.textContent;
+    clear(resultHost).append(
+      resultCard(c, S, low && ot ? el('div', { class: 'stack-sm' }, low, ot) : low || ot),
+    );
     lastSummary = c.total ? 'Estimated take-home ' + money(c.net) : '';
     if (!started) {
       started = true;
@@ -417,6 +483,7 @@ export function render(root) {
     big: true,
     onInput: () => {
       savedMsg.textContent = '';
+      clear(dupHost);
       fields.setTotalError('');
       update();
     },
@@ -426,31 +493,25 @@ export function render(root) {
     'form',
     { class: 'card stack', novalidate: true },
     fields.root,
+    hoursErr,
+    dupHost,
     el('button', { class: 'btn btn-block', type: 'submit' }, 'Save night'),
     savedMsg,
   );
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    if (!(numOf(d.total) > 0)) {
-      fields.setTotalError('Enter what you made tonight first.');
-      fields.totalInput.focus();
-      return;
-    }
-    const cashWas = checkCash(d.total, d.cash).status;
-    const night = storedNight(d, p, Date.now());
-    // Same inputs as the preview: shift history before this night, never the example nights.
-    const net = computeNight(night, p, shiftsPerPeriod(p, historyOf(S)).n).net;
+  const finish = (night, net, cashWas, verb) => {
     if (S.nightsExample) {
       S.nights = [];
       S.calib = [];
       S.nightsExample = false;
     }
-    S.nights.push(night);
+    verb();
     lockFinished({ force: true });
     save();
     draft = blankDraft(S);
     draftIsExample = exampleMode(S);
     render(clear(root));
+    const tot = root.querySelector('[data-focus-key="night-total"]');
+    if (tot) tot.focus();
     const m = root.querySelector('[role=status].hint');
     if (m)
       m.textContent =
@@ -460,8 +521,95 @@ export function render(root) {
         fmtDate(night.date) +
         '.' +
         (cashWas === 'negative' || cashWas === 'over' ? ' The cash amount was not saved.' : '');
+  };
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!(numOf(d.total) > 0)) {
+      fields.setTotalError('Enter what you made tonight first.');
+      fields.totalInput.focus();
+      return;
+    }
+    const bad = hoursProblem(p, d);
+    if (bad) {
+      hoursErr.textContent = bad;
+      hoursErr.hidden = false;
+      return;
+    }
+    const cashWas = checkCash(d.total, d.cash).status;
+    const night = storedNight(d, p, Date.now());
+    // Same inputs as the preview: shift history before this night, never the example nights.
+    const net = computeNight(night, p, shiftsPerPeriod(p, historyOf(S)).n).net;
+    const same = S.nightsExample ? null : S.nights.find((n) => n.date === night.date);
+    if (!same) return finish(night, net, cashWas, () => S.nights.push(night));
+    const choose = (verb) => () => finish(night, net, cashWas, verb);
+    const add = el(
+      'button',
+      { type: 'button', class: 'btn', 'data-focus-key': 'dup-add' },
+      'Add to that night',
+    );
+    add.addEventListener(
+      'click',
+      choose(() => {
+        S.nights[S.nights.indexOf(same)] = mergeNights(same, night);
+      }),
+    );
+    const rep = el(
+      'button',
+      { type: 'button', class: 'btn btn-secondary', 'data-focus-key': 'dup-replace' },
+      'Replace it',
+    );
+    rep.addEventListener(
+      'click',
+      choose(() => {
+        S.nights[S.nights.indexOf(same)] = {
+          ...night,
+          id: same.id,
+          ...(same.snap ? { snap: same.snap } : {}),
+        };
+      }),
+    );
+    const sep = el(
+      'button',
+      { type: 'button', class: 'btn btn-secondary', 'data-focus-key': 'dup-separate' },
+      'Save as a separate night',
+    );
+    sep.addEventListener(
+      'click',
+      choose(() => S.nights.push(night)),
+    );
+    clear(dupHost).append(
+      el(
+        'div',
+        { class: 'note stack-sm', role: 'group', 'aria-label': 'Night already saved for this date' },
+        el(
+          'p',
+          null,
+          'You already saved ' +
+            money(same.total) +
+            ' for ' +
+            fmtDate(night.date) +
+            '. What should TipNet do with this one?',
+        ),
+        add,
+        rep,
+        sep,
+      ),
+    );
+    add.focus();
   });
 
-  root.append(el('div', { class: 'stack' }, banner, stripCard(S), form, liveSummary, resultHost));
+  root.append(
+    el(
+      'div',
+      { class: 'stack' },
+      banner,
+      el('h2', { class: 'sr-only' }, 'Tonight'),
+      stripCard(S),
+      form,
+      liveSummary,
+      el('h2', { class: 'sr-only' }, 'Your estimate for tonight'),
+      resultHost,
+    ),
+  );
   update();
 }

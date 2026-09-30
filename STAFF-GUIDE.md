@@ -53,11 +53,11 @@ Something changed (raise, new insurance)? Update it in **Setup**.
 ## 4. Every night
 
 - **What you made tonight:** cash tips + card tips + hourly pay, before anything comes out.
-- **Hours:** leave blank to use your usual hours, or type tonight's.
-- **Cash in hand:** the cash you are taking home.
+- **Cash:** if you pay the barback out of your cash, type all the cash tips you collected, before paying the barback (TipNet takes their cash out). Otherwise type the cash you are taking home.
+- **Hours:** leave blank to use your usual hours, or type tonight's (8, 7.5 or 7:30).
 - Tap **Save night**.
 
-You see your estimated take-home, cash in hand, and what should land on your check.
+You see your estimated take-home, the cash you keep, and what should land on your check. If the same date already has a night, TipNet asks whether to add to it, replace it, or save a separate night.
 
 ## 5. After a pay period ends (optional)
 

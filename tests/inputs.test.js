@@ -58,3 +58,14 @@ test('negativeCheckReason only blames taxes when taxes cause it', () => {
   const fixed = { onCheck: -5, kept: 100, extra: 0, cashInHand: 50, tax: 10 }; // 100-50-10 = 40 left, so fixed deductions did it
   assert.equal(negativeCheckReason(fixed), 'fixed');
 });
+
+import { parseHoursInput } from '../app/js/inputs.js';
+test('parseHoursInput: 7:30 is 7.5, plain and worded hours work, junk is 0', () => {
+  assert.equal(parseHoursInput('7:30'), 7.5);
+  assert.equal(parseHoursInput('8'), 8);
+  assert.equal(parseHoursInput('7.5'), 7.5);
+  assert.equal(parseHoursInput('7h 30m'), 7.5);
+  assert.equal(parseHoursInput(''), 0);
+  assert.equal(parseHoursInput('abc'), 0);
+  assert.equal(parseHoursInput('730'), 730);
+});
