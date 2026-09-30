@@ -122,7 +122,14 @@ export function toast(message, { undo, ms } = {}) {
   const t = el('div', { class: 'toast' }, el('span', null, message));
   let timer;
   const close = () => { clearTimeout(timer); t.remove(); };
-  if (undo) t.append(el('button', { type: 'button', onclick: () => { close(); undo(); } }, 'Undo'));
+  if (undo) {
+    t.append(el('button', { type: 'button', onclick: () => {
+      close(); undo();
+      // The Undo button just left the page, which would drop keyboard focus to the top. Park it on the panel heading, as a delete does.
+      const ae = document.activeElement, root = document.getElementById('app');
+      if (root && (!ae || ae === document.body)) { const h = root.querySelector('h1,h2') || root; if (!h.hasAttribute('tabindex')) h.setAttribute('tabindex', '-1'); try { h.focus({ preventScroll: true }); } catch (e) { /* ignore */ } }
+    } }, 'Undo'));
+  }
   host.append(t);
   timer = setTimeout(close, ms || (undo ? 5000 : 3500));
 }

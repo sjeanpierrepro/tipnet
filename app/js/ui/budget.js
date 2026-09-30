@@ -8,13 +8,14 @@ import { el, clear, field, exampleBanner, moneyInput, select, numOf, clean, mone
 const MANAGE_URL = 'https://app.lemonsqueezy.com/my-orders';
 
 /* ---------- screen-local state (cleared by reset) ---------- */
+const addOpen = {};     // which "Add ..." boxes are open, so adding an item keeps its box (and keyboard focus) in place
 let editing = null;     // {kind, id} of the row being edited
 let keyMsg = '';        // license key error
 let keyText = '';       // what was pasted, kept so a failed try does not wipe it (never saved)
 let busy = false;
 let billsOpen = false; // keeps the "Edit or remove bills" list open after a save or cancel
 
-export function reset() { editing = null; keyMsg = ''; keyText = ''; busy = false; billsOpen = false; }
+export function reset() { editing = null; keyMsg = ''; keyText = ''; busy = false; billsOpen = false; addOpen.bill = addOpen.category = addOpen.goal = false; }
 
 const newId = (p) => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
 const ent = () => getState().settings.entitlement || null;
@@ -147,8 +148,8 @@ function entityForm(kind, item) {
         : moneyInput({ placeholder: '0.00', value: item && v ? String(v) : '', 'data-focus-key': fk });
     ins[f.k] = input; fs.push([f, field(f.label, input)]);
   });
-  const btn = el('button', { type: 'submit', class: 'btn btn-small' }, item ? 'Save changes' : 'Add ' + K.noun);
-  const cancel = item ? el('button', { type: 'button', class: 'btn btn-secondary btn-small', onclick: () => { editing = null; bus.rerender(); } }, 'Cancel') : null;
+  const btn = el('button', { type: 'submit', class: 'btn btn-small', 'data-focus-key': item ? 'ef-' + kind + '-' + item.id + '-name' : 'add-' + kind }, item ? 'Save changes' : 'Add ' + K.noun);
+  const cancel = item ? el('button', { type: 'button', class: 'btn btn-secondary btn-small', 'data-focus-key': 'ef-' + kind + '-' + item.id + '-name', onclick: () => { editing = null; bus.rerender(); } }, 'Cancel') : null;
   const form = el('form', { class: 'stack-sm', novalidate: true }, fs.map((x) => x[1]), el('div', { class: 'cluster' }, btn, cancel));
   form.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -169,13 +170,13 @@ function entityForm(kind, item) {
 }
 
 /** A collapsible "Add ..." form that stays closed until wanted. */
-const addBox = (kind, label) => el('details', { class: 'card' }, el('summary', null, label), el('div', { style: 'padding-top:var(--s-2)' }, entityForm(kind, null)));
+const addBox = (kind, label) => el('details', { class: 'card', open: !!addOpen[kind], ontoggle: (e) => { addOpen[kind] = e.target.open; } }, el('summary', null, label), el('div', { style: 'padding-top:var(--s-2)' }, entityForm(kind, null)));
 
 function removeBtn(label, onConfirm) {
   const b = el('button', { type: 'button', class: 'btn btn-danger btn-small', 'aria-label': label });
   return arm(b, { label: 'Delete', armedLabel: 'Delete?', onConfirm });
 }
-const editBtn = (kind, id, label) => el('button', { type: 'button', class: 'btn btn-secondary btn-small', 'aria-label': label, onclick: () => { editing = { kind, id }; bus.rerender(); } }, 'Edit');
+const editBtn = (kind, id, label) => el('button', { type: 'button', class: 'btn btn-secondary btn-small', 'aria-label': label, 'data-focus-key': 'ef-' + kind + '-' + id + '-name', onclick: () => { editing = { kind, id }; bus.rerender(); } }, 'Edit');
 const isEditing = (kind, id) => editing && editing.kind === kind && editing.id === id;
 
 /* ---------- (a) safe to spend ---------- */

@@ -15,6 +15,12 @@ export function reset() { guidedStep = 0; guidedActive = false; }
 
 /** Example nights are not real history: shift averages ignore them until the first real night is saved. */
 const historyOf = (S) => (S.nightsExample ? [] : S.nights);
+/** After a row is removed its button is gone: keep keyboard focus on the row that took its place, or on the Add button. */
+function focusNear(host, at, addId) {
+  const rows = host.querySelectorAll('button[aria-label^="Remove"]');
+  const t = rows[Math.min(at, rows.length - 1)] || document.getElementById(addId);
+  if (t) t.focus();
+}
 
 /** Grouped <select> for presets. */
 function presetSelect(presets, current, id) {
@@ -204,10 +210,10 @@ function dedCard(ctx) {
       mode.addEventListener('change', () => { d.mode = mode.value; ctx.touch(true); });
       rm.addEventListener('click', () => {
         const at = p.deductions.indexOf(d);
-        p.deductions = p.deductions.filter((x) => x !== d); ctx.touch(true); drawRows();
+        p.deductions = p.deductions.filter((x) => x !== d); ctx.touch(true); drawRows(); focusNear(rowsHost, at, 'dk-add');
         toast('Removed ' + d.name + '.', { undo: () => {
           if (p.deductions.includes(d)) return;
-          p.deductions.splice(Math.min(at, p.deductions.length), 0, d); ctx.touch(true); drawRows();
+          p.deductions.splice(Math.min(at, p.deductions.length), 0, d); ctx.touch(true); drawRows(); focusNear(rowsHost, at, 'dk-add');
         } });
       });
       rowsHost.append(el('div', { class: 'repeat-row', style: 'grid-template-columns:minmax(0,1fr)' }, kids));
@@ -215,7 +221,7 @@ function dedCard(ctx) {
   };
   drawRows(); drawSummary();
 
-  const add = el('button', { type: 'button', class: 'btn btn-secondary btn-small' }, '+ Add deduction');
+  const add = el('button', { type: 'button', class: 'btn btn-secondary btn-small', id: 'dk-add' }, '+ Add deduction');
   add.addEventListener('click', () => {
     const used = p.deductions.map((d) => d.k);
     const pr = DEDUCTION_PRESETS.find((x) => !used.includes(x.k)) || DEDUCTION_PRESETS[DEDUCTION_PRESETS.length - 1];
@@ -272,7 +278,7 @@ function payCard(ctx) {
       if (preset && preset.notes) kids.push(el('p', { class: 'hint', style: 'grid-column:1/-1;margin:0' }, preset.notes));
       if (i > 0) {
         const rm = el('button', { type: 'button', class: 'btn btn-secondary btn-small', 'aria-label': 'Remove ' + (t.name || 'pay type') }, 'Remove');
-        rm.addEventListener('click', () => { p.payTypes = p.payTypes.filter((x) => x !== t); ctx.touch(false); draw(); });
+        rm.addEventListener('click', () => { p.payTypes = p.payTypes.filter((x) => x !== t); ctx.touch(false); draw(); focusNear(host, i - 1, 'pt-add'); });
         kids.push(el('div', { style: 'grid-column:1/-1' }, rm));
       }
       sel.addEventListener('change', () => {
@@ -286,7 +292,7 @@ function payCard(ctx) {
     });
   };
   draw();
-  const add = el('button', { type: 'button', class: 'btn btn-secondary btn-small' }, '+ Add pay type');
+  const add = el('button', { type: 'button', class: 'btn btn-secondary btn-small', id: 'pt-add' }, '+ Add pay type');
   add.addEventListener('click', () => {
     const id = 'p' + Date.now();
     p.payTypes.push({ id, k: 'other', name: '', rate: 0, unit: 'hr', usual: 0 });
