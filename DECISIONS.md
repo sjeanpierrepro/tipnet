@@ -28,7 +28,6 @@
 - Bonuses/commissions use the 22% federal supplemental rate; some payroll companies instead add bonuses to regular pay (aggregate method), which would change withholding.
 - applyPayPreset: only Overtime autofills its rate (1.5x the main rate), matching the prototype. Every other preset leaves the rate for the user to type (covered by a regression test).
 - CSV import "overwrite" updates the existing night: keeps its id and barback choice, keeps its cash when the import has no cash, and keeps pay types the import does not mention.
-- gh CLI is not installed/authenticated here, so no GitHub repo was created and nothing was deployed; see DEPLOY.md.
 - "You get paid" is always usable: choosing a schedule moves the end date to match (start + length - 1); if the dates disagree with the schedule, a note says the dates win. Replaces disabling the dropdown, which read as broken.
 
 ## Payments (budgeting add-on)
@@ -81,3 +80,21 @@
 - The Bills card lists bills through the end of the Next paycheck window, so it never omits a bill that card counts.
 - sw.js VERSION bumped to tipnet-v13.
 - A backup or saved state with a missing/broken pay period start date is repaired to today on load; payday search loops are capped so bad data can never freeze the Budget tab. billing-config.js falls back to the cached copy when the host returns an error, not just when offline.
+- Backup codes never carry a subscription; restoring keeps this device's own unlock or none. An unlock needs a license key and a device instance id, and payments switched on; a "last checked" time in the future is rejected.
+- Damaged saved data or backup codes are cleaned on load: bad rows are dropped, bad fields reset, so the app always opens. The error screen has its own Restore and Erase buttons.
+- After every screen update, keyboard/screen-reader focus returns to the same control.
+- The Budget tab is hidden until payments are switched on, unless this device already has an unlock.
+- A mistyped license key says "not found"; "not for TipNet Budget" only when Lemon Squeezy found the key under another product.
+- The app loads whichever saved copy (IndexedDB or localStorage) is newer.
+- "Check my accuracy" only compares finished pay periods and picks the newest finished one by default.
+- Pay period math builds one period-to-nights index per screen, so screens stay fast with years of nights (1,000 nights: 86 s → 22 ms in tests).
+- Dates outside the years 1000–9998 are rejected.
+- Bill "Paid" ticks are keyed by bill and due date, so they survive pay-schedule changes; old ticks are converted when the app loads.
+- "Money you have right now" is saved with the time it was entered; spending logged after that time is subtracted; after 3 days the app suggests updating it.
+- Undo after deleting a deduction, spending category or savings goal.
+- Example data is dated relative to today.
+- Negative cash, or cash more than the night's total, isn't used or saved; the night still saves. Spreadsheet rows with negative amounts are skipped with a reason.
+- Shifts logged before 6 a.m. count as the night before by default; changeable in Setup ("Late nights", 12 a.m. = off, up to 8 a.m.).
+- Example nights never count as shift history.
+- Wording: removed the unbacked "usually within 5–10%" claim; state-tax note is general, not Florida-only; tax lines say "Taxes and % deductions" because they include things like 401(k).
+- The web worker file make-icons.ps1 moved to tools/ so it isn't published with the site.

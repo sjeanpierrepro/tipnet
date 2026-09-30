@@ -18,13 +18,17 @@ All the numbers stay on your phone or computer. Your bar cannot see them. No acc
 Open the link your bar gives you. The first time, you may see a prompt to "Install app" or "Add to home screen"—tap it. After that, open it from your home screen or desktop like any app. It works offline.
 
 ### On your own computer (testing or setup)
-You need Node 20 or higher. In your terminal, from the TipNet folder:
+You need Node 20 or higher. In your terminal, from the TipNet folder, first install test dependencies once:
+
+```
+npm ci
+```
+
+Then run all the tests:
 
 ```
 npm test
 ```
-
-This runs all the money math tests.
 
 To see TipNet running locally:
 
@@ -49,6 +53,7 @@ Both give you an https link that works on any device.
 
 - `app/` — the TipNet website. Everything you deploy goes here.
 - `tests/` — unit tests for all the money math.
+- `tools/` — build scripts (like make-icons.ps1).
 - `app/js/math.js` — pure math functions (no buttons or screens). This is what the tests check.
 - `app/js/integrations/` — the "Toast seam". Today TipNet imports any CSV file (Setup > Import nights). Toast has no built-in support yet: once a real Toast export is available, it becomes a saved column preset in `app/js/csv.js` (see `app/js/integrations/README.md`). A live Toast connection would need a server and is not part of this app.
 
@@ -75,11 +80,15 @@ When you change any file in `app/`, also change the `VERSION` line at the top of
 
 ## Privacy
 
-Your numbers stay on your device. A Content Security Policy in `app/index.html` makes the browser enforce that TipNet only talks to its own site and to Lemon Squeezy's license API (only used by the optional Budget add-on).
+Your numbers stay on your device. A Content Security Policy in `app/index.html` makes the browser enforce that TipNet only talks to its own site. If you use the optional Budget add-on, TipNet sends only your license key and a random device name to Lemon Squeezy (once when you activate the key, and about once a day to check it is still valid). Your pay data and budget never leave your device.
 
 ## Legal
 
 TipNet gives estimates, not tax advice. Your numbers stay on your device. It does not collect your name, Social Security number, or any personal information beyond what you voluntarily type into it.
 
 ## Budget (optional paid add-on)
-The Budget tab helps plan money between paychecks: "safe to spend until payday", next paycheck, bills, spending categories and savings goals. It costs $1.99 a month or $20 a year; everything else in TipNet stays free. Budget data stays on the device like everything else. After paying, the customer receives a license key and pastes it into the Budget tab. Payments are switched on in `app/js/billing-config.js`; click-by-click steps are in `PAYMENTS.md`. To try it locally, open the app on localhost with `?unlock=dev` on the end of the address.
+The Budget tab helps plan money between paychecks: "safe to spend until payday", next paycheck, bills, spending categories and savings goals. It costs $1.99 a month or $20 a year; everything else in TipNet stays free. Budget data stays on the device like everything else.
+
+The Budget tab is hidden until you switch on payments (in `app/js/billing-config.js`; click-by-click steps are in `PAYMENTS.md`). Once payments are on, customers can buy a license key and paste it into the Budget tab to unlock the feature.
+
+To try it locally, open the app on localhost with `?unlock=dev` on the end of the address.

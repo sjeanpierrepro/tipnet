@@ -23,7 +23,7 @@ TipNet stays free. The budgeting add-on costs $1.99 a month or $20 a year. Custo
     - Paste the Yearly link on the `yearly: '',` line.
     - Optional but recommended: in Lemon Squeezy, open the product; the number in its web address is the product id. Type it inside the brackets on the `productIds: [],` line, for example `productIds: [123456],`. This stops keys from any other store working.
     - Change `provider: null,` to `provider: 'lemonsqueezy',`.
-12. Open the file `app/sw.js` the same way. Near the top is a line like `const VERSION = 'tipnet-v13';`. Add 1 to the number (for example `tipnet-v14`). Do not skip this: the app keeps its files on each phone, and a new number is what tells installed apps to fetch your changes.
+12. Open the file `app/sw.js` the same way. Near the top is a line like `const VERSION = 'tipnet-v15';`. Increase the number at the end by one (for example `tipnet-v15` to `tipnet-v16`). Do not skip this: the app keeps its files on each phone, and a new number is what tells installed apps to fetch your changes.
 13. Commit both changes. The site rebuilds in a minute or two. Customers get the update the next time they open the app and tap Refresh.
 
 ## Test first (recommended)

@@ -1,12 +1,22 @@
-# Deploying TipNet
+# Publishing TipNet
 
-Two free options. GitHub Pages is recommended because updates deploy automatically.
+## Publishing an update
 
-## Option 1: GitHub Pages (recommended)
+The app is already live on GitHub Pages. To push a new version to your staff:
 
-You will publish the **whole `tipnet` folder** (not just `app/`). The folder includes a
-workflow file (`.github/workflows/deploy.yml`) that runs the tests and publishes the `app/`
-folder for you. If you upload only the contents of `app/`, nothing gets deployed.
+1. **GitHub Desktop:** Review your changes in the list.
+2. **Commit to main** with a short message (like "Fix budget calculations").
+3. **Push origin** (top bar).
+4. Open GitHub in your browser and go to your repository **Actions** tab. A green check appears in 1 to 2 minutes.
+5. Tell staff to open TipNet. They will see "Update available: Refresh". Tap it.
+
+**Important:** Before you push, bump `VERSION` in `app/sw.js`. Change the number at the end (for example `tipnet-v15` to `tipnet-v16`). Without this, phones keep their old cached version.
+
+---
+
+## First-time setup (already done)
+
+If you need to set up a fresh GitHub repository (you should not need this):
 
 ### Step 1: Create a GitHub account (skip if you have one)
 1. Go to https://github.com and click **Sign up**.
@@ -44,9 +54,6 @@ folder for you. If you upload only the contents of `app/`, nothing gets deployed
 5. Wait for the green check (about 1 to 2 minutes).
 
 Your app is live at **https://USERNAME.github.io/tipnet/** (replace USERNAME with your GitHub username). Share this link with staff.
-
-### Updating later
-Commit and push changes (GitHub Desktop: **Commit to main**, then **Push origin**). The workflow deploys automatically. Bump `VERSION` in `app/sw.js` for each release so staff see "Update available: Refresh".
 
 ---
 

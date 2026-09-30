@@ -59,9 +59,9 @@ Something changed (raise, new insurance)? Update it in **Setup**.
 
 You see your estimated take-home, cash in hand, and what should land on your check.
 
-## 5. After payday (optional)
+## 5. After a pay period ends (optional)
 
-**Pay periods** > **Check my accuracy**. Pick the pay period and enter the **take-home amount on your check** (the amount actually deposited, not gross). Tap **Compare and adjust**.
+**Pay periods** > **Check my accuracy**. Pick a pay period that has already ended. Enter the **take-home amount on your check** (the amount actually deposited, not gross). Tap **Compare and adjust**.
 
 The estimate usually gets closer after a check or two.
 
@@ -69,6 +69,7 @@ The estimate usually gets closer after a check or two.
 
 ## Good to know
 
+- **Logging after midnight?** Before 6 a.m. it is saved as the night before.
 - **Your data stays on your phone.** Your bar cannot see it.
 - **It is an estimate,** not an exact paycheck.
 - **Tax questions?** Ask payroll or a tax professional. TipNet is not tax advice.

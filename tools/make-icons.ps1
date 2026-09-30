@@ -1,6 +1,6 @@
-# Regenerates PNG icons from the same geometry as icon.svg. Run: powershell -File make-icons.ps1
+# Regenerates PNG icons from the same geometry as icon.svg. Run from tools/: powershell -File make-icons.ps1
 Add-Type -AssemblyName System.Drawing
-$dir = $PSScriptRoot
+$dir = Join-Path (Split-Path $PSScriptRoot -Parent) 'app' 'icons'
 function Make($size, $scale, $name) {
   $bmp = New-Object System.Drawing.Bitmap $size, $size
   $g = [System.Drawing.Graphics]::FromImage($bmp)
