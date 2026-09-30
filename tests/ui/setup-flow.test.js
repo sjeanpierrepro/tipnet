@@ -257,3 +257,63 @@ test('late nights: changing the rule re-dates an untouched Tonight entry but not
     await page.close();
   }
 });
+
+test('guided setup: no red errors before the user types; errors appear on blur or Next', async () => {
+  const page = await boot();
+  try {
+    page.tab('setup');
+    const visible = () => page.$$('.field-error', page.app).filter((e) => !e.hidden && e.textContent);
+    assert.equal(visible().length, 0, 'clean first render');
+    const gross = page.$('input[placeholder="e.g. 2,000"]', page.app);
+    gross.dispatchEvent(new page.win.Event('blur'));
+    assert.match(page.text(), /Gross pay is needed/, 'blur reveals the missing gross');
+    assert.equal(visible().length, 1, 'only the field that was left');
+    next(page);
+    assert.match(page.text(), /Pick the day your pay period started/);
+  } finally {
+    await page.close();
+  }
+});
+
+test('guided setup: ticking the tip-out box shows no error until the amount is left or Finish is pressed', async () => {
+  const page = await boot();
+  try {
+    page.tab('setup');
+    page.type(dateInputs(page)[0], '2026-09-01');
+    page.type(page.$('input[placeholder="e.g. 2,000"]', page.app), '1500');
+    next(page);
+    page.click(page.$('#no-ded'));
+    next(page);
+    const tick = page.$('#to-on');
+    tick.checked = true;
+    page.change(tick);
+    const visible = () => page.$$('.field-error', page.app).filter((e) => !e.hidden && e.textContent);
+    assert.equal(visible().length, 0, 'no error on tick');
+    page.click(page.button('Finish setup'));
+    assert.match(page.text(), /Enter the tip-out amount/);
+  } finally {
+    await page.close();
+  }
+});
+
+test('guided setup: Finish clears the example nights and says so', async () => {
+  const page = await boot();
+  try {
+    assert.equal(page.state().nightsExample, true);
+    assert.ok(page.state().nights.length > 0);
+    page.tab('setup');
+    page.type(dateInputs(page)[0], '2026-09-01');
+    page.type(page.$('input[placeholder="e.g. 2,000"]', page.app), '1500');
+    next(page);
+    page.click(page.$('#no-ded'));
+    next(page);
+    page.type(page.$('input[placeholder="e.g. 12"]', page.app), '10');
+    page.click(page.button('Finish setup'));
+    const S = page.state();
+    assert.equal(S.nightsExample, false);
+    assert.equal(S.nights.length, 0);
+    assert.match(page.doc.body.textContent, /Example nights cleared\./);
+  } finally {
+    await page.close();
+  }
+});

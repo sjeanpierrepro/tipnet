@@ -277,3 +277,36 @@ test('Late nights setting survives a reload and a backup restore; bad values are
     assert.equal('dayCutoffHour' in migrate(s).settings, false, String(bad));
   }
 });
+
+test('migrate: old calib entries stay valid, new ones keep period info, impossible-date nights are dropped', async () => {
+  const { migrate } = await import('../app/js/storage.js');
+  const S = migrate({
+    profile: {},
+    calib: [
+      { label: 'old', pred: 1, actual: 2, err: 0.1 },
+      {
+        label: 'new',
+        pred: 1,
+        actual: 2,
+        err: 0.1,
+        idx: 3,
+        start: '2026-09-01',
+        end: '2026-09-14',
+        rateBefore: 0.2,
+        rateAfter: 0.22,
+      },
+    ],
+    nights: [
+      { id: 1, date: '2026-02-31', total: 100 },
+      { id: 2, date: '2026-02-28', total: 100 },
+    ],
+  });
+  assert.equal(S.calib[0].label, 'old');
+  assert.equal(S.calib[0].idx, undefined);
+  assert.equal(S.calib[1].idx, 3);
+  assert.equal(S.calib[1].rateBefore, 0.2);
+  assert.deepEqual(
+    S.nights.map((n) => n.date),
+    ['2026-02-28'],
+  );
+});

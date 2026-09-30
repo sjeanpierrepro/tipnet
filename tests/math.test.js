@@ -611,3 +611,34 @@ test('indexNights matches a plain filter, oldest first, and handles the edit pre
   const q = { ...P(), shifts: '' };
   assert.deepEqual(M.shiftsPerPeriod(q, nights, AFTER, 0, ix), M.shiftsPerPeriod(q, nights, AFTER));
 });
+
+test('parseISO rejects impossible calendar dates', async () => {
+  const { parseISO } = await import('../app/js/math.js');
+  for (const s of ['2026-02-31', '2026-13-01', '2026-04-31', '2025-02-29', '2026-00-10', '2026-01-00'])
+    assert.ok(Number.isNaN(parseISO(s)), s);
+  assert.ok(Number.isFinite(parseISO('2024-02-29')));
+  assert.ok(Number.isFinite(parseISO('2026-12-31')));
+});
+
+test('calibrate: rateBase measures the blend from the earlier rate, so repeating a period does not compound', async () => {
+  const m = await import('../app/js/math.js');
+  const p = { ...m.exampleProfile(), rateOverride: null };
+  p.periodStart = '2026-09-01';
+  p.periodEnd = '2026-09-14';
+  p.freq = 14;
+  const nights = [1, 5, 9].map((d) => ({
+    id: d,
+    date: '2026-09-' + String(d).padStart(2, '0'),
+    total: 300,
+    cash: 80,
+    pay: {},
+    barback: true,
+  }));
+  const a = m.calibrate(p, nights, 0, 450, '2026-10-30', 3);
+  assert.ok(a.ok);
+  const p2 = { ...p, rateOverride: a.rateOverride };
+  const compounded = m.calibrate(p2, nights, 0, 450, '2026-10-30', 3);
+  assert.notEqual(compounded.rateOverride, a.rateOverride, 'without rateBase the rate keeps moving');
+  const again = m.calibrate(p2, nights, 0, 450, '2026-10-30', 3, a.rOld);
+  assert.equal(again.rateOverride, a.rateOverride);
+});

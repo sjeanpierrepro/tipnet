@@ -9,6 +9,7 @@ import {
   isFinal,
   indexNights,
   snapshotFor,
+  periodRange,
 } from '../math.js';
 import {
   el,
@@ -105,13 +106,16 @@ function openEditor(S, id) {
 function editor(S, n) {
   const p = S.profile;
   const d = draftFromNight(n, p);
+  d.note = n.note || ''; // the editor's own field; draftFromNight knows nothing about notes
   let recalc = false;
   const preview = el('p', { class: 'hint', 'aria-live': 'polite' });
   const shiftsFor = (date) => shiftsPerPeriod(p, S.nights, todayISO(), periodIndex(p, date)).n;
   /** The night as it will be saved. A locked night keeps its Setup numbers unless "Recalculate with current Setup" is ticked. */
   const build = () => {
     const out = storedNight(d, p, n.id);
-    if (n.note && out.note === undefined) out.note = n.note;
+    const note = d.note.trim().slice(0, 500);
+    if (note) out.note = note;
+    else delete out.note;
     if (n.snap && !recalc) {
       // keep amounts for pay types removed from Setup since, so the locked numbers stay whole
       Object.keys(n.pay || {}).forEach((k) => {
@@ -133,6 +137,17 @@ function editor(S, n) {
       upd();
     },
   });
+  const noteInput = el('input', {
+    type: 'text',
+    maxlength: '500',
+    autocomplete: 'off',
+    value: d.note,
+    id: 'edit-' + n.id + '-note',
+  });
+  noteInput.addEventListener('input', () => {
+    d.note = noteInput.value;
+  });
+  const noteField = field('Note', noteInput, { optional: true });
   let lockNote = null;
   if (n.snap) {
     const cb = el('input', { type: 'checkbox', id: 'edit-' + n.id + '-recalc' });
@@ -185,6 +200,7 @@ function editor(S, n) {
     { class: 'card stack', novalidate: true },
     el('div', { class: 'card-title' }, 'Edit night'),
     f.root,
+    noteField,
     lockNote,
     preview,
     el('div', { class: 'cluster' }, saveBtn, cancel),
@@ -253,6 +269,18 @@ function nightRow(S, n, shifts) {
       { class: 'main' },
       el('div', null, fmtDate(n.date)),
       el('div', { class: 'hint' }, nightSub(n, c, p)),
+      n.note
+        ? el(
+            'div',
+            {
+              class: 'hint night-note',
+              title: n.note,
+              style:
+                'opacity:.8;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:32ch',
+            },
+            n.note,
+          )
+        : null,
     ),
     el('div', { class: 'amount' }, money0(c.net)),
     el(
@@ -329,11 +357,27 @@ function focusId(id) {
 }
 
 /** The "old rate -> new rate" box shown before anything changes. */
-function pendingBox(S, r, idx) {
+function pendingBox(S, r, idx, prev) {
   const p = S.profile;
   const warnMissing = r.missingNights > 0;
   const warn = warnMissing || r.suspect;
-  const lines = [
+  const lines = [];
+  if (prev)
+    lines.push(
+      el(
+        'p',
+        { class: 'note' },
+        'You already compared this pay period: predicted ' +
+          money(prev.pred) +
+          ', actual ' +
+          money(prev.actual) +
+          (typeof prev.rateBefore === 'number' && typeof prev.rateAfter === 'number'
+            ? ', tax rate ' + pct(prev.rateBefore, 2) + ' → ' + pct(prev.rateAfter, 2)
+            : '') +
+          '. A pay period adjusts the rate once. Replacing starts again from the rate before that earlier adjustment, so nothing stacks.',
+      ),
+    );
+  lines.push(
     el(
       'p',
       null,
@@ -350,7 +394,7 @@ function pendingBox(S, r, idx) {
       null,
       'Tax rate: ' + pct(r.rOld, 2) + ' → ' + pct(r.rateOverride, 2) + ' (' + points(r.change) + ').',
     ),
-  ];
+  );
   if (r.capped)
     lines.push(
       el(
@@ -384,7 +428,7 @@ function pendingBox(S, r, idx) {
   const apply = el(
     'button',
     { type: 'button', class: 'btn btn-small', id: 'cal-apply', disabled: warn },
-    'Apply this adjustment',
+    prev ? 'Replace my earlier comparison for this pay period' : 'Apply this adjustment',
   );
   const keep = el(
     'button',
@@ -407,7 +451,21 @@ function pendingBox(S, r, idx) {
   }
   apply.addEventListener('click', () => {
     p.rateOverride = r.rateOverride;
-    S.calib.push({ label: periodLabel(p, idx), pred: r.pred, actual: r.actual, err: r.err });
+    const rg = periodRange(p, idx);
+    const entry = {
+      label: periodLabel(p, idx),
+      pred: r.pred,
+      actual: r.actual,
+      err: r.err,
+      idx,
+      start: rg.start,
+      end: rg.end,
+      rateBefore: r.rOld,
+      rateAfter: r.rateOverride,
+    };
+    const at = prev ? S.calib.indexOf(prev) : -1;
+    if (at >= 0) S.calib[at] = entry;
+    else S.calib.push(entry);
     save();
     calPending = null;
     calMsg = {
@@ -498,11 +556,7 @@ function calibCard(S, idxs, today) {
   msg.hidden = !calMsg;
   msg.textContent = calMsg ? calMsg.text : '';
   syncRun();
-  const undo = el(
-    'button',
-    { type: 'button', class: 'btn btn-secondary btn-small', id: 'cal-undo' },
-    'Undo adjustments',
-  );
+  const undo = el('button', { type: 'button', class: 'btn btn-secondary btn-small', id: 'cal-undo' });
   const show = (text) => {
     calPending = null;
     calMsg = { text };
@@ -511,8 +565,11 @@ function calibCard(S, idxs, today) {
   run.addEventListener('click', () => {
     const idx = Number(sel.value);
     calActual = actual.value;
+    // One adjustment per pay period: an earlier comparison of this period is replaced, measured from the rate before it.
+    const prev = S.calib.find((c) => c.idx === idx) || null;
+    const base = prev && typeof prev.rateBefore === 'number' ? prev.rateBefore : undefined;
     const r = idxs.length
-      ? calibrate(p, S.nights, idx, numOf(actual.value), today)
+      ? calibrate(p, S.nights, idx, numOf(actual.value), today, undefined, base)
       : { ok: false, reason: 'nonights' };
     if (!r.ok) {
       if (r.reason === 'notFinal') return show(NOT_FINAL_TEXT);
@@ -531,19 +588,34 @@ function calibCard(S, idxs, today) {
     }
     // Nothing changes yet: show old -> new and ask.
     calMsg = null;
-    calPending = { idx, r };
+    calPending = { idx, r, prev };
     bus.rerender();
     focusId(r.missingNights > 0 || r.suspect ? 'cal-keep' : 'cal-apply');
   });
-  undo.addEventListener('click', () => {
-    p.rateOverride = null;
-    S.calib = [];
-    calPending = null;
-    save();
-    calMsg = { text: 'Back to the rates from your paystub.' };
-    bus.rerender();
+  arm(undo, {
+    label: 'Undo adjustments',
+    armedLabel: 'Undo all adjustments?',
+    onConfirm: () => {
+      const was = { rate: p.rateOverride, calib: S.calib };
+      p.rateOverride = null;
+      S.calib = [];
+      calPending = null;
+      save();
+      calMsg = { text: 'Back to the rates from your paystub.' };
+      bus.rerender();
+      toast('Adjustments undone.', {
+        undo: () => {
+          p.rateOverride = was.rate;
+          S.calib = was.calib;
+          calMsg = null;
+          save();
+          bus.rerender();
+        },
+      });
+    },
   });
-  if (calPending && calPending.idx === calPeriod) pendingNode = pendingBox(S, calPending.r, calPending.idx);
+  if (calPending && calPending.idx === calPeriod)
+    pendingNode = pendingBox(S, calPending.r, calPending.idx, calPending.prev);
   else calPending = null;
   const hist = S.calib
     .slice(-4)
@@ -638,5 +710,14 @@ export function render(root) {
       { class: 'card' },
       el('p', { class: 'hint' }, 'No nights yet. Log your first shift on the Tonight tab.'),
     );
-  root.append(el('div', { class: 'stack' }, exampleBanner(), list, calibCard(S, idxs, today)));
+  root.append(
+    el(
+      'div',
+      { class: 'stack' },
+      el('h1', null, 'Pay periods'),
+      exampleBanner(),
+      list,
+      calibCard(S, idxs, today),
+    ),
+  );
 }

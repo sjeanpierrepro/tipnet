@@ -22,7 +22,10 @@ const pad = (n) => String(n).padStart(2, '0');
 export function parseISO(s) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || ''));
   if (!m || +m[1] < 1000 || +m[1] > 9998) return NaN;
-  return Date.UTC(+m[1], +m[2] - 1, +m[3]);
+  const ms = Date.UTC(+m[1], +m[2] - 1, +m[3]);
+  const d = new Date(ms); // round-trip: 2026-02-31 would roll over to March, so it is rejected
+  if (d.getUTCFullYear() !== +m[1] || d.getUTCMonth() !== +m[2] - 1 || d.getUTCDate() !== +m[3]) return NaN;
+  return ms;
 }
 export function formatISO(ms) {
   const d = new Date(ms);
@@ -409,7 +412,7 @@ export const SUSPECT_ERROR = 0.25;
  * Nothing is applied here: the screen shows old -> new and asks first. On "Apply", the caller stores
  * {label, pred, actual, err} in calib and sets profile.rateOverride = rateOverride (which only moves unlocked nights).
  */
-export function calibrate(p, nights, idx, actual, today = todayISO(), shifts) {
+export function calibrate(p, nights, idx, actual, today = todayISO(), shifts, rateBase) {
   const ns = nightsInPeriod(p, nights, idx);
   const A = num(actual);
   if (!ns.length) return { ok: false, reason: 'nonights', missingCash: 0 };
@@ -436,7 +439,7 @@ export function calibrate(p, nights, idx, actual, today = todayISO(), shifts) {
   predC -= F;
   const pred = fromCents(predC);
   const err = (pred - A) / A;
-  const rOld = rate(p);
+  const rOld = typeof rateBase === 'number' && Number.isFinite(rateBase) ? rateBase : rate(p); // rateBase: the rate in effect before this period was first adjusted (Replace)
   const rNew =
     T > 0 ? Math.min(0.45, Math.max(0.02, 1 - (A + fromCents(F) + fromCents(C)) / fromCents(T))) : rOld;
   const uncapped = (rOld + rNew) / 2; // blend to avoid overreacting to one check

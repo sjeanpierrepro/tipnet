@@ -73,8 +73,17 @@ test('check my accuracy: defaults to the newest finished period, blocks an unfin
 
     // undo puts the paystub rates back
     page.click(page.$('#cal-undo'));
+    assert.equal(page.state().calib.length, 1, 'first tap only arms');
+    assert.notEqual(page.state().profile.rateOverride, null);
+    page.click(page.$('#cal-undo'));
     assert.equal(page.state().profile.rateOverride, null);
     assert.equal(page.state().calib.length, 0);
+    // the toast brings the adjustment back
+    const undoBtn = [...page.doc.querySelectorAll('#toast button')].find((b) => /undo/i.test(b.textContent));
+    assert.ok(undoBtn, 'Undo toast offered');
+    page.click(undoBtn);
+    assert.equal(page.state().calib.length, 1);
+    assert.notEqual(page.state().profile.rateOverride, null);
   } finally {
     await page.close();
   }
@@ -103,6 +112,65 @@ test('check my accuracy: fewer nights than usual warns, defaults to not applying
     page.click(page.$('#cal-apply'));
     const r = page.state().profile.rateOverride;
     assert.ok(Math.abs(r - (0.1665 - 0.03)) < 1e-9, 'capped at 3 points: ' + r);
+  } finally {
+    await page.close();
+  }
+});
+
+test('check my accuracy: the same pay period adjusts once; Replace restarts from the earlier rate (no compounding)', async () => {
+  const page = await boot({ seed: seed(2) });
+  try {
+    page.tab('periods');
+    const S0 = page.state();
+    const r0 = rate(S0.profile);
+    const pred = calibrate(S0.profile, S0.nights, 1, 1, today).pred;
+    const actual = String(Math.round(pred * 0.9));
+    const compare = () => {
+      page.type(page.$('#cal-actual'), actual);
+      page.click(page.$('#cal-run'));
+    };
+    compare();
+    assert.doesNotMatch(page.$('#cal-apply').textContent, /Replace/);
+    page.click(page.$('#cal-apply'));
+    const first = page.state();
+    assert.equal(first.calib.length, 1);
+    assert.equal(first.calib[0].idx, 1);
+    assert.equal(first.calib[0].rateBefore, r0);
+    const r1 = first.profile.rateOverride;
+    for (let i = 0; i < 4; i++) {
+      compare();
+      assert.match(page.text(), /You already compared this pay period/);
+      assert.match(page.$('#cal-apply').textContent, /Replace my earlier comparison for this pay period/);
+      page.click(page.$('#cal-apply'));
+    }
+    const S = page.state();
+    assert.equal(S.calib.length, 1, 'still one history row');
+    assert.ok(Math.abs(S.profile.rateOverride - r1) < 1e-12, 'same result every time, nothing compounds');
+  } finally {
+    await page.close();
+  }
+});
+
+test('check my accuracy: Pay periods has a heading and a night note is shown and editable', async () => {
+  const page = await boot({
+    seed: realState((S) => {
+      S.profile.periodStart = addDays(today, -30);
+      S.profile.periodEnd = addDays(today, -17);
+      S.profile.shifts = 2;
+      S.settings.setupDone = true;
+      S.nights = [{ ...night(1, 26), note: 'Private party upstairs' }];
+    }),
+  });
+  try {
+    page.tab('periods');
+    assert.equal(page.$('h1').textContent, 'Pay periods');
+    assert.match(page.$('.night-note').textContent, /Private party upstairs/);
+    page.click(page.byLabel('Edit night ' + page.$('.list-row .main div').textContent));
+    const note = page.$('#edit-1-note');
+    assert.equal(note.value, 'Private party upstairs');
+    page.type(note, 'Wedding');
+    page.click(page.$('form button[type=submit]'));
+    assert.equal(page.state().nights[0].note, 'Wedding');
   } finally {
     await page.close();
   }

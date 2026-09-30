@@ -124,6 +124,19 @@ function cleanSnap(s) {
     },
   };
 }
+/** A comparison entry. Old ones (label, pred, actual, err only) stay valid; new ones also carry the pay period and the rate before/after. */
+function cleanCalib(c) {
+  const o = { label: text(c.label), pred: numOr0(c.pred), actual: numOr0(c.actual), err: numOr0(c.err) };
+  if (Number.isInteger(c.idx) && validDate(c.start) && validDate(c.end)) {
+    o.idx = c.idx;
+    o.start = c.start;
+    o.end = c.end;
+    const rate = (v) => (typeof v === 'number' && v >= 0 && v <= 1 ? v : null);
+    o.rateBefore = rate(c.rateBefore);
+    o.rateAfter = rate(c.rateAfter);
+  }
+  return o;
+}
 function cleanNights(list) {
   const seen = new Set();
   return (Array.isArray(list) ? list : [])
@@ -272,15 +285,7 @@ function migrateUnsafe(input) {
     nightsExample: !!S.nightsExample,
     profile: out,
     nights,
-    calib: (Array.isArray(S.calib) ? S.calib : [])
-      .filter(isObj)
-      .slice(-50)
-      .map((c) => ({
-        label: text(c.label),
-        pred: numOr0(c.pred),
-        actual: numOr0(c.actual),
-        err: numOr0(c.err),
-      })),
+    calib: (Array.isArray(S.calib) ? S.calib : []).filter(isObj).slice(-50).map(cleanCalib),
     budget: migrateBudget(S.budget, out), // old states and old backup codes have none: they get an empty budget; the profile converts old "Paid" ticks
     settings: cleanSettings(S.settings),
   };

@@ -126,6 +126,12 @@ function makeCtx(blank = false) {
     ph: blank ? exampleProfile() : null,
     live,
     saved,
+    /** Required-field errors wait until the field was left (blur) or Next/Finish was pressed. */
+    seen: new Set(),
+    showAll: false,
+    gate(f, msg) {
+      f.setError(ctx.showAll || ctx.seen.has(f) ? msg : '');
+    },
     /** Call after any profile edit. resetRate: the tax rate from paystub changed, so drop the calibration adjustment. */
     touch(resetRate) {
       if (blank) {
@@ -202,7 +208,7 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
   });
 
   const validate = () => {
-    fStart.setError(Number.isFinite(parseISO(start.value)) ? '' : 'Pick the day your pay period started.');
+    ctx.gate(fStart, Number.isFinite(parseISO(start.value)) ? '' : 'Pick the day your pay period started.');
     let e = '';
     if (end.value && start.value) {
       const len = dayDiff(start.value, end.value) + 1;
@@ -218,7 +224,7 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
     }
     fDelay.setError(de);
     fShifts.setError(numOf(shifts.value) < 0 ? 'Shifts can’t be negative.' : '');
-    fGross.setError(numOf(gross.value) > 0 ? '' : 'Gross pay is needed to work out your tax rate.');
+    ctx.gate(fGross, numOf(gross.value) > 0 ? '' : 'Gross pay is needed to work out your tax rate.');
     // The end date sets the period length when present; say so if it doesn't match the schedule picked.
     const len = lengthFromDates(p) ? dayDiff(p.periodStart, p.periodEnd) + 1 : 0;
     const cal = calendarMode(p);
@@ -290,6 +296,15 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
     p.gross = numOf(gross.value);
     ctx.touch(true);
   });
+  [
+    [start, fStart],
+    [gross, fGross],
+  ].forEach(([i, f]) =>
+    i.addEventListener('blur', () => {
+      ctx.seen.add(f);
+      validate();
+    }),
+  );
   validate();
   const card = el(
     'section',
@@ -311,6 +326,7 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
     fGross,
   );
   card.validate = () => {
+    ctx.showAll = true;
     validate();
     return !!(
       Number.isFinite(parseISO(start.value)) &&
@@ -772,7 +788,7 @@ function tipoutCard(ctx) {
     fields.hidden = !to.on;
     fValue.querySelector('label').textContent = to.mode === 'pct' ? 'Percent of tips' : 'Dollars per shift';
     from.disabled = to.basis === 'after';
-    fValue.setError(to.on && !(num(to.value) > 0) ? 'Enter the tip-out amount, or turn tip-outs off.' : '');
+    ctx.gate(fValue, to.on && !(num(to.value) > 0) ? 'Enter the tip-out amount, or turn tip-outs off.' : '');
   };
   ctx.live.push(sync);
   on.addEventListener('change', () => {
@@ -795,6 +811,10 @@ function tipoutCard(ctx) {
     to.from = from.value;
     ctx.touch(false);
   });
+  value.addEventListener('blur', () => {
+    ctx.seen.add(fValue);
+    sync();
+  });
   sync();
   const card = el(
     'section',
@@ -814,6 +834,7 @@ function tipoutCard(ctx) {
     fields,
   );
   card.validate = () => {
+    ctx.showAll = true;
     sync();
     return !to.on || num(to.value) > 0;
   };
@@ -941,6 +962,12 @@ function guided(root, ctx) {
       gProfile = null;
       noDeductions = false;
     }
+    const hadExamples = S.nightsExample;
+    if (hadExamples) {
+      S.nights = [];
+      S.calib = [];
+      S.nightsExample = false;
+    }
     S.settings.setupDone = true;
     S.profileExample = false;
     guidedActive = false;
@@ -949,6 +976,7 @@ function guided(root, ctx) {
     bus.rerender();
     bus.go('tonight');
     toast('Setup saved. Enter a night to see your estimated take-home.');
+    if (hadExamples) toast('Example nights cleared.');
   });
   const skip = el(
     'button',
