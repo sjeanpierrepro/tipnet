@@ -1,9 +1,9 @@
 // Budget tab (paid add-on): safe to spend, next paycheck, bills, spending, goals, subscription.
 // Locked users see an honest preview and can buy or paste a license key. The free app is unchanged.
-import { todayISO, periodIndex, periodRange, round2, indexNights } from '../math.js';
-import { isSetUp } from '../storage.js';
+import { todayISO, periodIndex, periodRange, round2 } from '../math.js';
+import { isSetUp, isWorkplaceSetUp, nightsOf } from '../storage.js';
 import {
-  safeToSpend,
+  safeToSpendAll,
   lastPayday,
   hasPayDelay,
   billsDue,
@@ -14,10 +14,9 @@ import {
   catFreq,
   spendingMonthly,
   possibleAside,
-  asideSliderMax,
-  roundDownStep,
+  asideRange,
   ASIDE_STEP,
-  ASIDE_UNKNOWN_MAX,
+  funderOf,
   exampleBudget,
   migrateBudget,
   paidKey,
@@ -148,6 +147,23 @@ export function bootBilling() {
   }
 }
 
+/* ---------- the restaurants that pay you ---------- */
+/**
+ * One pay source per restaurant that is set up (a restaurant still being set up has no real paystub yet), for the
+ * budget math: {id, name, profile, nights}. Bills and spending are paid from all of them; each goal from one (fundedBy).
+ */
+function sourcesOf(S) {
+  const ready = S.workplaces.filter((w) => isWorkplaceSetUp(S, w));
+  return (ready.length ? ready : S.workplaces.slice(0, 1)).map((w) => ({
+    id: w.id,
+    name: w.name,
+    profile: w.profile,
+    nights: nightsOf(S, w.id),
+  }));
+}
+/** The restaurant a goal is saved from (its pick, else the one that pays most often). */
+const funderFor = (g, src) => funderOf(g, src, todayISO());
+
 /* ---------- small pieces ---------- */
 const bar = (pct, label) =>
   el(
@@ -167,7 +183,7 @@ const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
 
 /* ---------- LOCKED: preview + upgrade ---------- */
 function sampleCard(S) {
-  const r = safeToSpend(exampleBudget(), S.profile, S.nights, todayISO(), { cashOnHand: 2400 });
+  const r = safeToSpendAll(exampleBudget(), sourcesOf(S), todayISO(), { cashOnHand: 2400 });
   return el(
     'section',
     { class: 'card stack' },
@@ -553,8 +569,11 @@ function asOfText(iso) {
 }
 
 /** r0: the safeToSpend result the screen already worked out. Typing a balance saves it and works out a fresh one (once, after a pause). */
-function heroCard(S, r0) {
+function heroCard(S, r0, src) {
   const host = el('section', { class: 'result stack' });
+  const many = src.length > 1;
+  // Restaurants whose payday isn't set (TipNet then assumes the day after the pay period ends).
+  const noDelay = src.filter((s) => !hasPayDelay(s.profile));
   const saved = S.budget.balance;
   const cashIn = moneyInput({
     id: 'budget-balance',
@@ -567,13 +586,19 @@ function heroCard(S, r0) {
     const bal = S.budget.balance;
     clear(host).append(
       ...[
-        el('div', { class: 'hero-label' }, 'Safe to spend until payday (' + fmtDate(r.payday) + ')'),
+        el(
+          'div',
+          { class: 'hero-label' },
+          many
+            ? 'Safe to spend until ' + fmtDate(r.payday) + ' — ' + r.paydaySource.name + ' check'
+            : 'Safe to spend until payday (' + fmtDate(r.payday) + ')',
+        ),
         el('div', { class: 'hero num', 'aria-live': 'polite' }, money(r.safe)),
         el(
           'div',
           { class: 'hint' },
           neg
-            ? 'estimated, ' + plural(r.daysAway, 'day') + ' to payday'
+            ? 'estimated, ' + plural(r.daysAway, 'day') + ' to ' + (many ? 'the next check' : 'payday')
             : 'about ' + money(r.perDay) + ' a day for ' + plural(r.daysAway, 'day') + ' (estimated)',
         ),
         bal
@@ -592,12 +617,18 @@ function heroCard(S, r0) {
               'Update your balance: it is a few days old, so this number may be off. Type what you have now in the box above.',
             )
           : null,
-        hasPayDelay(S.profile)
+        !noDelay.length
           ? null
           : el(
               'p',
               { class: 'hint' },
-              'Assumes you’re paid the day after the pay period ends. ',
+              many
+                ? 'Assumes ' +
+                    noDelay.map((s) => s.name).join(' and ') +
+                    ' pay' +
+                    (noDelay.length === 1 ? 's' : '') +
+                    ' the day after the pay period ends. '
+                : 'Assumes you’re paid the day after the pay period ends. ',
               el(
                 'button',
                 {
@@ -613,7 +644,9 @@ function heroCard(S, r0) {
           ? el(
               'p',
               { class: 'hint' },
-              'This counts only your cash tips from this pay period. Enter what you have in the bank and in cash above for a truer number.',
+              many
+                ? 'This counts only your cash tips from this pay period at each restaurant. Enter what you have in the bank and in cash above for a truer number.'
+                : 'This counts only your cash tips from this pay period. Enter what you have in the bank and in cash above for a truer number.',
             )
           : null,
         neg
@@ -623,7 +656,7 @@ function heroCard(S, r0) {
               'What you have now is less than what is coming out before payday. That is common between checks. Your next paycheck is not counted here, so this usually evens out on payday. If you want it to be positive sooner, you could pay a bill after payday, or lower a spending amount.',
             )
           : null,
-        breakdown(S, r),
+        breakdown(S, r, many),
       ].filter(Boolean),
     );
   };
@@ -642,7 +675,7 @@ function heroCard(S, r0) {
     const n = parseFloat(clean(cashIn.value));
     S.budget.balance = Number.isFinite(n) ? { amount: round2(n), asOf: new Date().toISOString() } : null;
     save();
-    draw(safeToSpend(S.budget, S.profile, S.nights, todayISO()));
+    draw(safeToSpendAll(S.budget, src, todayISO()));
   };
   const later = debounce(commit, 400);
   cashIn.addEventListener('input', () => {
@@ -654,7 +687,20 @@ function heroCard(S, r0) {
   return el('div', { class: 'stack' }, box, host); // the input comes first so the number below always reflects it
 }
 
-function breakdown(S, r) {
+/** The next check from each restaurant (not counted in Safe to spend until it arrives). */
+function nextChecksRows(r) {
+  return [
+    row('Next checks (counted once they arrive)', ''),
+    ...r.sources.map((s) =>
+      row(
+        '   ' + s.name + ', ' + fmtDate(s.payday),
+        s.check == null ? 'Not known yet' : money(s.check),
+        'hint',
+      ),
+    ),
+  ];
+}
+function breakdown(S, r, many = false) {
   const perDayCats = r.daysAway > 0 ? r.categoriesTotal / r.daysAway : 0;
   const catName = new Map(S.budget.categories.map((c) => [c.id, c.name]));
   return el(
@@ -705,6 +751,7 @@ function breakdown(S, r) {
         .filter((c) => c.reserved > 0)
         .map((c) => row('   ' + (catName.get(c.id) || c.name), '−' + money(c.reserved), 'hint')),
       row('Safe to spend', money(r.safe), 'total'),
+      ...(many ? nextChecksRows(r) : []),
     ),
     el(
       'p',
@@ -727,9 +774,22 @@ const CHECK_HINT = {
   average:
     'No night in the pay period this check pays for has cash entered yet, so the projected check is your average check from past pay periods.',
 };
-function nextCheckCard(S, r0) {
+function nextCheckCard(S, r0, src) {
   const a = r0.after;
   const known = a.projectedCheck != null;
+  const many = src.length > 1;
+  // Several restaurants: every check that arrives in the window, one row each, then their total.
+  const checkRows = many
+    ? [
+        ...a.checks.map((k) =>
+          row(
+            k.name + ' check, ' + fmtDate(k.date) + ' (estimated)',
+            k.amount == null ? 'Not known yet' : money(k.amount),
+          ),
+        ),
+        a.checks.length > 1 ? row('Checks in that window', known ? money(a.projectedCheck) : '–') : null,
+      ].filter(Boolean)
+    : [row('Projected check (estimated)', known ? money(a.projectedCheck) : 'Not known yet')];
   return el(
     'section',
     { class: 'card stack-sm' },
@@ -741,7 +801,7 @@ function nextCheckCard(S, r0) {
     el(
       'dl',
       { class: 'breakdown' },
-      row('Projected check (estimated)', known ? money(a.projectedCheck) : 'Not known yet'),
+      ...checkRows,
       ...(a.otherIncome.length
         ? [row('Other income in that window (' + a.otherIncome.length + ')', '+' + money(a.otherIncomeTotal))]
         : []),
@@ -753,24 +813,37 @@ function nextCheckCard(S, r0) {
     el(
       'p',
       { class: 'hint' },
-      'These dates are the days you will be spending this check, from payday to the next payday. They are not the pay period the check is for. ',
+      many
+        ? 'These dates run from the ' +
+            r0.paydaySource.name +
+            ' payday to the day before its next one. Checks from your other restaurants that arrive in between are counted too. '
+        : 'These dates are the days you will be spending this check, from payday to the next payday. They are not the pay period the check is for. ',
       known
-        ? CHECK_HINT[a.checkFrom] || CHECK_HINT.current
+        ? many
+          ? (a.unknownChecks
+              ? 'A check marked “Not known yet” is left out until TipNet can estimate it. '
+              : '') + 'Each check is worked out from that restaurant’s own nights.'
+          : CHECK_HINT[a.checkFrom] || CHECK_HINT.current
         : 'Log a night with its cash in hand and TipNet can estimate your check. The check is what is left after the cash you already took home.',
     ),
   );
 }
 
 /* ---------- (c) bills ---------- */
-function billsCard(S, r0) {
+function billsCard(S, r0, src) {
   const B = S.budget,
-    p = S.profile,
     today = todayISO();
-  const idx = periodIndex(p, today);
-  // Same window safe to spend and the next paycheck card count, so no bill they include is missing here.
-  const nextEnd = periodRange(p, idx + 1).end;
-  const afterEnd = r0.after.periodEnd;
-  const upcoming = billsDue(B, lastPayday(p, today), afterEnd > nextEnd ? afterEnd : nextEnd);
+  // Same window safe to spend and the next paycheck card count, so no bill they include is missing here: from the earliest
+  // restaurant's last payday to the end of the after-payday window (or the end of each restaurant's next pay period).
+  let from = null,
+    to = r0.after.periodEnd;
+  src.forEach((s) => {
+    const lp = lastPayday(s.profile, today);
+    const ne = periodRange(s.profile, periodIndex(s.profile, today) + 1).end;
+    if (from == null || lp < from) from = lp;
+    if (ne > to) to = ne;
+  });
+  const upcoming = billsDue(B, from, to);
   const rows = upcoming.map((b) => {
     const key = paidKey(b.id, b.date); // the bill and its due date, so a new pay schedule never un-pays it
     const cb = el('input', {
@@ -1025,7 +1098,7 @@ function spendingCard(S) {
   return el(
     'section',
     { class: 'card stack' },
-    el('h2', null, 'Spending'),
+    el('h2', { id: 'budget-spending-heading', tabindex: '-1' }, 'Spending'),
     cats.length
       ? el('ul', { class: 'list' }, cats)
       : el(
@@ -1290,8 +1363,9 @@ function historyBox(B, g) {
  * "How much did you put toward this from this check?" plus "Add to saved" for extra money and the history. Shared by goals and plans.
  * Recording an amount adds it to saved and stops this goal coming out of the money you have now until the next payday.
  */
-function goalControls(B, g, p) {
-  const who = fmtShort(p.payday);
+/** funder: the restaurant whose checks this goal is saved from; its name is said when there is more than one. */
+function goalControls(B, g, p, funder, many = false) {
+  const who = (many && funder ? funder.name + ' ' : '') + fmtShort(p.payday);
   const plannedNow = p.recorded != null && p.perBefore != null ? p.perBefore : p.perPaycheck;
   const out = [];
   if (!p.ready) {
@@ -1404,12 +1478,15 @@ function goalRemoveBtn(B, g, noun) {
   });
 }
 
-/** What the typical paycheck is, for comparing a plan to it: average take-home from finished periods, else this period's projected check. */
-function typicalCheck(S) {
-  const inc = expectedIncome(S.profile, S.nights, todayISO());
+/**
+ * What the typical paycheck from one restaurant is, for comparing a plan to it: average take-home from finished periods,
+ * else this period's projected check, plus regular other income over one of its pay periods.
+ */
+function typicalCheckOf(S, s) {
+  const inc = expectedIncome(s.profile, s.nights, todayISO());
   const check = inc.avgTakeHomePerPeriod != null ? inc.avgTakeHomePerPeriod : inc.projectedCheck;
   if (check == null) return { base: null, other: 0 };
-  const other = otherIncomePerPaycheck(S.budget, S.profile, todayISO()); // regular other income, spread over one pay period
+  const other = otherIncomePerPaycheck(S.budget, s.profile, todayISO()); // regular other income, spread over one pay period
   return { base: check + other, other };
 }
 
@@ -1450,32 +1527,66 @@ function planLines(p, tc) {
 /** "$150" for whole dollars, "$150.50" otherwise. */
 const moneyShort = (n) => (Math.round(n * 100) % 100 === 0 ? money0(n) : money(n));
 
-/** The "How we worked this out" rows for the amount that is possible to put aside. */
-function asideBreakdown(pa) {
+/** The "How we worked this out" rows for the amount that is possible to put aside. many: name the restaurants. */
+function asideBreakdown(pa, many = false) {
   const rows = [
     row(
-      pa.checkFrom === 'average' ? 'Typical take-home per paycheck' : 'Projected take-home per paycheck',
+      (pa.checkFrom === 'average' ? 'Typical take-home per paycheck' : 'Projected take-home per paycheck') +
+        (many ? ' from ' + pa.funderName : ''),
       money(pa.check),
     ),
   ];
+  if (many) {
+    rows.push(
+      row('Your other restaurants over the same ' + pa.periodDays + ' days', '+' + money(pa.otherChecks)),
+    );
+    pa.otherChecksList.forEach((o) =>
+      rows.push(row('   ' + o.name, o.known ? '+' + money(o.amount) : 'Not known yet', 'hint')),
+    );
+  }
   if (pa.other > 0) rows.push(row('Other regular income per paycheck', '+' + money(pa.other)));
   rows.push(row('Bills per paycheck', '−' + money(pa.bills)));
   rows.push(row('Spending categories per paycheck', '−' + money(pa.spending)));
   rows.push(row('Your other goals per paycheck', '−' + money(pa.goals)));
   pa.goalList.forEach((g) => rows.push(row('   ' + g.name, '−' + money(g.amount), 'hint')));
   rows.push(row('Room to put aside', money(pa.possible), 'total'));
+  if (many)
+    rows.push(
+      row(
+        'Bills, spending and goals are spread over every restaurant’s pay. One check never puts aside more than it brings in.',
+        '',
+        'hint',
+      ),
+    );
   return rows;
+}
+
+/** Scroll to a Budget card's heading and put keyboard focus on it (from "lower a spending category or another goal"). */
+function goToCard(id) {
+  const h = document.getElementById(id);
+  if (!h) return;
+  try {
+    h.scrollIntoView({ block: 'start' });
+  } catch (e) {
+    /* ignore */
+  }
+  h.focus();
 }
 
 /**
  * The form for a savings goal (kind 'goal') or a big-purchase plan (kind 'plan'). With an item it edits that one.
- * Name, cost, already saved. Then TipNet shows what is possible to put aside each paycheck, and a slider (linked to a money field) sets
- * how much to put aside; the number of paychecks and the ready-by date follow it live. A plan can instead be set by a date.
+ * Name, cost, already saved, and (with more than one restaurant) which restaurant's paychecks it is saved from. Then TipNet
+ * shows what is safe to put aside from each of those paychecks, and a slider (linked to a money field) sets how much; it
+ * only goes as high as the budget leaves (owner rule). The number of paychecks and the ready-by date follow it live.
+ * Until TipNet knows what a check is, there is no slider: the amount is typed and marked an estimate.
+ * A plan can instead be set by a date (that path may need more than the budget leaves; it says so).
  */
 function goalForm(item, kind = 'plan') {
   const S = getState(),
     B = S.budget;
   const today = todayISO();
+  const src = sourcesOf(S);
+  const many = src.length > 1;
   const isPlanForm = kind === 'plan';
   const pre = 'ef-' + kind + '-' + (item ? item.id : 'new');
   const key = (k) => pre + '-' + k;
@@ -1504,14 +1615,28 @@ function goalForm(item, kind = 'plan') {
     value: item && item.targetDate ? item.targetDate : '',
     'data-focus-key': key('date'),
   });
-  // What is possible comes from the budget alone, so it is worked out once (the goal being edited is left out of it).
-  const pa = possibleAside(B, S.profile, S.nights, today, { excludeId: item ? item.id : undefined });
-  const possible0 = pa.known ? roundDownStep(pa.possible) : 0;
+  // Which restaurant's paychecks it is saved from (only asked when there is more than one).
+  let funder = funderFor(item, src);
+  const funderSel = many
+    ? select(
+        src.map((s) => [s.id, s.name]),
+        funder.id,
+        { 'data-focus-key': key('funder'), id: key('funder') },
+      )
+    : null;
+  // What is possible comes from the budget alone, so it is worked out once per restaurant (the goal being edited is left out).
+  const paFor = (f) =>
+    possibleAside(B, null, null, today, {
+      sources: src,
+      funderId: f.id,
+      excludeId: item ? item.id : undefined,
+    });
+  let pa = paFor(funder);
+  let tc = typicalCheckOf(S, funder);
   const hasOwn = !!(item && !item.targetDate && Number(item.perPaycheck) > 0);
-  const start = hasOwn ? Number(item.perPaycheck) : possible0;
   const perCheck = moneyInput({
     placeholder: '0.00',
-    value: start > 0 ? String(start) : '',
+    value: hasOwn ? String(item.perPaycheck) : '',
     'data-focus-key': key('per'),
   });
   const slider = el('input', {
@@ -1521,17 +1646,23 @@ function goalForm(item, kind = 'plan') {
     step: String(ASIDE_STEP),
     'data-focus-key': key('slider'),
   });
-  slider.value = String(start);
   let mode = isPlanForm && item && item.targetDate ? 'date' : 'fixed';
-  let touched = hasOwn; // once an amount is chosen, the slider stops following "what is possible"
+  let touched = hasOwn; // once an amount is chosen, the slider stops following the starting amount
 
   const fName = field(isPlanForm ? 'What is it?' : 'Goal name', name),
     fCost = field(isPlanForm ? 'How much does it cost?' : 'How much do you need?', cost),
     fSaved = field('Already saved', saved, { optional: true }),
+    fFunder = funderSel
+      ? field('Save from which paycheck?', funderSel, {
+          hint: 'The paydays and the typical check of that restaurant set the plan.',
+        })
+      : null,
     fDate = field('Date you want it by', byDate),
     fSlider = field('How much do you want to put aside each paycheck?', slider),
     fPer = field('Or type an amount a paycheck', perCheck);
+  const perLabel = fPer.querySelector('label');
   const possibleBox = el('div', { class: 'stack-sm', id: pre + '-possible' });
+  const capNote = el('p', { class: 'hint', role: 'status', id: pre + '-cap' });
   const live = el('p', { class: 'num', role: 'status', 'aria-live': 'polite', id: pre + '-live' });
   const extra = el('div', { class: 'stack-sm', id: pre + '-extra' });
   const preview = el('div', { class: 'stack-sm', id: pre + '-preview' });
@@ -1562,13 +1693,13 @@ function goalForm(item, kind = 'plan') {
           onclick: () => {
             mode = 'fixed';
             refresh();
-            slider.focus();
+            if (!slider.disabled && !fSlider.hidden) slider.focus();
+            else perCheck.focus();
           },
         },
         'Choose an amount a paycheck instead',
       )
     : null;
-  const tc = typicalCheck(S);
   const draft = () => {
     const d = {
       kind: 'purchase',
@@ -1582,110 +1713,164 @@ function goalForm(item, kind = 'plan') {
     else d.perPaycheck = Math.max(0, numOf(perCheck.value));
     return d;
   };
-  const stepUp = (v) => Math.ceil(Math.round(v * 100) / (ASIDE_STEP * 100)) * ASIDE_STEP;
-  const setSliderTo = (v) => {
+  /** The slider's range for what is still missing. */
+  const rangeNow = () => {
     const d = draft();
-    const max = Math.max(asideSliderMax(pa.possible, Math.max(0, d.target - d.saved), pa.known), stepUp(v));
-    slider.max = String(max);
-    slider.value = String(Math.min(Math.max(0, v), max));
-    slider.setAttribute('aria-valuetext', moneyShort(Math.max(0, v)) + ' a paycheck');
+    return asideRange(pa.possible, Math.max(0, d.target - d.saved), pa.known);
   };
+  const CAP_TEXT =
+    'That’s the most your budget leaves each paycheck. Lower spending or other goals to save more.';
+  /** Keep the typed amount within what the budget leaves (when that is known). Returns the amount. */
+  const clampTyped = () => {
+    const rg = rangeNow();
+    let per = Math.max(0, numOf(perCheck.value));
+    if (rg.capped && per > rg.max) {
+      per = rg.max;
+      perCheck.value = per > 0 ? String(per) : '';
+      capNote.textContent = CAP_TEXT;
+    } else capNote.textContent = '';
+    return per;
+  };
+  const howLink = () =>
+    el(
+      'details',
+      null,
+      el('summary', { class: 'btn-link' }, 'How we worked this out'),
+      el('dl', { class: 'breakdown', style: 'padding-top:var(--s-2)' }, ...asideBreakdown(pa, many)),
+      el('p', { class: 'hint' }, 'All figures are estimates.'),
+    );
   const refresh = () => {
     const d = draft();
+    const rg = rangeNow();
     fDate.hidden = mode !== 'date';
-    fSlider.hidden = fPer.hidden = mode !== 'fixed';
-    possibleBox.hidden = live.hidden = extra.hidden = mode !== 'fixed';
+    fPer.hidden = mode !== 'fixed';
+    // No slider until TipNet knows what a check is: the amount is typed (an estimate, no cap).
+    fSlider.hidden = mode !== 'fixed' || !rg.capped;
+    possibleBox.hidden = live.hidden = extra.hidden = capNote.hidden = mode !== 'fixed';
     preview.hidden = mode !== 'date';
     if (toDate) toDate.hidden = mode !== 'fixed';
     if (toAmount) toAmount.hidden = mode !== 'date';
+    perLabel.textContent = rg.capped
+      ? 'Or type an amount a paycheck'
+      : 'Amount a paycheck (an estimate for now)';
     clear(possibleBox);
     clear(extra);
     clear(preview);
     live.textContent = '';
     if (mode === 'date') {
       if (!(d.target > 0) || !d.targetDate || d.targetDate <= today) return;
+      const plan = purchasePlan(d, funder.profile, today);
       preview.append(
-        ...planLines(purchasePlan(d, S.profile, today), tc).map((t, i) =>
-          el('p', i === 0 ? { class: 'num' } : { class: 'hint' }, t),
-        ),
+        ...planLines(plan, tc).map((t, i) => el('p', i === 0 ? { class: 'num' } : { class: 'hint' }, t)),
       );
+      if (pa.known && !plan.ready && !plan.noPaychecks && plan.perPaycheck > rg.max)
+        preview.append(
+          el(
+            'p',
+            { class: 'note' },
+            'That’s more than your budget leaves each paycheck (up to ' +
+              moneyShort(rg.max) +
+              '). A later date lowers it, or lower spending or another goal.',
+          ),
+        );
       return;
     }
+    slider.disabled = perCheck.disabled = rg.capped && rg.disabled;
     if (!(d.target > 0)) {
       possibleBox.append(
-        el('p', { class: 'hint' }, 'Enter what you need and TipNet will show what you could put aside.'),
+        el('p', { class: 'hint' }, 'Enter what you need and TipNet will show what is safe to put aside.'),
       );
-      setSliderTo(Number(slider.value) || 0);
+      slider.max = String(Math.max(ASIDE_STEP, rg.max || 0));
+      slider.value = String(Math.min(Number(slider.max), Math.max(0, numOf(perCheck.value))));
       return;
     }
-    // Until the person picks an amount, the slider starts at what is possible.
-    if (!touched) perCheck.value = possible0 > 0 ? String(possible0) : '';
-    const per = Math.max(0, numOf(perCheck.value));
-    setSliderTo(per);
-    possibleBox.append(
-      pa.known
-        ? el(
-            'p',
-            { class: 'num' },
-            'You could put aside up to about ' + moneyShort(pa.possible) + ' a paycheck.',
-          )
-        : el(
-            'p',
-            { class: 'hint' },
-            "TipNet doesn't know what your paycheck is yet, so it can't say what you could put aside. The slider goes from $0 to $" +
-              ASIDE_UNKNOWN_MAX +
-              '. Log a night with the cash you took home, or finish a pay period, and it will work this out.',
-          ),
-      ...(pa.known
-        ? [
-            el(
-              'details',
-              null,
-              el('summary', { class: 'btn-link' }, 'How we worked this out'),
-              el('dl', { class: 'breakdown', style: 'padding-top:var(--s-2)' }, ...asideBreakdown(pa)),
-              el('p', { class: 'hint' }, 'All figures are estimates.'),
-            ),
-          ]
-        : []),
-    );
-    const p = purchasePlan({ ...d, perPaycheck: per }, S.profile, today);
+    if (!rg.capped) {
+      possibleBox.append(
+        el(
+          'p',
+          { class: 'hint' },
+          'We’ll know what’s safe to put aside after your first pay period' +
+            (many ? ' at ' + funder.name : '') +
+            '. Until then, type an amount; it’s an estimate, and TipNet checks it against your budget the next time you edit this ' +
+            noun +
+            '.',
+        ),
+      );
+    } else if (rg.disabled) {
+      const toSpend = el(
+        'button',
+        { type: 'button', class: 'btn-link', onclick: () => goToCard('budget-spending-heading') },
+        'Edit spending',
+      );
+      const toGoals = el(
+        'button',
+        { type: 'button', class: 'btn-link', onclick: () => goToCard('budget-goals-heading') },
+        'Edit your other goals',
+      );
+      possibleBox.append(
+        el(
+          'p',
+          { class: 'note' },
+          'Your budget doesn’t leave anything to put aside from each ' +
+            (many ? funder.name + ' ' : '') +
+            'paycheck right now: bills, spending and your other goals use it all. Lower a spending category or another goal to make room.',
+        ),
+        el('div', { class: 'cluster' }, toSpend, toGoals),
+        howLink(),
+      );
+    } else {
+      possibleBox.append(
+        el(
+          'p',
+          { class: 'num' },
+          'Up to ' +
+            moneyShort(rg.max) +
+            ' a paycheck is safe to put aside' +
+            (many ? ' from ' + funder.name : '') +
+            ' — that’s what your budget leaves after bills, spending and your other goals.',
+        ),
+        howLink(),
+      );
+    }
+    // Until the person picks an amount, it starts at what is safe, or less when that finishes the goal in one paycheck.
+    if (!touched && rg.capped) perCheck.value = rg.start > 0 ? String(rg.start) : '';
+    const per = rg.capped && rg.disabled ? 0 : clampTyped();
+    if (rg.capped) {
+      slider.max = String(Math.max(ASIDE_STEP, rg.max));
+      slider.value = String(Math.min(rg.max, per));
+      slider.setAttribute('aria-valuetext', moneyShort(Math.min(rg.max, per)) + ' a paycheck');
+    }
+    if (rg.capped && rg.disabled) return;
+    const p = purchasePlan({ ...d, perPaycheck: per }, funder.profile, today);
     if (p.ready) live.textContent = 'You already have enough saved for this.';
-    else if (!(per > 0)) live.textContent = 'Move the slider or type an amount to see how long it takes.';
+    else if (!(per > 0))
+      live.textContent = rg.capped
+        ? 'Move the slider or type an amount to see how long it takes.'
+        : 'Type an amount to see how long it takes.';
     else
       live.textContent =
         moneyShort(per) +
-        ' a paycheck → about ' +
+        ' a paycheck' +
+        (rg.capped ? '' : ' (estimate)') +
+        ' → about ' +
         plural(p.paychecksLeft, 'paycheck') +
         (p.readyBy ? ' → ready by about ' + fmtDate(p.readyBy) : '');
     if (!p.ready && per > 0) {
       const sh = planShare(per, tc.base);
-      if (!sh)
-        extra.append(
-          el(
-            'p',
-            { class: 'hint' },
-            "We'll compare it to your paychecks once you have a finished pay period.",
-          ),
-        );
-      else
-        extra.append(
-          el(
-            'p',
-            { class: 'hint' },
-            "That's about " +
-              sh.pct +
-              '% of a typical check' +
-              (tc.other > 0 ? ' plus your regular other income.' : '.'),
-          ),
-        );
-      if (pa.known && per > pa.possible)
-        extra.append(
-          el(
-            'p',
-            { class: 'hint' },
-            "That's more than your budget leaves each paycheck; you may need to cut spending.",
-          ),
-        );
+      extra.append(
+        el(
+          'p',
+          { class: 'hint' },
+          !sh
+            ? "We'll compare it to your paychecks once you have a finished pay period."
+            : "That's about " +
+                sh.pct +
+                '% of a typical ' +
+                (many ? funder.name + ' ' : '') +
+                'check' +
+                (tc.other > 0 ? ' plus your regular other income.' : '.'),
+        ),
+      );
     }
   };
   const submit = el(
@@ -1721,9 +1906,11 @@ function goalForm(item, kind = 'plan') {
     fName,
     fCost,
     fSaved,
+    fFunder,
     possibleBox,
     fSlider,
     fPer,
+    capNote,
     live,
     extra,
     fDate,
@@ -1732,6 +1919,14 @@ function goalForm(item, kind = 'plan') {
     toAmount,
     el('div', { class: 'cluster' }, submit, cancel),
   );
+  if (funderSel)
+    funderSel.addEventListener('change', () => {
+      funder = src.find((s) => s.id === funderSel.value) || funder;
+      pa = paFor(funder);
+      tc = typicalCheckOf(S, funder);
+      if (!hasOwn) touched = false; // a new goal starts again from what is safe from that restaurant
+      refresh();
+    });
   slider.addEventListener('input', () => {
     touched = true;
     perCheck.value = slider.value === '0' ? '' : slider.value;
@@ -1741,12 +1936,16 @@ function goalForm(item, kind = 'plan') {
     touched = true;
   });
   form.addEventListener('input', (e) => {
-    if (e.target !== slider) refresh();
+    if (e.target !== slider && e.target !== funderSel) refresh();
   });
-  form.addEventListener('change', refresh);
+  form.addEventListener('change', (e) => {
+    if (e.target !== funderSel) refresh();
+  });
   form.addEventListener('submit', (e) => {
     e.preventDefault();
+    if (mode === 'fixed') clampTyped();
     const d = draft();
+    const rg = rangeNow();
     let bad = false;
     const check = (f, msg) => {
       f.setError(msg);
@@ -1756,13 +1955,20 @@ function goalForm(item, kind = 'plan') {
     check(fCost, d.target > 0 ? '' : 'Enter an amount above zero.');
     check(fSaved, '');
     check(fDate, mode === 'date' && !(d.targetDate > today) ? 'Pick a date after today.' : '');
-    check(fPer, mode === 'fixed' && !(d.perPaycheck > 0) ? 'Enter an amount above zero.' : '');
+    check(
+      fPer,
+      mode !== 'fixed' || d.perPaycheck > 0 || d.target - d.saved <= 0
+        ? ''
+        : rg.capped && rg.disabled
+          ? 'Your budget leaves nothing to put aside right now. Lower spending or another goal first.'
+          : 'Enter an amount above zero.',
+    );
     if (bad) {
       const first = form.querySelector('[aria-invalid]');
       if (first) first.focus();
       return;
     }
-    const p = purchasePlan(d, S.profile, today);
+    const p = purchasePlan(d, funder.profile, today);
     const fields = {
       name: d.name,
       target: d.target,
@@ -1771,10 +1977,12 @@ function goalForm(item, kind = 'plan') {
     };
     if (isPlanForm) fields.kind = 'purchase';
     if (mode === 'date') fields.targetDate = d.targetDate;
-    // The schedule a goal is measured against starts when it is made, or again when its numbers are changed.
+    if (many) fields.fundedBy = funder.id;
+    // The schedule a goal is measured against starts when it is made, or again when its numbers (or its paycheck) change.
     const changed =
       !item ||
       isPlanForm ||
+      (many && item.fundedBy !== funder.id) ||
       ['target', 'saved', 'perPaycheck'].some(
         (k) => Math.round((Number(item[k]) || 0) * 100) !== Math.round(fields[k] * 100),
       );
@@ -1828,15 +2036,23 @@ function trackerBody(S, g, p, tc) {
   return body;
 }
 
-function planRow(S, g, tc) {
+/** "Saved from Second Spot paychecks" under a goal, when there is more than one restaurant. */
+const funderLine = (f, many) =>
+  many ? el('div', { class: 'hint' }, 'Saved from ' + f.name + ' paychecks.') : null;
+
+function planRow(S, g, src) {
   const B = S.budget;
   if (isEditing('plan', g.id))
     return el('li', { class: 'list-row wrap' }, el('div', { class: 'main' }, goalForm(g, 'plan')));
-  const p = purchasePlan(g, S.profile, todayISO());
+  const f = funderFor(g, src);
+  const many = src.length > 1;
+  const tc = typicalCheckOf(S, f);
+  const p = purchasePlan(g, f.profile, todayISO());
   const head = [
     el('div', { class: 'spread' }, el('span', null, g.name), el('b', { class: 'num' }, p.pct + '%')),
     bar(p.pct, g.name + ' progress'),
     el('div', { class: 'hint' }, money(g.saved) + ' saved of ' + money(g.target) + '.'),
+    funderLine(f, many),
   ];
   const body = trackerBody(S, g, p, tc);
   if (p.ready) {
@@ -1874,7 +2090,7 @@ function planRow(S, g, tc) {
       ),
     );
   }
-  body.push(...goalControls(B, g, p));
+  body.push(...goalControls(B, g, p, f, many));
   return el(
     'li',
     { class: 'list-row wrap' },
@@ -1922,14 +2138,17 @@ function doneList(S, done) {
 
 function goalsCard(S) {
   const B = S.budget;
-  const tc = typicalCheck(S);
+  const src = sourcesOf(S);
+  const many = src.length > 1;
   const rows = B.goals
     .filter((g) => !g.boughtAt)
     .map((g) => {
-      if (isPlan(g)) return planRow(S, g, tc);
+      if (isPlan(g)) return planRow(S, g, src);
       if (isEditing('goal', g.id))
         return el('li', { class: 'list-row wrap' }, el('div', { class: 'main' }, goalForm(g, 'goal')));
-      const p = purchasePlan(g, S.profile, todayISO());
+      const f = funderFor(g, src);
+      const tc = typicalCheckOf(S, f);
+      const p = purchasePlan(g, f.profile, todayISO());
       return el(
         'li',
         { class: 'list-row wrap' },
@@ -1939,8 +2158,9 @@ function goalsCard(S) {
           el('div', { class: 'spread' }, el('span', null, g.name), el('b', { class: 'num' }, p.pct + '%')),
           bar(p.pct, g.name + ' progress'),
           el('div', { class: 'hint' }, money(g.saved) + ' of ' + money(g.target) + '.'),
+          funderLine(f, many),
           ...trackerBody(S, g, p, tc),
-          ...goalControls(B, g, p),
+          ...goalControls(B, g, p, f, many),
         ),
         el('div', { class: 'row-actions' }, editBtn('goal', g.id, 'Edit ' + g.name), goalRemoveBtn(B, g, '')),
       );
@@ -1949,7 +2169,7 @@ function goalsCard(S) {
   return el(
     'section',
     { class: 'card stack' },
-    el('h2', null, 'Savings goals'),
+    el('h2', { id: 'budget-goals-heading', tabindex: '-1' }, 'Savings goals'),
     rows.length
       ? el('ul', { class: 'list' }, rows)
       : el(
@@ -2278,11 +2498,12 @@ function unlockedView(S) {
   const B = S.budget;
   // Old paid ticks were keyed by pay period number. Re-key them by due date, once, using the current pay schedule.
   if (hasOldPaidKeys(B)) {
-    B.paidBills = convertPaidKeys(B.paidBills, B.bills, S.profile);
+    B.paidBills = convertPaidKeys(B.paidBills, B.bills, S.workplaces[0].profile); // the only pay schedule there was then
     save();
   }
   // Worked out once per render and shared by the cards below (none of them needs it recomputed).
-  const r0 = safeToSpend(B, S.profile, S.nights, todayISO(), { index: indexNights(S.profile, S.nights) });
+  const src = sourcesOf(S);
+  const r0 = safeToSpendAll(B, src, todayISO());
   const empty = !B.bills.length && !B.categories.length && !B.goals.length && !B.spends.length;
   const start = el(
     'button',
@@ -2314,9 +2535,9 @@ function unlockedView(S) {
           start,
         )
       : null,
-    heroCard(S, r0),
-    nextCheckCard(S, r0),
-    billsCard(S, r0),
+    heroCard(S, r0, src),
+    nextCheckCard(S, r0, src),
+    billsCard(S, r0, src),
     spendingCard(S),
     otherIncomeCard(S),
     goalsCard(S),

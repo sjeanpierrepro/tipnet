@@ -8,10 +8,10 @@ import * as storage from '../../app/js/storage.js';
 
 const jobsState = (mode = 'tips', mutate) =>
   realState((S) => {
-    S.settings.setupDone = true;
-    S.profile.entryMode = mode;
-    S.profile.tipout.on = false;
-    S.profile.payTypes = [
+    S.workplaces[0].setupDone = true;
+    S.workplaces[0].profile.entryMode = mode;
+    S.workplaces[0].profile.tipout.on = false;
+    S.workplaces[0].profile.payTypes = [
       { id: 'bar', k: 'bartender', name: 'Bartender', unit: 'hr', rate: 12, usual: 7 },
       { id: 'prep', k: 'prep', name: 'Prep', unit: 'hr', rate: 10, usual: 0 },
       { id: 'lead', k: 'lead', name: 'Supervisor / shift lead', unit: 'hr', rate: 15, usual: 0 },
@@ -74,7 +74,7 @@ test('guided setup step 3: jobs with every job preset, other pay with every othe
       page.type(page.$('#pr-' + s.id.slice(3)), rate);
     }
     page.click(page.button('Finish setup'));
-    const p = page.state().profile;
+    const p = page.state().workplaces[0].profile;
     assert.deepEqual(
       p.payTypes.map((x) => [x.k, x.rate]),
       [
@@ -92,8 +92,8 @@ test('guided setup step 3: jobs with every job preset, other pay with every othe
 test('full Setup page: jobs and other pay sections with every preset; an old "Hourly"/"Training" profile shows as jobs', async () => {
   const page = await boot({
     seed: realState((S) => {
-      S.settings.setupDone = true;
-      S.profile.payTypes = [
+      S.workplaces[0].setupDone = true;
+      S.workplaces[0].profile.payTypes = [
         { id: 'p1', k: 'hourly', name: 'Hourly', unit: 'hr', rate: 12, usual: 7 },
         { id: 'p2', k: 'training', name: 'Training', unit: 'hr', rate: 15, usual: 0 },
         { id: 'p3', k: 'bonus', name: 'Bonus', unit: 'amt', rate: 0, usual: 0, supp: 1 },
@@ -115,7 +115,7 @@ test('full Setup page: jobs and other pay sections with every preset; an old "Ho
     JOB_PRESETS.concat(OTHER_PAY_PRESETS).forEach((pr) => assert.ok(all.includes(pr.name), pr.name));
     assert.equal(page.byLabel('Remove Training').tagName, 'BUTTON');
     assert.equal(page.$$('button[aria-label="Remove Hourly"]').length, 0, 'the main job cannot be removed');
-    assert.equal(page.state().profile.payTypes.length, 3, 'nothing lost');
+    assert.equal(page.state().workplaces[0].profile.payTypes.length, 3, 'nothing lost');
   } finally {
     await page.close();
   }
@@ -396,6 +396,7 @@ test('guided setup keeps what was typed in the saved state (settings.guidedDraft
     assert.equal(g.step, 1);
     assert.equal(g.profile.gross, 1500);
     assert.equal(g.profile.periodStart, '2026-09-01');
+    assert.equal(g.workplaceId, 'w1');
     assert.equal(page.state().profileExample, true, 'the real profile is untouched until Finish');
   } finally {
     await page.close();
@@ -404,7 +405,7 @@ test('guided setup keeps what was typed in the saved state (settings.guidedDraft
 
 test('guided setup: after a reload the same step comes back with the typed numbers', async () => {
   const S = storage.seedState();
-  const g = storage.seedState().profile;
+  const g = storage.seedState().workplaces[0].profile;
   g.gross = 1500;
   g.periodStart = '2026-09-01';
   S.settings.guidedDraft = { step: 1, profile: g };

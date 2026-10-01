@@ -33,7 +33,7 @@ import {
   maxNightDate,
   MIN_NIGHT_DATE,
 } from '../inputs.js';
-import { lockFinished, isSetUp } from '../storage.js';
+import { lockFinished, isSetUp, isWorkplaceSetUp, activeWorkplace, nightsOf } from '../storage.js';
 import {
   el,
   clear,
@@ -49,6 +49,7 @@ import {
   periodLabel,
   exampleBanner,
   setupFirstCard,
+  workplaceSwitcher,
   save,
   getState,
   uid,
@@ -56,11 +57,13 @@ import {
   bus,
 } from './common.js';
 
-let draft = null; // survives tab switches so half-typed entries are not lost
+// One in-progress entry per restaurant (restaurant id -> draft). They survive tab and restaurant switches, so a half-typed
+// entry is never lost: switching back to a restaurant brings its own entry back. Memory only, like before.
+const drafts = new Map();
 let showExample = false; // before setup: "See an example first" was tapped
 
-/** Nights that count as history for shift averages. Example nights never do, so the first real numbers match their preview. */
-const historyOf = (S) => (S.nightsExample ? [] : S.nights);
+/** That restaurant's nights that count as history for shift averages. Example nights never do, so the first real numbers match their preview. */
+const historyOf = (S, w) => (S.nightsExample ? [] : nightsOf(S, w.id));
 
 /** Tips-only entry: the nightly number is cash + card tips and TipNet adds the hourly/per-shift pay. */
 export const tipsMode = (p) => !!p && p.entryMode === 'tips';
@@ -87,12 +90,18 @@ const fmtHrs = (h) => String(Math.round(h * 100) / 100);
 
 /** Drop the in-progress entry and the example view (e.g. after Erase everything or Restore). */
 export function resetDraft() {
-  draft = null;
+  drafts.clear();
   showExample = false;
 }
-/** The "Late nights" rule changed: re-date the in-progress entry, unless the user picked a date themselves. */
+/** The "Late nights" rule changed: re-date the in-progress entries, unless the user picked a date themselves. */
 export function redateDraft(S) {
-  if (draft && !draft.dateTouched) draft.date = tonightOf(S);
+  drafts.forEach((d) => {
+    if (!d.dateTouched) d.date = tonightOf(S);
+  });
+}
+/** A restaurant was removed: forget its entry. */
+export function dropDraft(id) {
+  drafts.delete(id);
 }
 
 /**
@@ -101,8 +110,8 @@ export function redateDraft(S) {
  * The first row is the main job with EMPTY hours: hours are typed every night (shift lengths vary), never pre-filled
  * or remembered. A per-shift main job starts at 1 shift. Other pay stays hidden until "+ Add other pay" (d.showOther).
  */
-export function blankDraft(S) {
-  const main = jobsOf(S.profile)[0];
+export function blankDraft(S, p) {
+  const main = jobsOf(p)[0];
   return {
     total: '',
     cash: '',
@@ -706,8 +715,8 @@ function bullet(dt, dd, cls) {
  * hoursMissing: a job row still needs its hours. Tips mode then shows no numbers (they would leave the pay out);
  * total mode labels the base pay instead.
  */
-export function resultCard(c, S, note, hoursMissing = false) {
-  if (!c.total || (hoursMissing && tipsMode(S.profile)))
+export function resultCard(c, w, note, hoursMissing = false) {
+  if (!c.total || (hoursMissing && tipsMode(w.profile)))
     return el(
       'div',
       { class: 'result' },
@@ -716,12 +725,12 @@ export function resultCard(c, S, note, hoursMissing = false) {
         { class: 'note' },
         c.total
           ? 'Add tonight’s hours to see your take-home.'
-          : tipsMode(S.profile)
+          : tipsMode(w.profile)
             ? 'Enter tonight’s tips above and your take-home appears here.'
             : 'Enter tonight’s total above and your take-home appears here.',
       ),
     );
-  const cal = S.calib.length ? S.calib[S.calib.length - 1] : null;
+  const cal = w.calib.length ? w.calib[w.calib.length - 1] : null;
   const acc = cal
     ? 'Your last paycheck estimate was off by ' + Math.abs(cal.err * 100).toFixed(1) + '%.'
     : 'This is an estimate. Your real paycheck can differ; check it with “Check my accuracy” after payday.';
@@ -795,11 +804,11 @@ export function resultCard(c, S, note, hoursMissing = false) {
   return el('div', { class: 'result' }, kids);
 }
 
-function stripCard(S) {
-  const p = S.profile,
+function stripCard(S, w) {
+  const p = w.profile,
     today = todayISO();
   const idx = periodIndex(p, today);
-  const nights = S.nightsExample && !S.profileExample ? [] : S.nights;
+  const nights = S.nightsExample && !S.profileExample ? [] : nightsOf(S, w.id);
   const t = periodTotals(p, nights, idx, today);
   const strip = el(
     'div',
@@ -834,11 +843,12 @@ function stripCard(S) {
  */
 function exampleView(S) {
   const today = todayISO();
-  const p = { ...exampleProfile(today), entryMode: S.profile.entryMode };
+  const mode = activeWorkplace(S).profile.entryMode;
+  const p = { ...exampleProfile(today), entryMode: mode };
   const nights = exampleNights(today);
-  const ex = S.profile.entryMode === 'tips' ? 'tips' : 'total';
+  const ex = mode === 'tips' ? 'tips' : 'total';
   const night = nights[2]; // $585, 8 hours, $210 cash
-  const exS = { profile: p, nights, calib: [], profileExample: true, nightsExample: true };
+  const exW = { profile: p, calib: [] };
   const c = computeNight(night, p, shiftsPerPeriod(p, []).n);
   const heading = el('h2', { tabindex: '-1', id: 'example-heading' }, 'These are example numbers, not yours');
   const setUp = el('button', { type: 'button', class: 'btn', id: 'example-setup' }, 'Set up with my paystub');
@@ -874,13 +884,19 @@ function exampleView(S) {
       ),
     ),
     el('h2', { class: 'sr-only' }, 'Example estimate'),
-    resultCard(c, exS),
+    resultCard(c, exW),
   );
 }
 
+/** Switch Tonight (and Setup) to another restaurant. Its own entry, jobs, rates and pay period come with it. */
+function pickWorkplace(S, id) {
+  S.settings.activeWorkplaceId = id;
+  save();
+  bus.rerender();
+}
+
 export function render(root) {
-  const S = getState(),
-    p = S.profile;
+  const S = getState();
   if (!isSetUp(S)) {
     // No estimate and no entry form before setup: example taxes would give a wrong take-home.
     if (showExample) root.append(el('div', { class: 'stack' }, el('h1', null, 'Tonight'), exampleView(S)));
@@ -905,8 +921,35 @@ export function render(root) {
     return;
   }
   showExample = false;
-  if (!draft) draft = blankDraft(S);
-  const d = draft;
+  const w = activeWorkplace(S),
+    p = w.profile;
+  const many = S.workplaces.length > 1;
+  // More than one restaurant: one tap at the very top switches everything below (jobs, rates, tip-out, pay period, preview).
+  const switcher = workplaceSwitcher(S, w.id, (id) => pickWorkplace(S, id), {
+    key: 'tonight-wp',
+    label: 'Restaurant for tonight',
+  });
+  if (!isWorkplaceSetUp(S, w)) {
+    // This restaurant was added but its setup isn't finished: no estimate here yet; the others still work.
+    root.append(
+      el(
+        'div',
+        { class: 'stack' },
+        switcher,
+        el('h1', null, 'Tonight'),
+        setupFirstCard({
+          title: 'Finish setting up ' + w.name,
+          text:
+            'TipNet needs one recent paystub from ' +
+            w.name +
+            ' before it can estimate your take-home there. It takes about 3 minutes.',
+        }),
+      ),
+    );
+    return;
+  }
+  if (!drafts.has(w.id)) drafts.set(w.id, blankDraft(S, p));
+  const d = drafts.get(w.id);
   const banner = exampleBanner();
   const resultHost = el('div'); // the full card is not a live region: it changes on every keystroke
   const liveSummary = el('p', {
@@ -924,13 +967,14 @@ export function render(root) {
   const dupHost = el('div');
 
   const update = () => {
-    const hist = historyOf(S);
+    const hist = historyOf(S, w);
     const shifts = shiftsPerPeriod(p, hist).n;
     const night = liveNight(d, 'draft', p);
     const c = computeNight(night, p, shifts);
     const hoursMissing = missingHoursRow(p, d) != null;
     let ot = null;
     const others = hist.filter((n) => n.id !== 'draft');
+    // Overtime is counted per restaurant: each employer counts its own 40 hours.
     const wk = weeklyHours(p, others.concat([night]), night.date);
     if (wk.over && c.hours > 0) {
       ot = el(
@@ -938,7 +982,9 @@ export function render(root) {
         { class: 'note' },
         'You have logged about ' +
           Math.round(wk.hours * 10) / 10 +
-          ' hours this week (Monday to Sunday). If some were overtime, add Overtime under Other pay in Setup and log those hours with “+ Add other pay”. TipNet does not work out overtime pay for you.',
+          ' hours this week (Monday to Sunday)' +
+          (many ? ' at ' + w.name : '') +
+          '. If some were overtime, add Overtime under Other pay in Setup and log those hours with “+ Add other pay”. TipNet does not work out overtime pay for you.',
       );
     }
     let low = null;
@@ -956,7 +1002,7 @@ export function render(root) {
           ' you entered. Did you include your hourly pay?',
       );
     clear(resultHost).append(
-      resultCard(c, S, low && ot ? el('div', { class: 'stack-sm' }, low, ot) : low || ot, hoursMissing),
+      resultCard(c, w, low && ot ? el('div', { class: 'stack-sm' }, low, ot) : low || ot, hoursMissing),
     );
     lastSummary = c.total && !(tipsMode(p) && hoursMissing) ? 'Estimated take-home ' + money(c.net) : '';
     if (!started) {
@@ -978,29 +1024,29 @@ export function render(root) {
 
   const form = el(
     'form',
-    { class: 'card stack', novalidate: true },
+    { class: 'card stack', novalidate: true, 'aria-label': many ? 'Tonight at ' + w.name : null },
     fields.root,
     dupHost,
-    el('button', { class: 'btn btn-block', type: 'submit' }, 'Save night'),
+    el('button', { class: 'btn btn-block', type: 'submit' }, many ? 'Save night at ' + w.name : 'Save night'),
     savedMsg,
   );
   const finish = (night, net, cashWas, verb) => {
     if (S.nightsExample) {
       S.nights = [];
-      S.calib = [];
+      S.workplaces[0].calib = [];
       S.nightsExample = false;
     }
     verb();
     lockFinished({ force: true });
     save();
-    draft = blankDraft(S);
+    drafts.set(w.id, blankDraft(S, p));
     render(clear(root));
     const tot = root.querySelector('[data-focus-key="night-total"]');
     if (tot) tot.focus();
     const m = root.querySelector('[role=status].hint');
     if (m)
       m.textContent =
-        'Saved. ' +
+        (many ? 'Saved to ' + w.name + ': ' : 'Saved. ') +
         money(net) +
         ' take-home for ' +
         fmtDate(night.date) +
@@ -1012,10 +1058,11 @@ export function render(root) {
     const prob = entryCheck(p, d, { today: tonightOf(S) });
     if (prob) return showEntryProblem(fields, prob);
     const cashWas = cashCheck(d, p).status;
-    const night = storedNight(d, p, Date.now());
+    const night = { ...storedNight(d, p, Date.now()), workplaceId: w.id };
     // Same inputs as the preview: shift history before this night, never the example nights.
-    const net = computeNight(night, p, shiftsPerPeriod(p, historyOf(S)).n).net;
-    const dup = S.nightsExample ? null : S.nights.find((n) => n.date === night.date);
+    const net = computeNight(night, p, shiftsPerPeriod(p, historyOf(S, w)).n).net;
+    // Only this restaurant's nights: working two places on the same date is two separate nights.
+    const dup = S.nightsExample ? null : nightsOf(S, w.id).find((n) => n.date === night.date);
     if (!dup) return finish(night, net, cashWas, () => S.nights.push(night));
     const choose = (verb) => () => finish(night, net, cashWas, verb);
     // A locked night keeps its own pay rates: in tips mode the pay added with these tips is worked out with them too,
@@ -1044,6 +1091,7 @@ export function render(root) {
         S.nights[S.nights.indexOf(dup)] = {
           ...onto(dup),
           id: dup.id,
+          workplaceId: w.id,
           ...(dup.snap ? { snap: dup.snap } : {}),
         };
       }),
@@ -1071,6 +1119,7 @@ export function render(root) {
             (worked ? ', ' + worked + ',' : '') +
             ' for ' +
             fmtDate(night.date) +
+            (many ? ' at ' + w.name : '') +
             '. What should TipNet do with this one?',
         ),
         add,
@@ -1085,9 +1134,14 @@ export function render(root) {
     el(
       'div',
       { class: 'stack' },
-      el('h1', null, 'Tonight'),
+      switcher,
+      el(
+        'h1',
+        null,
+        many ? el('span', null, 'Tonight', el('span', { class: 'sr-only' }, ' at ' + w.name)) : 'Tonight',
+      ),
       banner,
-      stripCard(S),
+      stripCard(S, w),
       form,
       liveSummary,
       el('h2', { class: 'sr-only' }, 'Your estimate for tonight'),

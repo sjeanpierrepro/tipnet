@@ -37,34 +37,49 @@ import {
   getState,
   applyTheme,
   restoreRequest,
+  arm,
+  workplaceSwitcher,
 } from './common.js';
 import { cutoffFromSettings } from '../inputs.js';
-import { isSetUp } from '../storage.js';
+import {
+  isSetUp,
+  isWorkplaceSetUp,
+  activeWorkplace,
+  findWorkplace,
+  isFirstWorkplace,
+  nightsOf,
+  newWorkplaceId,
+  MAX_WORKPLACES,
+} from '../storage.js';
 import { renderImporter } from './importer.js';
 import { renderBackup, renderInstall } from './backup.js';
-import { redateDraft } from './tonight.js';
+import { redateDraft, dropDraft } from './tonight.js';
 
 let guidedStep = 0;
-let guidedActive = false; // stays true once the guided flow starts, even after the first edit ends example mode
-// While the profile is still the example paystub, the guided steps work on a blank copy (gProfile) so nothing of the
-// example ever becomes the user's profile by accident. The real profile is replaced only when Finish passes.
+// The restaurant the guided flow is running for (null = none). It stays set once the flow starts, even after the first
+// edit ends example mode, until Finish or Skip.
+let guidedFor = null;
+// While the first restaurant's profile is still the example paystub, the guided steps work on a blank copy (gProfile) so
+// nothing of the example ever becomes the user's profile by accident. The real profile is replaced only when Finish passes.
 let gProfile = null;
-let noDeductions = false; // "My paystub has no deductions" ticked
+let noDeductions = false; // "My paystub has no deductions" ticked (on the blank copy)
+let adding = null; // "+ Set up another restaurant" is open: {name, error}
 export function reset() {
   guidedStep = 0;
-  guidedActive = false;
+  guidedFor = null;
   gProfile = null;
   noDeductions = false;
+  adding = null;
   restoreRequest.open = false;
 }
 /**
- * The guided flow is kept in the saved state (settings.guidedDraft = {step, noDeductions, profile?}), so a reload in the
- * middle of setup comes back to the same step with what was typed. profile is the blank copy being filled in (only while
- * the real profile is still the example). Cleared by Finish and Skip.
+ * The guided flow is kept in the saved state (settings.guidedDraft = {workplaceId, step, noDeductions, profile?}), so a
+ * reload in the middle of setup comes back to the same restaurant and step with what was typed. profile is the blank copy
+ * being filled in (only while the first restaurant is still the example). Cleared by Finish and Skip.
  */
 function keepGuided(S) {
-  if (!guidedActive) return;
-  const g = { step: guidedStep };
+  if (!guidedFor) return;
+  const g = { workplaceId: guidedFor, step: guidedStep };
   if (noDeductions) g.noDeductions = true;
   if (gProfile) g.profile = gProfile;
   S.settings.guidedDraft = g;
@@ -73,14 +88,16 @@ function keepGuided(S) {
 /** After a reload: pick the guided flow up where it was. */
 function resumeGuided(S) {
   const g = S.settings && S.settings.guidedDraft;
-  if (guidedActive || gProfile || !g || typeof g !== 'object' || isSetUp(S) || S.settings.guideSkipped)
-    return;
-  guidedActive = true;
+  if (guidedFor || gProfile || !g || typeof g !== 'object') return;
+  const w = findWorkplace(S, g.workplaceId);
+  if (!w || isWorkplaceSetUp(S, w) || w.guideSkipped) return;
+  guidedFor = w.id;
   guidedStep = [0, 1, 2].includes(g.step) ? g.step : 0;
   noDeductions = g.noDeductions === true;
   const gp = g.profile;
   if (
     S.profileExample &&
+    isFirstWorkplace(S, w) &&
     gp &&
     typeof gp === 'object' &&
     Array.isArray(gp.payTypes) &&
@@ -114,8 +131,8 @@ function blankProfile() {
 }
 const eg = (n) => 'e.g. ' + Number(n).toLocaleString('en-US');
 
-/** Example nights are not real history: shift averages ignore them until the first real night is saved. */
-const historyOf = (S) => (S.nightsExample ? [] : S.nights);
+/** That restaurant's real nights: example nights are not history, so shift averages ignore them until the first real night. */
+const historyOf = (S, w) => (S.nightsExample ? [] : nightsOf(S, w.id));
 /** After a row is removed its button is gone: keep keyboard focus on the row that took its place, or on the Add button. */
 function focusNear(host, at, addId) {
   const rows = host.querySelectorAll('button[aria-label^="Remove"]');
@@ -151,14 +168,16 @@ function presetSelect(presets, current, id, fallback = 'other') {
 
 /* ============ context shared by the cards on one render ============ */
 let saveSeq = 0; // the newest edit's save decides the "All changes saved" line
-function makeCtx(blank = false) {
+/** w: the restaurant being set up. blank: the guided steps fill in gProfile (the first restaurant, still the example). */
+function makeCtx(w, blank = false) {
   const S = getState();
   if (blank && !gProfile) gProfile = blankProfile();
   const live = [];
   const saved = el('p', { class: 'hint', role: 'status', 'aria-live': 'polite' });
   const ctx = {
     S,
-    p: blank ? gProfile : S.profile,
+    w,
+    p: blank ? gProfile : w.profile,
     blank,
     ph: blank ? exampleProfile() : null,
     live,
@@ -177,7 +196,7 @@ function makeCtx(blank = false) {
         return;
       }
       S.profileExample = false;
-      if (resetRate) S.profile.rateOverride = null;
+      if (resetRate) w.profile.rateOverride = null;
       saved.textContent = 'Saving…';
       // "All changes saved" only after the write really worked (a full or blocked storage says so instead)
       const n = ++saveSeq;
@@ -205,7 +224,8 @@ function semiLabel(startISO) {
 }
 function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
   const { p, ph } = ctx;
-  const exampleEnd = ctx.S.profileExample && !ctx.blank ? p.periodEnd : null; // the example's end date, until the user changes it
+  const exampleEnd =
+    ctx.S.profileExample && !ctx.blank && isFirstWorkplace(ctx.S, ctx.w) ? p.periodEnd : null; // the example's end date, until the user changes it
   const start = el('input', { type: 'date', value: p.periodStart || '' });
   const end = el('input', { type: 'date', value: p.periodEnd || '' });
   const shifts = el('input', {
@@ -385,7 +405,7 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
 
 /* ============ 2. deductions ============ */
 function dedCard(ctx) {
-  const { p, S, ph } = ctx;
+  const { p, S, ph, w } = ctx;
   const rowsHost = el('div', { class: 'stack' });
   const summaryBox = el('div', { class: 'note', 'aria-live': 'polite' });
   const ficaErr = el('p', { class: 'field-error', hidden: true, role: 'alert' });
@@ -395,10 +415,10 @@ function dedCard(ctx) {
       return p.gross > 0
         ? ((num(d.amount) / p.gross) * 100).toFixed(2) + '% of every dollar you make'
         : 'Enter gross pay to see the rate';
-    return money(num(d.amount) / shiftsPerPeriod(p, historyOf(S)).n) + ' per shift';
+    return money(num(d.amount) / shiftsPerPeriod(p, historyOf(S, w)).n) + ' per shift';
   };
   const drawSummary = () => {
-    const s = summary(p, historyOf(S));
+    const s = summary(p, historyOf(S, w));
     clear(summaryBox).append(
       'Out of every ',
       el('b', null, '$100'),
@@ -580,21 +600,21 @@ function dedCard(ctx) {
   });
   // Guided setup on the example: the user must type an amount, or say the stub has none.
   const noDed = el('input', { type: 'checkbox', id: 'no-ded' });
-  noDed.checked = ctx.blank ? noDeductions : !!S.settings.noDeductions;
+  noDed.checked = ctx.blank ? noDeductions : !!w.noDeductions;
   const dedErr = el('p', { class: 'field-error', hidden: true, role: 'alert' });
   noDed.addEventListener('change', () => {
     if (ctx.blank) {
       noDeductions = noDed.checked;
       keepGuided(S);
     } else {
-      if (noDed.checked) S.settings.noDeductions = true;
-      else delete S.settings.noDeductions;
+      if (noDed.checked) w.noDeductions = true;
+      else delete w.noDeductions;
       ctx.touch(false);
     }
     if (noDed.checked) dedErr.hidden = true;
   });
   // The full page offers it too while no deduction has an amount (the "Skip guided setup" path needs it to finish).
-  const showNoDed = ctx.blank || !!S.settings.noDeductions || !p.deductions.some((d) => num(d.amount) > 0);
+  const showNoDed = ctx.blank || !!w.noDeductions || !p.deductions.some((d) => num(d.amount) > 0);
   const card = el(
     'section',
     { class: 'card stack' },
@@ -1072,9 +1092,214 @@ const finePrint = () =>
     'Social Security and Medicare apply to every tip dollar. Under the federal “No Tax on Tips” deduction (tax years 2025–2028, up to $25,000 of qualified tips), some federal income tax taken from your tips may come back at tax time, depending on your situation. Some states have no state income tax; if yours does, add State income tax as a deduction. Taxes on cash tips usually come out of the paycheck. Auto-gratuities are wages, not tips.',
   );
 
+/* ============ restaurants ============ */
+/** Open Setup on another restaurant (Tonight follows: they share the picked restaurant). */
+function pickWorkplace(S, id) {
+  S.settings.activeWorkplaceId = id;
+  adding = null;
+  save();
+  bus.rerender();
+}
+const sameName = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
+/** A new restaurant with a blank paystub; its guided setup starts right away (setupDone false until Finish or Skip). */
+function startNewWorkplace(S, name) {
+  const w = { id: newWorkplaceId(S), name, profile: blankProfile(), calib: [], setupDone: false };
+  S.workplaces.push(w);
+  S.settings.activeWorkplaceId = w.id;
+  adding = null;
+  guidedFor = w.id;
+  guidedStep = 0;
+  gProfile = null;
+  noDeductions = false;
+  keepGuided(S);
+  bus.rerender();
+  const h = document.querySelector('#app h1');
+  if (h) {
+    h.setAttribute('tabindex', '-1');
+    h.focus();
+  }
+}
+/** "+ Set up another restaurant", then its name. */
+function addWorkplaceCard(S) {
+  if (S.workplaces.length >= MAX_WORKPLACES) return null;
+  if (!adding) {
+    const open = el(
+      'button',
+      { type: 'button', class: 'btn btn-secondary btn-small', id: 'wp-add' },
+      '+ Set up another restaurant',
+    );
+    open.addEventListener('click', () => {
+      adding = { name: '', error: '' };
+      bus.rerender();
+      const i = document.getElementById('wp-new-name');
+      if (i) i.focus();
+    });
+    return el('div', null, open);
+  }
+  const name = el('input', {
+    type: 'text',
+    id: 'wp-new-name',
+    value: adding.name,
+    maxlength: '40',
+    autocomplete: 'off',
+    placeholder: 'e.g. Second Spot',
+  });
+  const f = field('Name of the restaurant', name, {
+    hint: 'Its paystub, pay schedule, jobs and tip-out are set up on their own. Your budget counts both paychecks.',
+  });
+  if (adding.error) f.setError(adding.error);
+  name.addEventListener('input', () => {
+    adding.name = name.value;
+    if (adding.error) {
+      adding.error = '';
+      f.setError('');
+    }
+  });
+  const go = el('button', { type: 'submit', class: 'btn btn-small', id: 'wp-new-start' }, 'Start setup');
+  const cancel = el(
+    'button',
+    { type: 'button', class: 'btn btn-secondary btn-small', id: 'wp-new-cancel' },
+    'Cancel',
+  );
+  cancel.addEventListener('click', () => {
+    adding = null;
+    bus.rerender();
+    const b = document.getElementById('wp-add');
+    if (b) b.focus();
+  });
+  const form = el(
+    'form',
+    { class: 'card stack', novalidate: true, 'aria-labelledby': 'wp-new-heading' },
+    el('h2', { id: 'wp-new-heading' }, 'Set up another restaurant'),
+    f,
+    el('div', { class: 'cluster' }, go, cancel),
+  );
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const n = name.value.trim().slice(0, 40);
+    let err = '';
+    if (!n) err = 'Give the restaurant a name, so you can tell your paychecks apart.';
+    else if (S.workplaces.some((x) => sameName(x.name, n)))
+      err = 'You already have a restaurant called ' + n + '.';
+    if (err) {
+      adding.error = err;
+      f.setError(err);
+      name.focus();
+      return;
+    }
+    startNewWorkplace(S, n);
+  });
+  return form;
+}
+/** Remove a restaurant and its nights (two taps, then Undo brings both back). The last restaurant can't be removed. */
+function removeWorkplace(S, w) {
+  const at = S.workplaces.indexOf(w);
+  if (at < 0 || S.workplaces.length < 2) return;
+  const gone = S.nights.filter((n) => n.workplaceId === w.id);
+  const goals = ((S.budget && S.budget.goals) || []).filter((g) => g.fundedBy === w.id);
+  const was = {
+    active: S.settings.activeWorkplaceId,
+    filter: S.settings.periodsFilter,
+    draft: S.settings.guidedDraft,
+  };
+  S.workplaces.splice(at, 1);
+  S.nights = S.nights.filter((n) => n.workplaceId !== w.id);
+  goals.forEach((g) => delete g.fundedBy); // those goals are saved from the default paycheck now
+  if (S.settings.activeWorkplaceId === w.id) S.settings.activeWorkplaceId = S.workplaces[0].id;
+  if (S.settings.periodsFilter === w.id) delete S.settings.periodsFilter;
+  if (S.settings.guidedDraft && S.settings.guidedDraft.workplaceId === w.id) delete S.settings.guidedDraft;
+  if (guidedFor === w.id) {
+    guidedFor = null;
+    guidedStep = 0;
+  }
+  dropDraft(w.id);
+  save();
+  bus.rerender();
+  const h = document.querySelector('#app h1');
+  if (h) {
+    h.setAttribute('tabindex', '-1');
+    h.focus();
+  }
+  toast(
+    'Removed ' +
+      w.name +
+      (gone.length ? ' and its ' + gone.length + ' night' + (gone.length === 1 ? '' : 's') : '') +
+      '.',
+    {
+      undo: () => {
+        if (S.workplaces.includes(w)) return;
+        S.workplaces.splice(Math.min(at, S.workplaces.length), 0, w);
+        S.nights = S.nights.concat(gone);
+        goals.forEach((g) => {
+          g.fundedBy = w.id;
+        });
+        S.settings.activeWorkplaceId = was.active;
+        if (was.filter) S.settings.periodsFilter = was.filter;
+        if (was.draft) S.settings.guidedDraft = was.draft;
+        save();
+        bus.rerender();
+      },
+    },
+  );
+}
+/** The restaurant's name (rename in place, autosaved) and Remove. */
+function workplaceCard(ctx) {
+  const { S, w } = ctx;
+  const name = el('input', {
+    type: 'text',
+    id: 'wp-name',
+    value: w.name,
+    maxlength: '40',
+    autocomplete: 'off',
+  });
+  const f = field('Restaurant name', name, {
+    hint:
+      S.workplaces.length > 1
+        ? 'Shown on Tonight, Pay periods and Budget.'
+        : 'Shown if you add another restaurant.',
+  });
+  name.addEventListener('input', () => {
+    const n = name.value.trim().slice(0, 40);
+    if (!n) return f.setError('Give the restaurant a name.');
+    if (S.workplaces.some((x) => x !== w && sameName(x.name, n)))
+      return f.setError('You already have a restaurant called ' + n + '.');
+    f.setError('');
+    w.name = n;
+    ctx.touch(false);
+  });
+  name.addEventListener('blur', () => {
+    if (name.value.trim() !== w.name) {
+      name.value = w.name; // a blank or repeated name goes back to the saved one
+      f.setError('');
+    }
+  });
+  let rm = null;
+  if (S.workplaces.length > 1) {
+    const n = nightsOf(S, w.id).length;
+    rm = el('button', { type: 'button', class: 'btn btn-danger btn-small', id: 'wp-remove' });
+    arm(rm, {
+      label: 'Remove ' + w.name,
+      armedLabel: n
+        ? 'Tap again: this also removes its ' + n + ' night' + (n === 1 ? '' : 's')
+        : 'Tap again to remove ' + w.name,
+      onConfirm: () => removeWorkplace(S, w),
+    });
+  }
+  return el(
+    'section',
+    { class: 'card stack', 'aria-labelledby': 'wp-card-heading' },
+    el('h2', { id: 'wp-card-heading' }, 'Restaurant'),
+    f,
+    rm ? el('div', null, rm) : null,
+  );
+}
+
 /* ============ guided flow ============ */
 function guided(root, ctx) {
-  const S = ctx.S;
+  const S = ctx.S,
+    w = ctx.w;
+  const first = isFirstWorkplace(S, w);
+  const many = S.workplaces.length > 1;
   const names = ['Pay period and gross', 'Deductions', 'Pay and tip-out'];
   const steps = el(
     'ol',
@@ -1128,28 +1353,30 @@ function guided(root, ctx) {
       gProfile.deductions = gProfile.deductions.filter((d) => num(d.amount) > 0);
       gProfile.payTypes = gProfile.payTypes.filter((t, i) => i === 0 || t.unit === 'amt' || num(t.rate) > 0);
       gProfile.rateOverride = null;
-      S.profile = gProfile;
+      w.profile = gProfile;
       gProfile = null;
-      noDeductions = false;
     }
     const hadExamples = S.nightsExample;
     if (hadExamples) {
       S.nights = [];
-      S.calib = [];
+      S.workplaces[0].calib = [];
       S.nightsExample = false;
     }
-    if (noDeductions) S.settings.noDeductions = true;
+    if (noDeductions) w.noDeductions = true;
     noDeductions = false;
-    S.settings.setupDone = true;
-    delete S.settings.guideSkipped;
+    w.setupDone = true;
+    delete w.guideSkipped;
     delete S.settings.guidedDraft;
+    S.settings.activeWorkplaceId = w.id;
     S.profileExample = false;
-    guidedActive = false;
+    guidedFor = null;
     save();
     guidedStep = 0;
     bus.rerender();
     bus.go('tonight');
-    toast('Setup saved. Enter a night to see your estimated take-home.');
+    toast(
+      (many ? w.name + ' is set up.' : 'Setup saved.') + ' Enter a night to see your estimated take-home.',
+    );
     if (hadExamples) toast('Example nights cleared.');
   });
   const skip = el(
@@ -1160,19 +1387,20 @@ function guided(root, ctx) {
       onclick: () => {
         // Not "set up": Tonight keeps its "Finish setup" card until gross pay, a deduction (or "no deductions") and the
         // main rate are in. The example paystub is swapped for a blank one, so no night is ever saved against example taxes.
-        if (S.profileExample) {
-          S.profile = gProfile || blankProfile();
+        if (S.profileExample && first) {
+          w.profile = gProfile || blankProfile();
           S.profileExample = false;
         }
         if (S.nightsExample) {
           S.nights = [];
-          S.calib = [];
+          S.workplaces[0].calib = [];
           S.nightsExample = false;
         }
-        if (noDeductions) S.settings.noDeductions = true;
-        S.settings.guideSkipped = true;
+        if (noDeductions) w.noDeductions = true;
+        w.guideSkipped = true;
+        delete w.setupDone;
         delete S.settings.guidedDraft;
-        guidedActive = false;
+        guidedFor = null;
         gProfile = null;
         noDeductions = false;
         guidedStep = 0;
@@ -1218,8 +1446,9 @@ function guided(root, ctx) {
     if (ta) ta.focus();
     return;
   }
+  // Restoring a backup replaces everything, so it is offered only on the very first setup.
   const restoreLink =
-    guidedStep === 0
+    guidedStep === 0 && first && !many
       ? el(
           'div',
           null,
@@ -1238,15 +1467,36 @@ function guided(root, ctx) {
           ),
         )
       : null;
+  // A restaurant added later can be dropped before it is finished (Undo brings it back).
+  let cancel = null;
+  if (!first && many) {
+    cancel = el(
+      'button',
+      { type: 'button', class: 'btn-link', id: 'wp-cancel-setup' },
+      'Cancel and remove ' + w.name,
+    );
+    cancel.addEventListener('click', () => removeWorkplace(S, w));
+  }
+  const switcher = workplaceSwitcher(S, w.id, (id) => pickWorkplace(S, id), {
+    key: 'setup-wp',
+    label: 'Restaurant to set up',
+  });
   root.append(
     el(
       'div',
       { class: 'stack' },
-      el('h1', { tabindex: '-1' }, 'Set up TipNet'),
+      switcher,
+      el('h1', { tabindex: '-1' }, first && !many ? 'Set up TipNet' : 'Set up ' + w.name),
       el(
         'p',
         { class: 'note', id: 'setup-welcome' },
-        'Set up with one recent paystub (about 3 minutes) so TipNet can estimate your real take-home.',
+        first && !many
+          ? 'Set up with one recent paystub (about 3 minutes) so TipNet can estimate your real take-home.'
+          : 'Use one recent paystub from ' +
+              w.name +
+              ' (about 3 minutes). Its pay schedule, jobs and tip-out are kept apart from your other restaurant' +
+              (S.workplaces.length > 2 ? 's' : '') +
+              '.',
       ),
       restoreLink,
       el('p', { class: 'hint' }, 'Three short steps. You can change any of it later.'),
@@ -1255,19 +1505,20 @@ function guided(root, ctx) {
       ctx.saved,
       el('div', { class: 'cluster' }, back, next),
       skip,
+      cancel ? el('div', null, cancel) : null,
       finePrint(),
     ),
   );
 }
 
-/** What Tonight still needs before it can estimate, in the order of the page ([] once set up). */
-export function stillNeeded(S) {
-  if (isSetUp(S)) return [];
-  const p = S.profile;
+/** What Tonight still needs before it can estimate at this restaurant, in the order of the page ([] once set up). */
+export function stillNeeded(S, w) {
+  if (isWorkplaceSetUp(S, w)) return [];
+  const p = w.profile;
   const out = [];
   if (!Number.isFinite(parseISO(p.periodStart))) out.push('your pay period start date');
   if (!(num(p.gross) > 0)) out.push('your gross pay');
-  if (!(p.deductions || []).some((d) => num(d.amount) > 0) && !S.settings.noDeductions)
+  if (!(p.deductions || []).some((d) => num(d.amount) > 0) && !w.noDeductions)
     out.push('at least one deduction (or tick “My paystub has no deductions”)');
   if (!(num(((p.payTypes || [])[0] || {}).rate) > 0)) out.push('your main rate');
   return out;
@@ -1275,11 +1526,11 @@ export function stillNeeded(S) {
 const listText = (a) => (a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1]);
 /** Full page while not set up (after "Skip guided setup"): what Tonight still needs. Updates as the fields change. */
 function notReadyNote(ctx) {
-  const S = ctx.S;
+  const { S, w } = ctx;
   const text = el('p', { id: 'not-ready-text' });
   const box = el('div', { class: 'banner', role: 'status' }, text);
   const sync = () => {
-    const need = stillNeeded(S);
+    const need = stillNeeded(S, w);
     box.hidden = !need.length;
     const t = need.length
       ? 'Still needed: ' + listText(need) + '. Tonight shows your take-home once they are in.'
@@ -1295,16 +1546,30 @@ function notReadyNote(ctx) {
 export function render(root) {
   const S0 = getState();
   resumeGuided(S0);
-  if (gProfile && !S0.profileExample) gProfile = null;
-  // The guided flow is for anyone not set up yet, unless they chose "Skip guided setup".
-  const inGuided = !isSetUp(S0) && !S0.settings.guideSkipped && (S0.profileExample || guidedActive);
-  const ctx = makeCtx(inGuided && (S0.profileExample || !!gProfile));
+  const w = activeWorkplace(S0);
+  const first = isFirstWorkplace(S0, w);
+  if (gProfile && !(S0.profileExample && first)) gProfile = null;
+  // The guided flow is for a restaurant that is not set up yet, unless they chose "Skip guided setup": the first one on a
+  // first launch (still the example), or one being set up right now (a restaurant added later starts in it).
+  const inGuided =
+    !isWorkplaceSetUp(S0, w) &&
+    !w.guideSkipped &&
+    ((first && S0.profileExample) || guidedFor === w.id || (!first && w.setupDone === false));
+  const ctx = makeCtx(w, inGuided && ((first && S0.profileExample) || !!gProfile));
   if (inGuided) {
-    guidedActive = true;
+    if (guidedFor !== w.id) {
+      // another restaurant's guided flow was running: this one starts at its first step
+      guidedFor = w.id;
+      if (!(first && S0.profileExample)) gProfile = null;
+      const g = S0.settings.guidedDraft;
+      guidedStep = g && g.workplaceId === w.id && [0, 1, 2].includes(g.step) ? g.step : 0;
+      noDeductions = false;
+    }
     guided(root, ctx);
     return;
   }
   gProfile = null;
+  const many = S0.workplaces.length > 1;
   const importHost = el('div'),
     installHost = el('div'),
     backupHost = el('div');
@@ -1329,10 +1594,25 @@ export function render(root) {
     el(
       'div',
       { class: 'stack' },
+      workplaceSwitcher(S0, w.id, (id) => pickWorkplace(S0, id), {
+        key: 'setup-wp',
+        label: 'Restaurant to set up',
+      }),
       exampleBanner(),
-      el('h1', null, 'Setup'),
+      el('h1', null, many ? 'Setup: ' + w.name : 'Setup'),
+      many
+        ? el(
+            'p',
+            { class: 'hint' },
+            'The paystub, jobs and tip-out below are for ' +
+              w.name +
+              '. Late nights, appearance and backups are shared by all your restaurants.',
+          )
+        : null,
       notReadyNote(ctx),
       ctx.saved,
+      addWorkplaceCard(S0),
+      workplaceCard(ctx),
       periodCard(ctx, { title: 'From your paystub' }),
       dedCard(ctx),
       payCard(ctx),

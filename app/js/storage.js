@@ -3,7 +3,7 @@
 import { exampleProfile, exampleNights, num, parseISO, todayISO, lockFinishedNights } from './math.js';
 import { emptyBudget, migrateBudget } from './budget.js';
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 export const LEGACY_KEY = 'tipnet.v1';
 const LS_KEY = 'tipnet.v2';
 const DB_NAME = 'tipnet';
@@ -12,22 +12,60 @@ const STATE_KEY = 'state';
 
 /* ---------- state shape ---------- */
 /**
- * settings: {theme:'auto'|'light'|'dark', lastTab, csvMapping, setupDone, guideSkipped?, noDeductions?, entitlement?}. budget: see budget.js
+ * v3 state:
+ *   workplaces: [{id, name, profile, calib, setupDone?, guideSkipped?, noDeductions?}]  one per restaurant, each with its own
+ *               pay schedule, paystub, jobs, tip-out and entry mode (profile) and its own "Check my accuracy" history (calib).
+ *   nights:     [{..., workplaceId}]  every night belongs to one restaurant.
+ *   settings:   {theme:'auto'|'light'|'dark', lastTab, csvMapping, activeWorkplaceId, periodsFilter?, dayCutoffHour?, guidedDraft?,
+ *                lastBackupAt?, backupNudgeUntil?, iosNoteSeen?, entitlement?}  (shared by every restaurant)
+ *   budget:     see budget.js (shared: bills are paid from all money; a goal may name the restaurant it is saved from, fundedBy).
+ *   profileExample / nightsExample: first-run example mode; only ever about the first restaurant.
+ * Read restaurants only through activeWorkplace / workplaceOf / nightsOf below.
  * profile.entryMode: 'tips' (the number typed each night is cash + card tips; TipNet adds the hourly/per-shift pay) or
  * 'total' (tips plus that pay). Either way a stored night's `total` is everything made, so the math never reads entryMode.
  */
 export const ENTRY_MODES = ['tips', 'total'];
+export const FIRST_WORKPLACE_NAME = 'My restaurant';
+export const MAX_WORKPLACES = 12;
 export function seedState() {
   return {
     schemaVersion: SCHEMA_VERSION,
     profileExample: true,
     nightsExample: true,
-    profile: { ...exampleProfile(), entryMode: 'tips' },
-    nights: exampleNights(),
-    calib: [],
+    workplaces: [
+      {
+        id: 'w1',
+        name: FIRST_WORKPLACE_NAME,
+        profile: { ...exampleProfile(), entryMode: 'tips' },
+        calib: [],
+      },
+    ],
+    nights: exampleNights().map((n) => ({ ...n, workplaceId: 'w1' })),
     budget: emptyBudget(),
-    settings: { theme: 'auto', lastTab: 'tonight', csvMapping: null },
+    settings: { theme: 'auto', lastTab: 'tonight', csvMapping: null, activeWorkplaceId: 'w1' },
   };
+}
+
+/* ---------- restaurants (workplaces) ---------- */
+/** The restaurant with exactly this id, or null. */
+export const findWorkplace = (S, id) =>
+  (S && Array.isArray(S.workplaces) && S.workplaces.find((w) => w.id === id)) || null;
+/** The restaurant with this id, else the first one (a night or a goal always resolves to a real restaurant). */
+export const workplaceOf = (S, id) =>
+  findWorkplace(S, id) || (S && Array.isArray(S.workplaces) ? S.workplaces[0] || null : null);
+/** The restaurant picked last (Tonight and Setup show it), else the first one. */
+export const activeWorkplace = (S) => workplaceOf(S, S && S.settings && S.settings.activeWorkplaceId);
+/** That restaurant's nights (the same objects as in S.nights). */
+export const nightsOf = (S, id) => S.nights.filter((n) => n.workplaceId === id);
+/** True for the first restaurant: the only one the first-run example mode is ever about. */
+export const isFirstWorkplace = (S, w) => !!S && !!w && Array.isArray(S.workplaces) && S.workplaces[0] === w;
+/** A fresh id no restaurant uses yet. Time-based, so two open windows adding a restaurant at once do not clash. */
+export function newWorkplaceId(S) {
+  let id;
+  let i = 0;
+  do id = 'w' + Date.now().toString(36) + (i++ ? '_' + i : '');
+  while (findWorkplace(S, id));
+  return id;
 }
 /** Empty state after "Erase everything": example profile numbers, no nights. */
 export function erasedState() {
@@ -169,6 +207,7 @@ function cleanNights(list) {
         cash: hasCash ? num(n.cash) : null,
         pay,
         barback: n.barback === undefined ? true : !!n.barback,
+        workplaceId: n.workplaceId,
       };
       if (typeof n.tips === 'number' && Number.isFinite(n.tips) && n.tips >= 0)
         o.tips = Math.round(n.tips * 100) / 100;
@@ -178,13 +217,17 @@ function cleanNights(list) {
       return o;
     });
 }
-function cleanSettings(x) {
+/** ids: the restaurant ids, first one first (the fallback for anything that names a restaurant that is not there). */
+function cleanSettings(x, ids) {
   const s = isObj(x) ? x : {};
   const out = {
     theme: ['auto', 'light', 'dark'].includes(s.theme) ? s.theme : 'auto',
     lastTab: ['tonight', 'periods', 'budget', 'setup'].includes(s.lastTab) ? s.lastTab : 'tonight',
     csvMapping: null,
+    activeWorkplaceId: ids.includes(s.activeWorkplaceId) ? s.activeWorkplaceId : ids[0],
   };
+  // Pay periods filter: 'all' or one restaurant (remembered; dropped when that restaurant is gone).
+  if (s.periodsFilter === 'all' || ids.includes(s.periodsFilter)) out.periodsFilter = s.periodsFilter;
   if (isObj(s.csvMapping)) {
     const m = {};
     Object.keys(s.csvMapping).forEach((k) => {
@@ -193,17 +236,20 @@ function cleanSettings(x) {
     });
     out.csvMapping = m;
   }
-  if (s.setupDone !== undefined) out.setupDone = !!s.setupDone;
-  if (s.guideSkipped === true) out.guideSkipped = true; // "Skip guided setup": the full Setup page, not set up until the basics are in
-  if (s.noDeductions === true) out.noDeductions = true; // "My paystub has no deductions", ticked on the full Setup page
+  // (setupDone, guideSkipped and noDeductions live on each restaurant since v3; see migrateUnsafe.)
   // "Late nights" rule: shifts logged before this hour count as the night before (0 = off). Kept only when it's a whole hour 0-12.
   if (Number.isInteger(s.dayCutoffHour) && s.dayCutoffHour >= 0 && s.dayCutoffHour <= 12)
     out.dayCutoffHour = s.dayCutoffHour;
   // The guided setup in progress (see keepGuided in ui/setup.js), so a reload comes back to the same step. Its profile is
-  // cleaned like the real one, but blank dates stay blank: the person has not typed them yet.
-  if (isObj(s.guidedDraft)) {
+  // cleaned like the real one, but blank dates stay blank: the person has not typed them yet. workplaceId: the restaurant
+  // being set up (old drafts, from before restaurants, are about the first one). A draft for a restaurant that is gone is dropped.
+  if (
+    isObj(s.guidedDraft) &&
+    (s.guidedDraft.workplaceId === undefined || ids.includes(s.guidedDraft.workplaceId))
+  ) {
     const g = s.guidedDraft;
-    const d = { step: [0, 1, 2].includes(g.step) ? g.step : 0 };
+    const d = { workplaceId: g.workplaceId === undefined ? ids[0] : g.workplaceId };
+    d.step = [0, 1, 2].includes(g.step) ? g.step : 0;
     if (g.noDeductions === true) d.noDeductions = true;
     if (isObj(g.profile)) d.profile = cleanProfile(g.profile, { startFallback: '', entryDefault: 'tips' });
     out.guidedDraft = d;
@@ -274,16 +320,28 @@ export function migrate(input, { today = todayISO() } = {}) {
     return seedState();
   }
 }
-function migrateUnsafe(input, today) {
-  let S;
-  try {
-    S = isObj(input) ? clone(input) : null;
-  } catch (e) {
-    S = null;
-  }
-  if (!S || !isObj(S.profile)) return seedState();
-  const p = S.profile;
-  const rawNights = Array.isArray(S.nights) ? S.nights.filter(isObj) : [];
+/**
+ * Lock the finished pay periods of every restaurant, each with its own pay schedule and Setup (see lockFinishedNights).
+ * Pure: returns {nights (same order), stamped}. Restaurants without a start date have nothing finished yet.
+ */
+export function lockAll(workplaces, nights, today = todayISO()) {
+  let out = nights;
+  let stamped = 0;
+  workplaces.forEach((w) => {
+    if (!validDate(w.profile.periodStart)) return;
+    const mine = out.filter((n) => n.workplaceId === w.id);
+    if (!mine.length) return;
+    const r = lockFinishedNights(w.profile, mine, today);
+    if (!r.stamped) return;
+    stamped += r.stamped;
+    const swap = new Map(mine.map((n, k) => [n, r.nights[k]]));
+    out = out.map((n) => swap.get(n) || n);
+  });
+  return { nights: out, stamped };
+}
+
+/** Old prototype profile shapes, converted in place (the prototype's migrate). rawNights: that profile's nights. */
+function upgradeOldProfile(p, rawNights) {
   // Oldest prototype: single hourly rate and hours instead of payTypes.
   if (!Array.isArray(p.payTypes)) {
     p.payTypes = [{ id: 'p1', name: 'Main rate', rate: num(p.hourly), unit: 'hr', usual: num(p.hours) || 7 }];
@@ -306,54 +364,133 @@ function migrateUnsafe(input, today) {
     });
     p.deductions = d;
   }
-  // Existing users keep the meaning of their nightly number: anyone with real nights or their own profile typed totals.
-  const realNights = !S.nightsExample && rawNights.length > 0;
-  // A missing or broken start date: the example gets today (its dates are made up anyway). A real profile keeps it
-  // blank, so Setup asks for it instead of inventing a pay schedule; TipNet does not count as set up until it is in.
-  const out = cleanProfile(p, {
-    startFallback: S.profileExample ? today : '',
-    entryDefault: realNights || !S.profileExample ? 'total' : 'tips',
+}
+
+function migrateUnsafe(input, today) {
+  let S;
+  try {
+    S = isObj(input) ? clone(input) : null;
+  } catch (e) {
+    S = null;
+  }
+  if (!S) return seedState();
+  const settingsIn = isObj(S.settings) ? S.settings : {};
+  let rawW;
+  if (Array.isArray(S.workplaces) && S.workplaces.some((w) => isObj(w) && isObj(w.profile)))
+    rawW = S.workplaces.filter((w) => isObj(w) && isObj(w.profile)).slice(0, MAX_WORKPLACES);
+  else if (isObj(S.profile))
+    // v2 and the prototype: one profile and one accuracy history. They become the first restaurant; the flags that were
+    // settings (setup finished, guided setup skipped, "no deductions") move onto it.
+    rawW = [
+      {
+        id: 'w1',
+        name: FIRST_WORKPLACE_NAME,
+        profile: S.profile,
+        calib: S.calib,
+        setupDone: settingsIn.setupDone,
+        guideSkipped: settingsIn.guideSkipped,
+        noDeductions: settingsIn.noDeductions,
+      },
+    ];
+  else return seedState();
+
+  // Restaurant ids: unique, non-empty strings. rawIdx maps each id as written to its restaurant (the first one wins).
+  const seen = new Set();
+  const rawIdx = new Map();
+  const ids = rawW.map((w, i) => {
+    const id = uniqueId(typeof w.id === 'string' ? w.id.slice(0, 40) : '', seen, 'w', i + 1);
+    if (typeof w.id === 'string' && !rawIdx.has(w.id)) rawIdx.set(w.id, i);
+    return id;
   });
-  const cleaned = cleanNights(rawNights);
-  const nights = validDate(out.periodStart) ? lockFinishedNights(out, cleaned, today).nights : cleaned;
+  // Every night belongs to a restaurant; one that names no known restaurant (or an old night) goes to the first.
+  const rawNights = Array.isArray(S.nights) ? S.nights.filter(isObj) : [];
+  rawNights.forEach((n) => {
+    n.workplaceId = ids[rawIdx.has(n.workplaceId) ? rawIdx.get(n.workplaceId) : 0];
+  });
+
+  const workplaces = rawW.map((w, i) => {
+    const p = w.profile;
+    const mine = rawNights.filter((n) => n.workplaceId === ids[i]);
+    upgradeOldProfile(p, mine);
+    const example = i === 0 && !!S.profileExample;
+    // Existing users keep the meaning of their nightly number: anyone with real nights or their own profile typed totals.
+    const realNights = !S.nightsExample && mine.length > 0;
+    const name = typeof w.name === 'string' ? w.name.trim().slice(0, 40) : '';
+    const out = {
+      id: ids[i],
+      name: name || (i === 0 ? FIRST_WORKPLACE_NAME : 'Restaurant ' + (i + 1)),
+      // A missing or broken start date: the example gets today (its dates are made up anyway). A real profile keeps it
+      // blank, so Setup asks for it instead of inventing a pay schedule; it does not count as set up until it is in.
+      profile: cleanProfile(p, {
+        startFallback: example ? today : '',
+        entryDefault: realNights || !example ? 'total' : 'tips',
+      }),
+      calib: (Array.isArray(w.calib) ? w.calib : []).filter(isObj).slice(-50).map(cleanCalib),
+    };
+    if (w.setupDone !== undefined && w.setupDone !== null) out.setupDone = !!w.setupDone;
+    if (w.guideSkipped === true) out.guideSkipped = true; // "Skip guided setup": the full Setup page, not set up until the basics are in
+    if (w.noDeductions === true) out.noDeductions = true; // "My paystub has no deductions"
+    return out;
+  });
+  const nights = lockAll(workplaces, cleanNights(rawNights), today).nights;
+  // Old states and old backup codes have no budget: they get an empty one. Old "Paid" ticks (keyed by pay period) are
+  // converted with the first restaurant's schedule, the only one there was then.
+  const budget = migrateBudget(S.budget, workplaces[0].profile);
+  // A goal saved from a restaurant that is gone falls back to the default one (see fundingWorkplaceId in budget.js).
+  (budget.goals || []).forEach((g) => {
+    if (g.fundedBy !== undefined && !ids.includes(g.fundedBy)) delete g.fundedBy;
+  });
   return {
     schemaVersion: SCHEMA_VERSION,
     profileExample: !!S.profileExample,
     nightsExample: !!S.nightsExample,
-    profile: out,
+    workplaces,
     nights,
-    calib: (Array.isArray(S.calib) ? S.calib : []).filter(isObj).slice(-50).map(cleanCalib),
-    budget: migrateBudget(S.budget, out), // old states and old backup codes have none: they get an empty budget; the profile converts old "Paid" ticks
-    settings: cleanSettings(S.settings),
+    budget,
+    settings: cleanSettings(settingsIn, ids),
   };
 }
 
 /* ---------- set up or not ---------- */
-/** Real nights: saved by the user (or imported / restored), not the example ones. */
-export const hasRealNights = (S) => !!S && !S.nightsExample && Array.isArray(S.nights) && S.nights.length > 0;
-/** The paystub basics an estimate needs: a pay period start date, gross pay, a main rate, and a deduction (or "no deductions" ticked). */
-export function hasBasics(p, settings) {
+/** Real nights: saved by the user (or imported / restored), not the example ones. wid: only that restaurant's. */
+export const hasRealNights = (S, wid) =>
+  !!S &&
+  !S.nightsExample &&
+  Array.isArray(S.nights) &&
+  (wid === undefined ? S.nights.length > 0 : S.nights.some((n) => n.workplaceId === wid));
+/**
+ * The paystub basics an estimate needs: a pay period start date, gross pay, a main rate, and a deduction (or "no
+ * deductions" ticked). flags: the restaurant (its noDeductions).
+ */
+export function hasBasics(p, flags) {
   if (!p || !validDate(p.periodStart)) return false;
   const main = (p.payTypes || [])[0];
   return (
     num(p.gross) > 0 &&
     !!main &&
     num(main.rate) > 0 &&
-    ((p.deductions || []).some((d) => num(d.amount) > 0) || !!(settings && settings.noDeductions))
+    ((p.deductions || []).some((d) => num(d.amount) > 0) || !!(flags && flags.noDeductions))
   );
 }
 /**
- * Set up = TipNet can estimate this person's real take-home: they have real nights (saved, imported or restored),
- * or finished the guided setup, or (after "Skip guided setup", or a restored code without that flag) entered the
- * paystub basics themselves. The example paystub never counts, so no night is ever saved against example taxes.
+ * One restaurant is set up = TipNet can estimate real take-home there: it has real nights (saved, imported or restored),
+ * or its guided setup was finished, or (after "Skip guided setup", or a restored code without that flag) its paystub
+ * basics are in. The example paystub never counts, so no night is ever saved against example taxes. Neither does a
+ * restaurant added later whose guided setup is still in progress (setupDone false: its numbers are only half typed).
  */
+export function isWorkplaceSetUp(S, w) {
+  if (!S || !w || !w.profile) return false;
+  if (!validDate(w.profile.periodStart)) return false; // without it there are no pay periods to estimate
+  if (hasRealNights(S, w.id)) return true;
+  const first = isFirstWorkplace(S, w);
+  if (first && S.profileExample) return false;
+  if (w.setupDone) return true;
+  if (!first && w.setupDone === false) return false; // added later and its guided setup isn't finished yet
+  return hasBasics(w.profile, w);
+}
+/** TipNet as a whole is set up once any restaurant is (the app then opens on the last tab, not on Setup). */
 export function isSetUp(S) {
-  if (!S || !S.profile) return false;
-  if (!validDate(S.profile.periodStart)) return false; // without it there are no pay periods to estimate
-  if (hasRealNights(S)) return true;
-  if (S.profileExample) return false;
-  if (S.settings && S.settings.setupDone) return true;
-  return hasBasics(S.profile, S.settings);
+  return !!S && Array.isArray(S.workplaces) && S.workplaces.some((w) => isWorkplaceSetUp(S, w));
 }
 
 /* ---------- backups: a code (base64 of the JSON state, UTF-8 safe) or a .json file with the same data ---------- */
@@ -391,7 +528,9 @@ export function backupFileText(state) {
 }
 /** Checks a parsed backup and migrates it. Throws unless it looks like TipNet data. Never keeps device-only data. */
 function fromBackupObject(d) {
-  if (!d || typeof d !== 'object' || !d.profile || !Array.isArray(d.nights)) throw new Error('shape');
+  // v3 backups carry every restaurant (workplaces); v2 backups and prototype codes have one profile.
+  if (!d || typeof d !== 'object' || !(d.profile || Array.isArray(d.workplaces)) || !Array.isArray(d.nights))
+    throw new Error('shape');
   // A backup is text anyone can write by hand, so it never carries device-only data.
   // The license (entitlement) belongs to this device and is only ever set by activating a key.
   if (d.settings && typeof d.settings === 'object') {
@@ -603,29 +742,58 @@ function mergeNightLists(b, mine, theirs) {
   return out;
 }
 /**
+ * Restaurants by id: added here are added; edited or removed here apply unless the other copy changed that restaurant
+ * too. When both changed it, its fields merge one level deep (name, profile, calib...: a change here wins only if the
+ * other copy left that field alone). The same new id on both sides (very unlikely: ids are time-based) keeps theirs.
+ */
+function mergeWorkplaceLists(b, mine, theirs) {
+  const B = new Map(b.filter(isObj).map((w) => [w.id, w]));
+  const T = new Map(theirs.filter(isObj).map((w) => [w.id, w]));
+  const M = new Set(mine.filter(isObj).map((w) => w.id));
+  let out = theirs.map((w) => clone(w));
+  mine.filter(isObj).forEach((w) => {
+    const was = B.get(w.id);
+    const there = T.get(w.id);
+    if (!was) {
+      if (!there) out.push(clone(w));
+    } else if (!same(was, w) && there) {
+      const merged = same(there, was) ? clone(w) : mergeObj(was, w, there);
+      out = out.map((x) => (x.id === w.id ? merged : x));
+    }
+  });
+  B.forEach((was, id) => {
+    if (!M.has(id) && T.has(id) && same(T.get(id), was)) out = out.filter((x) => x.id !== id);
+  });
+  return out.length ? out : mine.map((w) => clone(w)); // never none: TipNet always has a restaurant
+}
+/**
  * Pure. Three-way merge of two saved states: b is what this copy started from, mine is this copy now, theirs is what
- * another copy saved since. Nights merge one by one and settings and budget key by key; for anything else a change
- * made here wins only if the other copy left it alone. Nothing the other copy saved is dropped.
+ * another copy saved since. Nights and restaurants merge one by one and settings and budget key by key; for anything
+ * else a change made here wins only if the other copy left it alone. Nothing the other copy saved is dropped.
  */
 export function mergeStates(b, mine, theirs) {
   const B = isObj(b) ? b : {};
   const out = clone(theirs);
+  const list = (x) => (Array.isArray(x) ? x : []);
   Object.keys(mine).forEach((k) => {
-    if (k === 'nights' || k === '_savedAt' || k === '_writer' || same(mine[k], B[k])) return;
+    if (k === 'nights' || k === 'workplaces' || k === '_savedAt' || k === '_writer' || same(mine[k], B[k]))
+      return;
     if (same(theirs[k], B[k])) out[k] = clone(mine[k]);
     else if ((k === 'settings' || k === 'budget') && isObj(mine[k]) && isObj(theirs[k]) && isObj(B[k]))
       out[k] = mergeObj(B[k], mine[k], theirs[k]);
   });
-  out.nights = mergeNightLists(
-    Array.isArray(B.nights) ? B.nights : [],
-    Array.isArray(mine.nights) ? mine.nights : [],
-    Array.isArray(theirs.nights) ? theirs.nights : [],
-  );
+  if (Array.isArray(mine.workplaces) || Array.isArray(theirs.workplaces))
+    out.workplaces = mergeWorkplaceLists(list(B.workplaces), list(mine.workplaces), list(theirs.workplaces));
+  out.nights = mergeNightLists(list(B.nights), list(mine.nights), list(theirs.nights));
   delete out._savedAt;
   delete out._writer;
   return out;
 }
-const withoutTab = (S) => ({ ...S, settings: { ...S.settings, lastTab: null } });
+/** What this window shows, leaving out the choices that belong to one window (its tab, restaurant and filter). */
+const withoutTab = (S) => ({
+  ...S,
+  settings: { ...S.settings, lastTab: null, activeWorkplaceId: null, periodsFilter: null },
+});
 /**
  * Take in a copy saved by another window, if it is newer than what this copy last loaded or saved. Synchronous.
  * Returns {changed, conflict (this copy had changes of its own, now merged), visible (the screen should redraw)}.
@@ -637,6 +805,9 @@ function absorb(copy) {
   const mine = cache;
   const hadChanges = !base || !same(mine, base);
   const next = hadChanges ? migrate(mergeStates(base, mine, theirs)) : theirs;
+  // The restaurant picked in this window stays picked (another window switching restaurants does not switch this one).
+  const picked = mine.settings && mine.settings.activeWorkplaceId;
+  if (findWorkplace(next, picked)) next.settings.activeWorkplaceId = picked;
   const visible = !same(withoutTab(next), withoutTab(mine));
   cache = next;
   base = clone(theirs);
@@ -737,8 +908,7 @@ export function lockFinished({ force = false, today = todayISO() } = {}) {
   if (!force && lockedOn === today) return 0;
   lockedOn = today;
   const S = getState();
-  if (!validDate(S.profile.periodStart)) return 0; // no pay schedule yet: nothing has finished
-  const r = lockFinishedNights(S.profile, S.nights, today);
+  const r = lockAll(S.workplaces, S.nights, today); // each restaurant locks on its own pay schedule
   if (!r.stamped) return 0;
   S.nights = r.nights;
   scheduleSave();

@@ -114,17 +114,17 @@ test('load migration locks nights in finished periods only, with the Setup they 
   assert.equal(a.snap.pay[0].rate, 12);
   assert.ok(!c.snap && !d.snap, 'the current period stays unlocked');
   // what a finished period shows does not change when Setup does
-  const before = M.periodTotals(S.profile, S.nights, 0);
-  S.profile.payTypes[0].rate = 20;
+  const before = M.periodTotals(S.workplaces[0].profile, S.nights, 0);
+  S.workplaces[0].profile.payTypes[0].rate = 20;
   const again = migrate(S); // reload after the raise
   assert.equal(again.nights[0].snap.pay[0].rate, 12, 'an existing snapshot is kept');
-  assert.equal(M.periodTotals(again.profile, again.nights, 0).net, before.net);
+  assert.equal(M.periodTotals(again.workplaces[0].profile, again.nights, 0).net, before.net);
   assert.ok(!again.nights[3].snap);
 });
 
 test('backup round trip keeps snapshots; malformed ones are dropped; prototype codes still work', () => {
   const S = migrate(stateWith([nightAgo(1, 27), nightAgo(2, 1)]));
-  S.nights[1].snap = M.snapshotFor(S.profile, 3); // a screen may lock a current-period night too
+  S.nights[1].snap = M.snapshotFor(S.workplaces[0].profile, 3); // a screen may lock a current-period night too
   const back = decodeBackup(encodeBackup(S));
   assert.deepEqual(back.nights, S.nights);
   const bad = migrate(
@@ -164,9 +164,9 @@ test('app open across a period boundary: locking first keeps a later Setup edit 
   assert.ok(st.nights.every((n) => !n.snap));
   // the period ends while the app stays open; the next hook (visibility / render / any input) locks it
   assert.equal(S.lockFinished({ today: AFTER }), st.nights.length);
-  const was = M.periodTotals(st.profile, st.nights, 0, AFTER);
-  raise(st.profile); // the Setup edit
-  const now = M.periodTotals(st.profile, st.nights, 0, AFTER);
+  const was = M.periodTotals(st.workplaces[0].profile, st.nights, 0, AFTER);
+  raise(st.workplaces[0].profile); // the Setup edit
+  const now = M.periodTotals(st.workplaces[0].profile, st.nights, 0, AFTER);
   assert.equal(now.net, was.net);
   assert.equal(now.chk, was.chk);
 });
@@ -175,8 +175,8 @@ test('imported past nights lock right away with the current Setup', async () => 
   const S = await import('../app/js/storage.js');
   const st = S.setState({ profile: P(), nights: [] });
   st.nights = [
-    { id: 'i1', date: '2026-09-22', total: 300, cash: 100, pay: {}, barback: true },
-    { id: 'i2', date: '2026-10-08', total: 300, cash: 100, pay: {}, barback: true },
+    { id: 'i1', date: '2026-09-22', total: 300, cash: 100, pay: {}, barback: true, workplaceId: 'w1' },
+    { id: 'i2', date: '2026-10-08', total: 300, cash: 100, pay: {}, barback: true, workplaceId: 'w1' },
   ];
   assert.equal(S.lockFinished({ force: true, today: '2026-10-09' }), 1);
   assert.ok(st.nights[0].snap && !st.nights[1].snap);

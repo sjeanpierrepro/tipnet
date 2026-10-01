@@ -76,7 +76,7 @@ const poison = (page) => {
 };
 
 test('error screen: shows, restores from a code, and erases with two taps', async () => {
-  const page = await boot({ seed: realState((S) => (S.settings.setupDone = true)) }); // opens on Tonight
+  const page = await boot({ seed: realState((S) => (S.workplaces[0].setupDone = true)) }); // opens on Tonight
   try {
     await quiet(async () => poison(page));
     assert.match(page.text(), /Something went wrong/);

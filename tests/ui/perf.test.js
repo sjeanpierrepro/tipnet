@@ -11,8 +11,8 @@ import { PAGE } from '../../app/js/ui/periods.js';
 test('performance smoke: 700 nights with blank shifts; Pay periods draws only recent periods, Budget renders', async () => {
   const today = todayISO();
   const S = realState((s) => {
-    s.settings.setupDone = true;
-    s.profile.shifts = 0; // blank: the app averages history for every period
+    s.workplaces[0].setupDone = true;
+    s.workplaces[0].profile.shifts = 0; // blank: the app averages history for every period
     s.budget = exampleBudget();
     s.nights = Array.from({ length: 700 }, (_, i) => ({
       id: i + 1,

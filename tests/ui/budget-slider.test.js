@@ -5,7 +5,7 @@ import {
   exampleBudget,
   possibleAside,
   roundDownStep,
-  asideSliderMax,
+  roundUpStep,
   purchasePlan,
 } from '../../app/js/budget.js';
 import { addDays, todayISO } from '../../app/js/math.js';
@@ -23,7 +23,7 @@ const nightsList = () =>
   }));
 const seed = ({ nights = true, goals = [], categories = [], bills = [] } = {}) =>
   realState((S) => {
-    S.settings.setupDone = true;
+    S.workplaces[0].setupDone = true;
     S.budget = exampleBudget();
     S.budget.bills = bills;
     S.budget.categories = categories;
@@ -41,10 +41,11 @@ const slide = (page, k, v) => {
 };
 const possibleOf = (page) => {
   const S = page.state();
-  return possibleAside(S.budget, S.profile, S.nights, todayISO());
+  return possibleAside(S.budget, S.workplaces[0].profile, S.nights, todayISO());
 };
+const CAP = /That’s the most your budget leaves each paycheck\. Lower spending or other goals to save more\./;
 
-test('slider: after name, cost and saved, it shows what is possible and starts the slider there', async () => {
+test('slider: it only goes as high as the budget leaves, and says so', async () => {
   const page = await boot({ url: DEV, seed: seed() });
   try {
     page.tab('budget');
@@ -52,16 +53,25 @@ test('slider: after name, cost and saved, it shows what is possible and starts t
     fill(page, 'ef-plan-new-cost', '900');
     const pa = possibleOf(page);
     assert.equal(pa.known, true, 'the seeded nights give a typical check');
+    const max = roundDownStep(pa.possible);
+    assert.ok(max > 300 && max < 900, 'this seed leaves room, but less than the whole cost');
     const t = page.text(planForm(page));
-    assert.match(t, /You could put aside up to about \$[\d,]+(\.\d\d)? a paycheck\./);
+    assert.ok(
+      t.includes(
+        'Up to $' +
+          max +
+          ' a paycheck is safe to put aside — that’s what your budget leaves after bills, spending and your other goals.',
+      ),
+    );
     assert.match(t, /How we worked this out/);
     const slider = key(page, 'ef-plan-new-slider');
     assert.equal(slider.type, 'range');
     assert.equal(slider.step, '5');
     assert.equal(slider.min, '0');
-    assert.equal(Number(slider.value), roundDownStep(pa.possible));
-    assert.equal(Number(slider.max), asideSliderMax(pa.possible, 900, true));
-    assert.equal(key(page, 'ef-plan-new-per').value, String(roundDownStep(pa.possible)));
+    assert.equal(Number(slider.max), max, 'the top end is what is possible, rounded down to $5');
+    // It starts at the most that is safe (finishing in one paycheck would take more).
+    assert.equal(Number(slider.value), max);
+    assert.equal(key(page, 'ef-plan-new-per').value, String(max));
     // The slider has a real label.
     const lab = page.$('label[for="' + slider.id + '"]');
     assert.ok(lab, 'label linked to the slider');
@@ -74,12 +84,35 @@ test('slider: after name, cost and saved, it shows what is possible and starts t
     assert.match(how, /Bills per paycheck/);
     assert.match(how, /Spending categories per paycheck/);
     assert.match(how, /Your other goals per paycheck/);
+    // The old "more than your budget leaves" note is gone: nothing can go over now.
+    assert.doesNotMatch(t, /you may need to cut spending/);
   } finally {
     await page.close();
   }
 });
 
-test('slider: moving it updates the money field and the live paychecks and ready-by date; typing moves the slider', async () => {
+test('slider: a small goal starts at the amount that finishes it in one paycheck (rounded up to $5)', async () => {
+  const page = await boot({ url: DEV, seed: seed() });
+  try {
+    page.tab('budget');
+    fill(page, 'ef-plan-new-name', 'Shoes');
+    fill(page, 'ef-plan-new-cost', '142');
+    assert.equal(roundUpStep(142), 145);
+    assert.equal(key(page, 'ef-plan-new-slider').value, '145');
+    assert.equal(key(page, 'ef-plan-new-per').value, '145');
+    assert.match(
+      page.text(page.$('[role=status][aria-live]', planForm(page))),
+      /^\$145 a paycheck → about 1 paycheck/,
+    );
+    // with some already saved, what is still missing counts
+    fill(page, 'ef-plan-new-saved', '100');
+    assert.equal(key(page, 'ef-plan-new-per').value, '45');
+  } finally {
+    await page.close();
+  }
+});
+
+test('slider: moving it updates the money field and the live paychecks; typing moves the slider; more than the budget leaves is held at the most', async () => {
   const page = await boot({ url: DEV, seed: seed() });
   try {
     page.tab('budget');
@@ -90,11 +123,11 @@ test('slider: moving it updates the money field and the live paychecks and ready
     assert.equal(key(page, 'ef-plan-new-per').value, '150');
     const p = purchasePlan(
       { kind: 'purchase', target: 900, saved: 0, perPaycheck: 150 },
-      S.profile,
+      S.workplaces[0].profile,
       todayISO(),
     );
     assert.equal(p.paychecksLeft, 6);
-    const live = page.text(page.$('[role=status]', planForm(page)));
+    const live = page.text(page.$('[role=status][aria-live]', planForm(page)));
     assert.match(
       live,
       /^\$150 a paycheck → about 6 paychecks → ready by about [A-Z][a-z]{2}, [A-Z][a-z]{2} \d+$/,
@@ -110,54 +143,83 @@ test('slider: moving it updates the money field and the live paychecks and ready
       ),
     );
     slide(page, 'ef-plan-new-slider', 300);
-    assert.match(page.text(page.$('[role=status]', planForm(page))), /^\$300 a paycheck → about 3 paychecks/);
+    assert.match(
+      page.text(page.$('[role=status][aria-live]', planForm(page))),
+      /^\$300 a paycheck → about 3 paychecks/,
+    );
     // Typing in the field moves the slider and the text.
     fill(page, 'ef-plan-new-per', '75');
     assert.equal(key(page, 'ef-plan-new-slider').value, '75');
-    assert.match(page.text(page.$('[role=status]', planForm(page))), /^\$75 a paycheck → about 12 paychecks/);
-    // An amount above the slider's end widens it rather than being cut off.
-    fill(page, 'ef-plan-new-per', '5000');
-    assert.ok(Number(key(page, 'ef-plan-new-slider').max) >= 5000);
     assert.match(
-      page.text(page.$('[role=status]', planForm(page))),
-      /^\$5,?000 a paycheck → about 1 paycheck /,
+      page.text(page.$('[role=status][aria-live]', planForm(page))),
+      /^\$75 a paycheck → about 12 paychecks/,
     );
+    assert.doesNotMatch(page.text(planForm(page)), CAP);
+    // Typing more than the budget leaves is held at the most, with a calm note.
+    const max = roundDownStep(possibleOf(page).possible);
+    fill(page, 'ef-plan-new-per', '5000');
+    assert.equal(key(page, 'ef-plan-new-per').value, String(max));
+    assert.equal(key(page, 'ef-plan-new-slider').value, String(max));
+    assert.equal(key(page, 'ef-plan-new-slider').max, String(max));
+    assert.match(page.text(planForm(page)), CAP);
+    page.click(page.button('Make this plan', planForm(page)));
+    assert.equal(page.state().budget.goals.find((x) => x.name === 'New phone').perPaycheck, max);
   } finally {
     await page.close();
   }
 });
 
-test('slider: above what is possible gets a calm note; at or below it does not', async () => {
-  const page = await boot({ url: DEV, seed: seed() });
+test('slider: when the budget leaves nothing, the slider and field are off and it says how to make room', async () => {
+  const bills = [{ id: 'b1', name: 'Rent', amount: 5000, dueDay: 1 }];
+  const page = await boot({ url: DEV, seed: seed({ bills }) });
   try {
     page.tab('budget');
     fill(page, 'ef-plan-new-name', 'New phone');
     fill(page, 'ef-plan-new-cost', '900');
-    const note = /That's more than your budget leaves each paycheck; you may need to cut spending\./;
-    const pa = possibleOf(page);
-    fill(page, 'ef-plan-new-per', String(Math.floor(pa.possible)));
-    assert.doesNotMatch(page.text(planForm(page)), note);
-    fill(page, 'ef-plan-new-per', String(Math.ceil(pa.possible) + 20));
-    assert.match(page.text(planForm(page)), note);
-    assert.match(page.text(planForm(page)), /of a typical check/);
+    assert.equal(possibleOf(page).possible, 0);
+    const t = page.text(planForm(page));
+    assert.match(t, /Your budget doesn’t leave anything to put aside from each paycheck right now/);
+    assert.match(t, /Lower a spending category or another goal to make room\./);
+    assert.ok(page.byText('button', 'Edit spending', planForm(page)));
+    assert.ok(page.byText('button', 'Edit your other goals', planForm(page)));
+    assert.equal(key(page, 'ef-plan-new-slider').disabled, true);
+    assert.equal(key(page, 'ef-plan-new-per').disabled, true);
+    // "Edit spending" takes keyboard focus to the Spending card
+    page.click(page.byText('button', 'Edit spending', planForm(page)));
+    assert.equal(page.doc.activeElement.id, 'budget-spending-heading');
+    // the date path still shows what is needed, and says it is more than the budget leaves
+    page.click(page.byLabel('Need it by a certain date?'));
+    fill(page, 'ef-plan-new-date', addDays(todayISO(), 90));
+    const d = page.text(planForm(page));
+    assert.match(d, /About \$[\d,.]+ a paycheck for \d+ paychecks/);
+    assert.match(d, /That’s more than your budget leaves each paycheck \(up to \$0\)/);
   } finally {
     await page.close();
   }
 });
 
-test('slider: with no known income it says so and the slider goes $0 to $500', async () => {
+test('slider: with no known income there is no slider; a typed amount is saved as an estimate', async () => {
   const page = await boot({ url: DEV, seed: seed({ nights: false }) });
   try {
     page.tab('budget');
     fill(page, 'ef-plan-new-name', 'New phone');
     fill(page, 'ef-plan-new-cost', '900');
-    assert.match(page.text(planForm(page)), /doesn't know what your paycheck is yet/);
-    const slider = key(page, 'ef-plan-new-slider');
-    assert.equal(slider.max, '500');
-    assert.equal(slider.min, '0');
-    assert.doesNotMatch(page.text(planForm(page)), /That's more than your budget leaves/);
-    slide(page, 'ef-plan-new-slider', 100);
-    assert.match(page.text(page.$('[role=status]', planForm(page))), /^\$100 a paycheck → about 9 paychecks/);
+    const t = page.text(planForm(page));
+    assert.match(t, /We’ll know what’s safe to put aside after your first pay period\./);
+    assert.doesNotMatch(t, /\$0 to \$500/);
+    assert.equal(key(page, 'ef-plan-new-slider').closest('.field').hidden, true, 'no made-up slider range');
+    assert.match(
+      page.$('label[for="' + key(page, 'ef-plan-new-per').id + '"]').textContent,
+      /an estimate for now/,
+    );
+    fill(page, 'ef-plan-new-per', '1000');
+    assert.equal(key(page, 'ef-plan-new-per').value, '1000', 'no cap until income is known');
+    assert.match(
+      page.text(page.$('[role=status][aria-live]', planForm(page))),
+      /^\$1,?000 a paycheck \(estimate\) → about 1 paycheck/,
+    );
+    page.click(page.button('Make this plan', planForm(page)));
+    assert.equal(page.state().budget.goals.find((x) => x.name === 'New phone').perPaycheck, 1000);
   } finally {
     await page.close();
   }
@@ -175,6 +237,7 @@ test('slider: saving makes the plan with that amount; the date link switches to 
     assert.equal(g.kind, 'purchase');
     assert.equal(g.perPaycheck, 150);
     assert.equal('targetDate' in g, false);
+    assert.equal('fundedBy' in g, false, 'one restaurant: nothing to pick');
     assert.equal(g.createdAt, todayISO());
     // A second plan, by date.
     fill(page, 'ef-plan-new-name', 'Trip');
@@ -183,6 +246,7 @@ test('slider: saving makes the plan with that amount; the date link switches to 
     const date = addDays(todayISO(), 90);
     fill(page, 'ef-plan-new-date', date);
     assert.match(page.text(planForm(page)), /About \$[\d,.]+ a paycheck for \d+ paychecks \(ready by /);
+    assert.doesNotMatch(page.text(planForm(page)), /more than your budget leaves/);
     page.click(page.byLabel('Choose an amount a paycheck instead'));
     page.click(page.byLabel('Need it by a certain date?'));
     page.click(page.button('Make this plan', planForm(page)));
@@ -239,6 +303,33 @@ test('slider: editing a plan or a goal reopens the slider view at its amount', a
   }
 });
 
+test('slider: editing a goal saved above what is safe now holds it at the most (the cap applies on the next edit)', async () => {
+  const goals = [
+    {
+      id: 'g1',
+      name: 'Fund',
+      target: 9000,
+      saved: 0,
+      perPaycheck: 2000,
+      createdAt: todayISO(),
+      startSaved: 0,
+    },
+  ];
+  const page = await boot({ url: DEV, seed: seed({ goals }) });
+  try {
+    page.tab('budget');
+    page.click(page.byLabel('Edit Fund'));
+    const S = page.state();
+    const max = roundDownStep(
+      possibleAside(S.budget, S.workplaces[0].profile, S.nights, todayISO(), { excludeId: 'g1' }).possible,
+    );
+    assert.equal(key(page, 'ef-goal-g1-per').value, String(max));
+    assert.match(page.text(page.$('form[aria-label="Edit goal Fund"]')), CAP);
+  } finally {
+    await page.close();
+  }
+});
+
 test('slider: a new savings goal uses the same view and counts other goals in what is possible', async () => {
   const goals = [{ id: 'g1', name: 'Fund', target: 1000, saved: 0, perPaycheck: 40 }];
   const page = await boot({ url: DEV, seed: seed({ goals }) });
@@ -246,17 +337,18 @@ test('slider: a new savings goal uses the same view and counts other goals in wh
     page.tab('budget');
     const form = page.must(page.$('form[aria-label="Add a savings goal"]'), 'goal form');
     page.type(key(page, 'ef-goal-new-name'), 'Emergency');
-    page.type(key(page, 'ef-goal-new-cost'), '500');
+    page.type(key(page, 'ef-goal-new-cost'), '5000');
     const S = page.state();
-    const pa = possibleAside(S.budget, S.profile, S.nights, todayISO());
+    const pa = possibleAside(S.budget, S.workplaces[0].profile, S.nights, todayISO());
     assert.equal(pa.goals, 40);
     assert.equal(Number(key(page, 'ef-goal-new-slider').value), roundDownStep(pa.possible));
+    assert.equal(Number(key(page, 'ef-goal-new-slider').max), roundDownStep(pa.possible));
     assert.match(page.text(form), /Your other goals per paycheck/);
     slide(page, 'ef-goal-new-slider', 50);
     page.click(page.button('Add goal', form));
     const g = page.state().budget.goals.find((x) => x.name === 'Emergency');
     assert.equal(g.perPaycheck, 50);
-    assert.equal(g.target, 500);
+    assert.equal(g.target, 5000);
     assert.equal(g.kind, undefined);
   } finally {
     await page.close();

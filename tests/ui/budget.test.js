@@ -8,7 +8,7 @@ import { flush } from '../../app/js/storage.js';
 const DEV = 'http://localhost/?unlock=dev';
 const seed = () =>
   realState((S) => {
-    S.settings.setupDone = true;
+    S.workplaces[0].setupDone = true;
     S.budget = exampleBudget();
     // bills spread over the month so at least one always falls inside the visible pay periods
     S.budget.bills = [3, 8, 13, 18, 23, 28].map((d, i) => ({
@@ -51,7 +51,10 @@ test('budget: a Paid tick persists and survives a pay-schedule change', async ()
     assert.equal(stored.budget.paidBills[key], true, 'saved to storage');
 
     // move the pay period start by a day: the same bill on the same due date is still paid
-    page.state().profile.periodStart = addDays(page.state().profile.periodStart, -1);
+    page.state().workplaces[0].profile.periodStart = addDays(
+      page.state().workplaces[0].profile.periodStart,
+      -1,
+    );
     page.tab('tonight');
     page.tab('budget');
     assert.equal(page.state().budget.paidBills[key], true);
@@ -147,11 +150,11 @@ test('budget: month end sets aside a day-based allowance and explains it', async
     const page = await boot({
       url: DEV,
       seed: realState((S) => {
-        S.settings.setupDone = true;
-        S.profile.freq = 14;
-        S.profile.payDelay = 1;
-        S.profile.periodEnd = '2026-10-04';
-        S.profile.periodStart = '2026-09-21'; // 14 days: period 09-21..10-04, payday 10-05
+        S.workplaces[0].setupDone = true;
+        S.workplaces[0].profile.freq = 14;
+        S.workplaces[0].profile.payDelay = 1;
+        S.workplaces[0].profile.periodEnd = '2026-10-04';
+        S.workplaces[0].profile.periodStart = '2026-09-21'; // 14 days: period 09-21..10-04, payday 10-05
         S.budget = exampleBudget();
         S.budget.bills = [];
         S.budget.goals = [];
@@ -160,7 +163,7 @@ test('budget: month end sets aside a day-based allowance and explains it', async
     });
     try {
       page.tab('budget');
-      const r = safeToSpend(page.state().budget, page.state().profile, [], '2026-09-30');
+      const r = safeToSpend(page.state().budget, page.state().workplaces[0].profile, [], '2026-09-30');
       assert.equal(r.daysAway, 5);
       // Groceries 400, Gas 160, Fun 150, nothing spent. Sep 30 = 1 day of 30, Oct 1-4 = 4 days of 31:
       // Sep 30: 13.33 + 5.33 + 5.00 = 23.66. Oct 1-4: 51.61 + 20.65 + 19.35 = 91.61. Total 115.27 (each rounded to the cent).
@@ -182,7 +185,7 @@ test('budget: recording what you put toward a goal stops it coming out of your m
   const page = await boot({
     url: DEV,
     seed: realState((S) => {
-      S.settings.setupDone = true;
+      S.workplaces[0].setupDone = true;
       S.budget = exampleBudget();
       S.budget.bills = [];
       S.budget.categories = [];
@@ -192,16 +195,22 @@ test('budget: recording what you put toward a goal stops it coming out of your m
   });
   try {
     page.tab('budget');
-    const payday = recordPayday(page.state().profile, todayISO());
+    const payday = recordPayday(page.state().workplaces[0].profile, todayISO());
     const field = () => page.$('input[data-focus-key="goal-rec-g1"]');
-    assert.equal(safeToSpend(page.state().budget, page.state().profile, [], todayISO()).goalsTotal, 40);
+    assert.equal(
+      safeToSpend(page.state().budget, page.state().workplaces[0].profile, [], todayISO()).goalsTotal,
+      40,
+    );
     page.type(field(), '25');
     page.click(page.$('button[data-focus-key="goal-rec-save-g1"]'));
     const g = () => page.state().budget.goals[0];
     assert.equal(g().saved, 25);
     assert.equal(g().contributions[0].payday, payday);
     assert.equal(g().contributions[0].planned, 40);
-    assert.equal(safeToSpend(page.state().budget, page.state().profile, [], todayISO()).goalsTotal, 0);
+    assert.equal(
+      safeToSpend(page.state().budget, page.state().workplaces[0].profile, [], todayISO()).goalsTotal,
+      0,
+    );
     await flush();
     assert.equal(
       JSON.parse(page.win.localStorage.getItem('tipnet.v2')).budget.goals[0].contributions[0].amount,

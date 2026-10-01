@@ -57,6 +57,7 @@ test('migrate keeps settings.guidedDraft, cleaned like a profile, with blank dat
   const g = migrate(S).settings.guidedDraft;
   assert.equal(g.step, 2);
   assert.equal(g.noDeductions, true);
+  assert.equal(g.workplaceId, 'w1', 'an old draft is about the first restaurant');
   assert.equal(g.profile.periodStart, '', 'never defaults to today');
   assert.equal(g.profile.periodEnd, '');
   assert.equal(g.profile.gross, 1500);
@@ -111,7 +112,7 @@ test('backups (code and file) leave out the guided draft and the license key; th
 test('migrate locks finished periods with the "today" it is given, not the real clock', () => {
   const TODAY = '2026-09-28';
   const S = real((s) => {
-    s.profile = M.exampleProfile(TODAY);
+    s.workplaces[0].profile = M.exampleProfile(TODAY);
     s.nights = M.exampleNights(TODAY);
   });
   assert.ok(
@@ -126,19 +127,19 @@ test('migrate locks finished periods with the "today" it is given, not the real 
 
 test('a real profile without a valid start date stays blank and is not set up; the example gets today', () => {
   const S = real((s) => {
-    s.profile.periodStart = 'garbage';
-    s.settings.setupDone = true;
+    s.workplaces[0].profile.periodStart = 'garbage';
+    s.workplaces[0].setupDone = true;
     s.nights = [{ id: 'a', date: '2026-09-22', total: 300 }];
   });
   const m = migrate(S, { today: '2026-09-30' });
-  assert.equal(m.profile.periodStart, '');
+  assert.equal(m.workplaces[0].profile.periodStart, '');
   assert.equal(m.nights.length, 1, 'nights kept (and not locked)');
   assert.ok(!m.nights[0].snap);
   assert.equal(isSetUp(m), false, 'Setup asks for the date first');
-  assert.equal(hasBasics(m.profile, { noDeductions: true }), false);
+  assert.equal(hasBasics(m.workplaces[0].profile, { noDeductions: true }), false);
   const ex = seedState();
-  ex.profile.periodStart = '';
-  assert.equal(migrate(ex, { today: '2026-09-30' }).profile.periodStart, '2026-09-30');
+  ex.workplaces[0].profile.periodStart = '';
+  assert.equal(migrate(ex, { today: '2026-09-30' }).workplaces[0].profile.periodStart, '2026-09-30');
 });
 
 test('migrate keeps the backup times and the iPhone note flag; junk is dropped', () => {

@@ -7,7 +7,7 @@ import { addDays, todayISO } from '../../app/js/math.js';
 const DEV = 'http://localhost/?unlock=dev';
 const seed = (goals = []) =>
   realState((S) => {
-    S.settings.setupDone = true;
+    S.workplaces[0].setupDone = true;
     S.budget = exampleBudget();
     S.budget.bills = [];
     S.budget.categories = [];
@@ -85,7 +85,11 @@ test('plans: create one with a set amount a paycheck, and a missing amount or pa
     assert.match(page.text(planForm(page)), /Pick a date after today/);
     toAmount(page);
     fill(page, 'ef-plan-new-per', '110');
-    assert.match(page.text(planForm(page)), /\$110 a paycheck → about 10 paychecks → ready by about /);
+    // TipNet does not know the paycheck yet: the typed amount is an estimate (no cap until it does)
+    assert.match(
+      page.text(planForm(page)),
+      /\$110 a paycheck \(estimate\) → about 10 paychecks → ready by about /,
+    );
     submit(page);
     const g = page.state().budget.goals.find((x) => x.name === 'Laptop');
     assert.equal(g.perPaycheck, 110);
@@ -122,13 +126,16 @@ test('plans: the amount entry and Add to saved work, and safe to spend counts th
   try {
     page.tab('budget');
     const S = page.state();
-    const payday = recordPayday(S.profile, todayISO());
-    const due = safeToSpend(S.budget, S.profile, [], todayISO()).goalsTotal;
+    const payday = recordPayday(S.workplaces[0].profile, todayISO());
+    const due = safeToSpend(S.budget, S.workplaces[0].profile, [], todayISO()).goalsTotal;
     assert.ok(due > 0);
     page.type(key(page, 'goal-rec-p1'), '0');
     page.click(key(page, 'goal-rec-save-p1'));
     assert.equal(page.state().budget.goals[0].contributions[0].payday, payday);
-    assert.equal(safeToSpend(page.state().budget, page.state().profile, [], todayISO()).goalsTotal, 0);
+    assert.equal(
+      safeToSpend(page.state().budget, page.state().workplaces[0].profile, [], todayISO()).goalsTotal,
+      0,
+    );
     page.type(key(page, 'goal-add-p1'), '300');
     page.click(page.button('Add to saved'));
     assert.equal(page.state().budget.goals[0].saved, 300);
@@ -155,7 +162,7 @@ test('plans: a plan with enough saved is ready, and Mark as bought takes two tap
     assert.ok(done, 'moved to a Done list');
     assert.equal(done.parentElement.open, false, 'collapsed');
     assert.equal(page.byText('li', 'Car down payment').closest('details'), done.parentElement);
-    const r = safeToSpend(page.state().budget, page.state().profile, [], todayISO());
+    const r = safeToSpend(page.state().budget, page.state().workplaces[0].profile, [], todayISO());
     assert.equal(r.goals.length, 0, 'left out of safe to spend');
     page.click(page.button('Undo', page.$('#toast')));
     assert.equal(page.state().budget.goals[0].boughtAt, undefined);

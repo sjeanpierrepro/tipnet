@@ -200,7 +200,7 @@ test('a failed save shows the banner and Setup says it could not save; a good on
     await wait(500);
     assert.equal(page.doc.getElementById('save-error').hidden, true, 'banner gone');
     assert.match(page.text(), /All changes saved on this device\./);
-    assert.equal(JSON.parse(good.getItem('tipnet.v2')).profile.gross, 1950);
+    assert.equal(JSON.parse(good.getItem('tipnet.v2')).workplaces[0].profile.gross, 1950);
   } finally {
     globalThis.localStorage = good;
     await page.close();

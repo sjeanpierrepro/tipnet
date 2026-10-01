@@ -174,14 +174,14 @@ export const toCode = (obj) => Buffer.from(JSON.stringify(obj), 'utf8').toString
 /**
  * A real (non-example) state to seed: the example profile numbers, no nights. mutate(state) may change it.
  * Like a state saved before entry modes existed, it has no entryMode, so it loads as an existing user's ('total').
- * Set S.profile.entryMode = 'tips' in mutate for a tips-only user.
+ * Set S.workplaces[0].profile.entryMode = 'tips' in mutate for a tips-only user.
  */
 export function realState(mutate) {
   const S = seedState();
   S.profileExample = false;
   S.nightsExample = false;
   S.nights = [];
-  delete S.profile.entryMode;
+  delete S.workplaces[0].profile.entryMode;
   if (mutate) mutate(S);
   return S;
 }

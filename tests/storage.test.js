@@ -60,7 +60,7 @@ const MIDDLE = () => ({
 
 test('migrate: oldest prototype shape (hourly/hours/fed/other/ss/med/fixed)', () => {
   const s = migrate(OLDEST());
-  const p = s.profile;
+  const p = s.workplaces[0].profile;
   assert.equal(s.schemaVersion, SCHEMA_VERSION);
   assert.equal(p.periodEnd, '');
   assert.equal(p.payTypes.length, 1);
@@ -91,11 +91,11 @@ test('migrate: oldest prototype shape (hourly/hours/fed/other/ss/med/fixed)', ()
 
 test('migrate: newer prototype shape gets k, periodEnd and schemaVersion, keeps data', () => {
   const s = migrate(MIDDLE());
-  assert.equal(s.schemaVersion, 2);
-  assert.equal(s.profile.periodEnd, '');
-  assert.equal(s.profile.payTypes[0].k, 'hourly');
-  assert.equal(s.profile.payTypes[1].k, 'other');
-  assert.equal(s.calib.length, 1);
+  assert.equal(s.schemaVersion, 3);
+  assert.equal(s.workplaces[0].profile.periodEnd, '');
+  assert.equal(s.workplaces[0].profile.payTypes[0].k, 'hourly');
+  assert.equal(s.workplaces[0].profile.payTypes[1].k, 'other');
+  assert.equal(s.workplaces[0].calib.length, 1);
   assert.equal(s.nights[0].total, 310);
 });
 
@@ -107,7 +107,7 @@ test('migrate is idempotent, does not mutate its input, and survives garbage', (
   assert.deepEqual(migrate(once), once);
   for (const bad of [null, undefined, 5, 'x', {}, { profile: 3 }]) {
     const s = migrate(bad);
-    assert.equal(s.schemaVersion, 2);
+    assert.equal(s.schemaVersion, 3);
     assert.equal(s.profileExample, true);
     assert.equal(s.nights.length, 4);
   }
@@ -115,8 +115,8 @@ test('migrate is idempotent, does not mutate its input, and survives garbage', (
 
 test('backup round trip, including unicode', () => {
   const s = seedState();
-  s.profile.payTypes[0].name = 'Bartending – café \u{1F378}';
-  s.calib.push({ label: 'Sep 7 – Sep 20', pred: 1, actual: 2, err: -0.5 });
+  s.workplaces[0].profile.payTypes[0].name = 'Bartending – café \u{1F378}';
+  s.workplaces[0].calib.push({ label: 'Sep 7 – Sep 20', pred: 1, actual: 2, err: -0.5 });
   const code = encodeBackup(s);
   assert.match(code, /^[A-Za-z0-9+/=]+$/);
   assert.deepEqual(decodeBackup(code), migrate(s));
@@ -143,11 +143,11 @@ test('a prototype backup code restores (both shapes, unicode name)', () => {
   const mid = MIDDLE();
   mid.profile.payTypes[0].name = 'Bar – naïve';
   const s = decodeBackup(protoEncode(mid));
-  assert.equal(s.profile.payTypes[0].name, 'Bar – naïve');
+  assert.equal(s.workplaces[0].profile.payTypes[0].name, 'Bar – naïve');
   assert.equal(s.nights.length, 1);
-  assert.equal(s.schemaVersion, 2);
+  assert.equal(s.schemaVersion, 3);
   const old = decodeBackup(protoEncode(OLDEST()));
-  assert.equal(old.profile.deductions.length, 5);
+  assert.equal(old.workplaces[0].profile.deductions.length, 5);
   assert.equal(old.nights.length, 2);
   // a v2 code is also decodable by the prototype's decoder (same format)
   const back = JSON.parse(
@@ -232,7 +232,7 @@ test('migrate: payDelay stays absent when unset, is clamped and rounded when set
   const mk = (v) => {
     const s = MIDDLE();
     if (v !== 'absent') s.profile.payDelay = v;
-    return migrate(s).profile;
+    return migrate(s).workplaces[0].profile;
   };
   assert.equal('payDelay' in mk('absent'), false);
   assert.equal('payDelay' in mk(''), false);
@@ -246,11 +246,15 @@ test('migrate: payDelay stays absent when unset, is clamped and rounded when set
 });
 
 test('migrate: freq accepts 7/14/15/30 and the calendar strings, rejects garbage', () => {
-  const f = (freq) => migrate({ ...MIDDLE(), profile: { ...MIDDLE().profile, freq } }).profile.freq;
+  const f = (freq) =>
+    migrate({ ...MIDDLE(), profile: { ...MIDDLE().profile, freq } }).workplaces[0].profile.freq;
   for (const ok of [7, 14, 15, 30, 'semimonthly', 'monthly']) assert.equal(f(ok), ok);
   assert.equal(f('15'), 15);
   for (const bad of ['weekly', 'x', 99, null, {}, NaN, -1]) assert.equal(f(bad), 14);
-  assert.equal(migrate({ ...MIDDLE(), profile: (({ freq, ...r }) => r)(MIDDLE().profile) }).profile.freq, 14);
+  assert.equal(
+    migrate({ ...MIDDLE(), profile: (({ freq, ...r }) => r)(MIDDLE().profile) }).workplaces[0].profile.freq,
+    14,
+  );
 });
 
 test('a prototype backup code with freq 15/30 restores as fixed lengths', () => {
@@ -259,9 +263,9 @@ test('a prototype backup code with freq 15/30 restores as fixed lengths', () => 
     mid.profile.freq = fr;
     mid.profile.periodStart = '2026-09-16';
     const s = decodeBackup(protoEncode(mid));
-    assert.equal(s.profile.freq, fr);
-    assert.equal(M.calendarMode(s.profile), null);
-    assert.equal(M.periodLength(s.profile), fr);
+    assert.equal(s.workplaces[0].profile.freq, fr);
+    assert.equal(M.calendarMode(s.workplaces[0].profile), null);
+    assert.equal(M.periodLength(s.workplaces[0].profile), fr);
   }
 });
 
@@ -301,10 +305,10 @@ test('migrate: old calib entries stay valid, new ones keep period info, impossib
       { id: 2, date: '2026-02-28', total: 100 },
     ],
   });
-  assert.equal(S.calib[0].label, 'old');
-  assert.equal(S.calib[0].idx, undefined);
-  assert.equal(S.calib[1].idx, 3);
-  assert.equal(S.calib[1].rateBefore, 0.2);
+  assert.equal(S.workplaces[0].calib[0].label, 'old');
+  assert.equal(S.workplaces[0].calib[0].idx, undefined);
+  assert.equal(S.workplaces[0].calib[1].idx, 3);
+  assert.equal(S.workplaces[0].calib[1].rateBefore, 0.2);
   assert.deepEqual(
     S.nights.map((n) => n.date),
     ['2026-02-28'],

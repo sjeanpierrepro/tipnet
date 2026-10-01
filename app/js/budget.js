@@ -260,6 +260,8 @@ export function migrateBudget(x, profile) {
       if (isDateStr(g.targetDate)) goal.targetDate = g.targetDate;
       if (isDateStr(g.boughtAt)) goal.boughtAt = g.boughtAt;
     }
+    // The restaurant whose paychecks it is saved from (a workplace id; storage drops it when that restaurant is gone).
+    if (typeof g.fundedBy === 'string' && g.fundedBy) goal.fundedBy = g.fundedBy.slice(0, 40);
     if (isDateStr(g.createdAt)) goal.createdAt = g.createdAt;
     if (g.startSaved !== undefined && g.startSaved !== null && g.startSaved !== '')
       goal.startSaved = money(g.startSaved);
@@ -803,73 +805,167 @@ export function planShare(perPaycheck, typicalCheck) {
   return { pct, big: pct > PLAN_BIG_SHARE };
 }
 
+/* ---------- several restaurants (pay sources) ---------- */
+/*
+ * The budget counts the paychecks of every restaurant. A source is one restaurant: {id, name, profile, nights, index?}
+ * (index: an indexNights() result to reuse). Screens pass one per restaurant that is set up. Every function below also
+ * works with just one source, and then gives exactly the single-paycheck numbers.
+ */
+const hasSchedule = (p) => !!p && Number.isFinite(parseISO(p.periodStart));
+/** How many paydays a restaurant has in the year from today (0 without a pay schedule). */
+export function paydaysPerYear(profile, today = todayISO()) {
+  return hasSchedule(profile) ? paydaysBetween(profile, today, addDays(today, 365)).length : 0;
+}
+/** The restaurant that pays most often (a tie goes to the first one listed): where goals are saved from unless one is picked. */
+export function defaultFunder(sources, today = todayISO()) {
+  let best = null,
+    bestN = -1;
+  (sources || []).forEach((s) => {
+    const n = paydaysPerYear(s.profile, today);
+    if (n > bestN) {
+      best = s;
+      bestN = n;
+    }
+  });
+  return best;
+}
+/** The restaurant a goal is saved from: its fundedBy when that restaurant is listed, else the default (see defaultFunder). */
+export const funderOf = (goal, sources, today = todayISO()) =>
+  (goal && (sources || []).find((s) => s.id === goal.fundedBy)) || defaultFunder(sources, today);
+/** A typical check from one restaurant: the average finished check, else the projected one. {check (null when unknown), from}. */
+export function typicalCheck(profile, nights, today = todayISO(), index) {
+  const inc = expectedIncome(profile, nights, today, index || indexNights(profile, nights));
+  const check = inc.avgCheckPerPeriod != null ? inc.avgCheckPerPeriod : inc.projectedCheck;
+  return {
+    check,
+    from: check == null ? null : inc.avgCheckPerPeriod != null ? 'average' : 'projected',
+  };
+}
+const lenNow = (profile, today) => periodLength(profile, periodIndex(profile, today));
+/** cents scaled from one pay period length to another (days). */
+const scaleC = (c, fromLen, toLen) => (fromLen > 0 ? Math.round((c * toLen) / fromLen) : c);
+/** What one goal takes from each of its paychecks (never more than it still needs), in cents. funder: its source. */
+function goalPerC(g, funder, today) {
+  const remC = Math.max(0, cents(g.target) - cents(g.saved));
+  const per = isPlan(g) ? toCents(purchasePlan(g, funder.profile, today).perPaycheck) : cents(g.perPaycheck);
+  return Math.min(per, remC);
+}
+
 /* ---------- what is possible to put aside ---------- */
 export const ASIDE_STEP = 5;
-export const ASIDE_UNKNOWN_MAX = 500;
 /** Round a dollar amount down to a whole step (default $5). */
 export const roundDownStep = (v, step = ASIDE_STEP) =>
   Math.floor((Math.round(num(v) * 100) + 1e-6) / (step * 100)) * step;
+/** Round a dollar amount up to a whole step (default $5). */
+export const roundUpStep = (v, step = ASIDE_STEP) =>
+  Math.ceil((Math.round(num(v) * 100) - 1e-6) / (step * 100)) * step;
 /**
- * What there is room to put aside each paycheck, from the budget. All estimates, in dollars:
- * typical take-home per paycheck (the average finished check, else the projected check) + regular other income per paycheck
- * - bills per paycheck (monthly bills x 12 / paychecks a year) - spending categories per paycheck (their per-day allowance x the days in a pay period)
- * - what the other active goals already take per paycheck. Never below 0. opts.excludeId leaves one goal out (the one being made or edited).
- * Returns {known (false when TipNet cannot tell what a check is yet), possible, check, checkFrom ('average'|'projected'|null), other, bills, spending, goals,
- *  periodDays, goalList:[{id,name,amount}]}. When not known, possible is 0 and the pieces are still worked out.
+ * What there is room to put aside from each paycheck of one restaurant, from the budget. All estimates, in dollars, over
+ * that restaurant's pay period (periodDays):
+ *   its typical check (the average finished check, else the projected one)
+ *   + the other restaurants' typical checks over the same days (each check x these days / its own pay period's days)
+ *   + regular other income over the same days
+ *   - bills over the same days (monthly bills x 12 x days / 365) - spending categories (their per-day allowance x the days)
+ *   - what the other active goals already take over the same days (each from its own restaurant's paychecks, scaled the same way).
+ * Never below 0, and never more than this restaurant's check + other income - the goals already saved from its checks
+ * (one check can't pay more than it brings). With one restaurant that cap never binds, so it is the plain single-paycheck sum.
+ * Pass profile and nights for one restaurant; for several, opts.sources (see above) and opts.funderId (default: defaultFunder).
+ * opts.excludeId leaves one goal out (the one being made or edited). opts.index: indexNights() of profile/nights.
+ * Returns {known (false when TipNet can't tell what this restaurant's check is yet), possible, check, checkFrom ('average'|'projected'|null),
+ *  otherChecks, otherChecksList:[{id,name,amount,known}], other, bills, spending, goals, periodDays, funderId, funderName,
+ *  goalList:[{id,name,amount}]}. When not known, possible is 0 and the pieces are still worked out.
  */
 export function possibleAside(budget, profile, nights, today = todayISO(), opts = {}) {
-  const len = periodLength(profile, periodIndex(profile, today));
-  const inc = expectedIncome(profile, nights, today, opts.index);
-  const check = inc.avgCheckPerPeriod != null ? inc.avgCheckPerPeriod : inc.projectedCheck;
-  const checkC = check == null ? 0 : toCents(check);
-  const otherC = toCents(otherIncomePerPaycheck(budget, profile, today));
+  const sources =
+    opts.sources && opts.sources.length
+      ? opts.sources
+      : [{ id: opts.funderId || '', name: '', profile, nights, index: opts.index }];
+  const f = sources.find((s) => s.id === opts.funderId) || defaultFunder(sources, today) || sources[0];
+  const len = lenNow(f.profile, today);
+  const tc = typicalCheck(f.profile, f.nights, today, f.index);
+  const checkC = tc.check == null ? 0 : toCents(tc.check);
+  const others = sources
+    .filter((s) => s !== f && hasSchedule(s.profile))
+    .map((s) => {
+      const t = typicalCheck(s.profile, s.nights, today, s.index);
+      const c = t.check == null ? 0 : scaleC(toCents(t.check), lenNow(s.profile, today), len);
+      return { id: s.id, name: s.name, amountC: c, known: t.check != null };
+    });
+  const othersC = sumC(others, (o) => o.amountC);
+  const otherC = toCents(otherIncomePerPaycheck(budget, f.profile, today));
   const billsC = Math.round((sumC(budget.bills || [], (b) => cents(b.amount)) * 12 * len) / 365);
-  const spendC = toCents(spendingPerPaycheck(budget, profile, today));
+  const spendC = toCents(spendingPerPaycheck(budget, f.profile, today));
   const goalList = (budget.goals || [])
     .filter((g) => !g.boughtAt && g.id !== opts.excludeId)
     .map((g) => {
-      const remC = Math.max(0, cents(g.target) - cents(g.saved));
-      const per = isPlan(g) ? toCents(purchasePlan(g, profile, today).perPaycheck) : cents(g.perPaycheck);
-      return { id: g.id, name: g.name, amountC: Math.min(per, remC) };
+      const gf = funderOf(g, sources, today) || f;
+      const own = gf === f;
+      const c = goalPerC(g, gf, today);
+      return { id: g.id, name: g.name, amountC: own ? c : scaleC(c, lenNow(gf.profile, today), len), own };
     })
     .filter((g) => g.amountC > 0);
   const goalsC = sumC(goalList, (g) => g.amountC);
-  const known = check != null;
+  const ownGoalsC = sumC(
+    goalList.filter((g) => g.own),
+    (g) => g.amountC,
+  );
+  const known = tc.check != null;
+  const freeC = checkC + othersC + otherC - billsC - spendC - goalsC;
+  const capC = checkC + otherC - ownGoalsC;
   return {
     known,
-    possible: known ? fromCents(Math.max(0, checkC + otherC - billsC - spendC - goalsC)) : 0,
+    possible: known ? fromCents(Math.max(0, Math.min(freeC, capC))) : 0,
     check: fromCents(checkC),
-    checkFrom: check == null ? null : inc.avgCheckPerPeriod != null ? 'average' : 'projected',
+    checkFrom: tc.from,
+    otherChecks: fromCents(othersC),
+    otherChecksList: others.map((o) => ({
+      id: o.id,
+      name: o.name,
+      amount: fromCents(o.amountC),
+      known: o.known,
+    })),
     other: fromCents(otherC),
     bills: fromCents(billsC),
     spending: fromCents(spendC),
     goals: fromCents(goalsC),
     periodDays: len,
+    funderId: f.id,
+    funderName: f.name,
     goalList: goalList.map((g) => ({ id: g.id, name: g.name, amount: fromCents(g.amountC) })),
   };
 }
 /**
- * The slider's top end for putting money aside each paycheck: the larger of twice what is possible and what finishing in one paycheck takes,
- * rounded up to the step. 0 to $500 when income is not known yet.
+ * The put-aside slider for one goal (owner rule: it only goes as high as the budget leaves).
+ * max: what is possible each paycheck, rounded down to the $5 step. start: max, or less when a smaller amount finishes the
+ * goal in one paycheck (that amount rounded up to the step, never above max). capped: false when income is not known yet
+ * (then there is no slider; the amount is typed and marked an estimate). disabled: known, but nothing is left to put aside.
  */
-export function asideSliderMax(possible, needed, known = true, step = ASIDE_STEP) {
-  if (!known) return ASIDE_UNKNOWN_MAX;
-  const top = Math.max(2 * num(possible), num(needed));
-  return Math.max(step, Math.ceil(Math.round(top * 100) / (step * 100)) * step);
+export function asideRange(possible, needed, known = true, step = ASIDE_STEP) {
+  if (!known) return { capped: false, max: null, start: null, disabled: false };
+  const max = roundDownStep(Math.max(0, num(possible)), step);
+  const one = roundUpStep(Math.max(0, num(needed)), step);
+  const start = one > 0 ? Math.min(max, one) : max;
+  return { capped: true, max, start, disabled: max <= 0 };
 }
 
 /* ---------- safe to spend ---------- */
 /**
- * Money to put toward goals this paycheck (never more than a goal still needs), in cents.
- * done: an amount is recorded for the current check (payday), so it is no longer taken out of the money you have now.
+ * Money to put toward goals this paycheck (never more than a goal still needs), in cents. Each goal follows its own
+ * restaurant (funderOf): its paydays and plan. done: an amount is recorded for that restaurant's current check, so it is no
+ * longer taken out of the money you have now. funderId: the restaurant it is saved from.
  */
-function goalPieces(budget, payday, profile, today) {
+function goalPieces(budget, sources, today) {
   return (budget.goals || [])
     .filter((g) => !g.boughtAt) // a purchase already bought no longer needs money set aside
     .map((g) => {
-      const remC = Math.max(0, toCents(num(g.target)) - toCents(num(g.saved)));
-      const per = isPlan(g) ? toCents(purchasePlan(g, profile, today).perPaycheck) : cents(g.perPaycheck);
-      return { id: g.id, name: g.name, amountC: Math.min(per, remC), done: isGoalDone(g, payday) };
+      const f = funderOf(g, sources, today);
+      return {
+        id: g.id,
+        name: g.name,
+        amountC: goalPerC(g, f, today),
+        done: isGoalDone(g, recordPayday(f.profile, today)),
+        funderId: f.id,
+      };
     });
 }
 
@@ -899,34 +995,88 @@ function reserveC(cat, today, fromISO, days, u) {
 }
 
 /**
- * How much you can spend before your next payday, with every piece shown so the UI can explain it.
- * Money you have: options.cashOnHand if given, else the saved balance (budget.balance) minus spending logged since it was saved,
- * else the cash tips TipNet adds up from this pay period's nights (minus spending logged this pay period).
- * options.index: an indexNights() result to reuse.
- * Money from the check is NOT counted until payday. Category money is set aside by the day: for each spending period (week, two weeks or month)
- * the days until payday touch, min(what is left of today's period, amount / days in that period x the days in the window in that period);
- * periods after today's use the full per-day allowance. The after-payday window uses the same rule.
- * Goals with an amount recorded for the current check (isGoalDone) are not subtracted from the money you have now; the next paycheck still counts them.
- * Paid bills are looked up by paidKey(bill id, due date).
- * Returns {payday, daysAway, income:{source:'entered'|'balance'|'cash', amount, cash, spent (logged since the balance / this period; 0 for 'entered')}, bills:[...], billsTotal,
- *  goals:[{id,name,amount (0 once done),due (full amount),done}], goalsTotal (goals not done only), categories:[{id,name,remaining,reserved}], categoriesTotal,
- *  safe (can be negative), perDay,
- *  (payday = first pay date after today; bills counted are unpaid ones due up to the day before it)
- *  after:{projectedCheck (null if unknown), checkFrom ('current'|'finished'|'average'|null), bills, billsTotal, goalsTotal, left, periodStart, periodEnd}}
+ * How much you can spend before your next payday, with every piece shown so the UI can explain it. One restaurant.
+ * See safeToSpendAll for the pieces; this is the same with a single source.
  */
 export function safeToSpend(budget, profile, nights, today = todayISO(), options = {}) {
-  const idx = periodIndex(profile, today);
-  const range = periodRange(profile, idx);
-  const np = paydayInfo(profile, today);
-  const { date: payday, daysAway } = np;
-  const delay = payDelayOf(profile);
-  const index = options.index || indexNights(profile, nights);
-  const inc = expectedIncome(profile, nights, today, index);
+  return safeToSpendAll(
+    budget,
+    [{ id: '', name: '', profile, nights, index: options.index }],
+    today,
+    options,
+  );
+}
+
+/**
+ * How much you can spend until the next money arrives from any restaurant (its payday), with every piece shown so the UI
+ * can explain it. sources: one per restaurant (see above); restaurants without a pay schedule are left out.
+ * Money you have: options.cashOnHand if given, else the saved balance (budget.balance) minus spending logged since it was saved,
+ * else the cash tips TipNet adds up from every restaurant's current pay period (minus spending logged since the earliest of
+ * those periods started).
+ * Money from a check is NOT counted until its payday. Category money is set aside by the day: for each spending period (week, two weeks or month)
+ * the days until payday touch, min(what is left of today's period, amount / days in that period x the days in the window in that period);
+ * periods after today's use the full per-day allowance. The after-payday window uses the same rule.
+ * Goals with an amount recorded for their restaurant's current check (isGoalDone) are not subtracted from the money you have now; the next paycheck still counts them.
+ * Paid bills are looked up by paidKey(bill id, due date).
+ * Returns {payday (the next money arriving), daysAway, paydaySource:{id,name} (the restaurant whose check that is),
+ *  sources:[{id, name, payday, daysAway, check (null if unknown), checkFrom}] (each restaurant's next check, soonest first),
+ *  income:{source:'entered'|'balance'|'cash', amount, cash, spent (logged since the balance / this period; 0 for 'entered')}, bills:[...], billsTotal,
+ *  goals:[{id,name,amount (0 once done),due (full amount),done,funderId}], goalsTotal (goals not done only), categories:[{id,name,remaining,reserved}], categoriesTotal,
+ *  safe (can be negative), perDay,
+ *  (bills counted are unpaid ones due from the earliest restaurant's last payday up to the day before payday)
+ *  after:{checks:[{id,name,date,amount (null if unknown),from}] (every check arriving from payday until the day before that restaurant's following payday),
+ *   projectedCheck (the known checks added up; null if none is known), checkFrom ('current'|'finished'|'average'|null: the first check's), unknownChecks,
+ *   bills, billsTotal, goalsTotal (goals saved from a check in the window), left, periodStart, periodEnd}}
+ */
+export function safeToSpendAll(budget, sources, today = todayISO(), options = {}) {
+  let list = (sources || []).filter((s) => hasSchedule(s.profile));
+  if (!list.length) list = (sources || []).slice(0, 1);
+  const src = list.map((s, order) => {
+    const index = s.index || indexNights(s.profile, s.nights);
+    const np = paydayInfo(s.profile, today);
+    const idx = periodIndex(s.profile, today);
+    return {
+      s,
+      order,
+      index,
+      np,
+      idx,
+      range: periodRange(s.profile, idx),
+      inc: expectedIncome(s.profile, s.nights, today, index),
+    };
+  });
+  /** The estimated check (cents or null) and where it comes from, for each payday k-th of source x in the window. */
+  const checkAt = (x, date) => {
+    if (date === x.np.date) {
+      if (x.np.periodIndex === x.idx)
+        return {
+          c: x.inc.projectedCheck == null ? null : toCents(x.inc.projectedCheck),
+          from: x.inc.projectedFrom === 'nights' ? 'current' : x.inc.projectedFrom,
+        };
+      return finishedCheckC(
+        x.s.profile,
+        x.s.nights,
+        x.np.periodIndex,
+        today,
+        x.inc.avgCheckPerPeriod,
+        x.index,
+      );
+    }
+    // a later check from the same restaurant: its pay period has hardly started, so a typical one
+    const t = x.inc.avgCheckPerPeriod != null ? x.inc.avgCheckPerPeriod : x.inc.projectedCheck;
+    return { c: t == null ? null : toCents(t), from: t == null ? null : 'average' };
+  };
+  // The next money arriving: the soonest payday of any restaurant (a tie keeps the Setup order).
+  const bySoonest = src
+    .slice()
+    .sort((a, b) => (a.np.date < b.np.date ? -1 : a.np.date > b.np.date ? 1 : a.order - b.order));
+  const next = bySoonest[0];
+  const { date: payday, daysAway } = next.np;
   const co = options.cashOnHand;
   const entered = co !== undefined && co !== null && co !== '' && Number.isFinite(parseFloat(co));
   const saved = entered ? null : cleanBalance(budget.balance);
   // Money you have: what you typed, or your saved balance minus what you logged spending since, or cash tips this period
-  // minus what you logged spending this period. Money already spent also counts against its category below.
+  // (every restaurant's) minus what you logged spending this period. Money already spent also counts against its category below.
   let spentC = 0,
     cashC;
   if (entered) cashC = toCents(num(co));
@@ -934,21 +1084,30 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
     cashC = toCents(saved.amount);
     spentC = spentSinceBalance(budget.spends, saved, today);
   } else {
-    cashC = toCents(inc.cashSoFar);
+    cashC = sumC(src, (x) => toCents(x.inc.cashSoFar));
+    const from = src.reduce((m, x) => (x.range.start < m ? x.range.start : m), src[0].range.start);
     spentC = sumC(
-      (budget.spends || []).filter((s) => s.date >= range.start && s.date <= today),
+      (budget.spends || []).filter((s) => s.date >= from && s.date <= today),
       (s) => toCents(num(s.amount)),
     );
   }
   const incomeC = cashC - spentC;
 
-  // Unpaid bills in a date range. Earlier unpaid bills in this period still count: you still owe them.
+  // Unpaid bills in a date range. Earlier unpaid bills still count: you still owe them. They count from the earliest
+  // restaurant's last payday, so a bill is never dropped just because another restaurant paid in between.
   const unpaid = (from, to) => billsDue(budget, from, to).filter((b) => !isPaid(budget, b));
-  const bills = unpaid(lastPayday(profile, today), addDays(payday, -1));
+  const since = src.reduce(
+    (m, x) => {
+      const d = lastPayday(x.s.profile, today);
+      return d < m ? d : m;
+    },
+    lastPayday(src[0].s.profile, today),
+  );
+  const bills = unpaid(since, addDays(payday, -1));
   const billsC = sumC(bills, (b) => toCents(num(b.amount)));
 
-  const goals = goalPieces(budget, recordPayday(profile, today), profile, today);
-  const goalsAllC = sumC(goals, (g) => g.amountC); // what the next paycheck sets aside
+  const sourceList = list;
+  const goals = goalPieces(budget, sourceList, today);
   const goalsC = sumC(
     goals.filter((g) => !g.done),
     (g) => g.amountC,
@@ -977,11 +1136,19 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
 
   const safeC = incomeC + otherC - billsC - goalsC - catsC;
 
-  // After payday: bills from payday until the following payday come out of the check that arrives on payday.
-  // That check pays for period np.periodIndex: the current one, or (between its end and payday) the finished one.
-  const nextR = periodRange(profile, np.periodIndex + 1);
+  // After payday: from the next money arriving until the day before that restaurant's following payday. Every check that
+  // arrives in that window (from any restaurant) is counted; bills, spending and goals in it come out of them.
+  const nextR = periodRange(next.s.profile, next.np.periodIndex + 1);
   const afterStart = payday,
-    afterEnd = addDays(nextR.end, delay - 1);
+    afterEnd = addDays(nextR.end, payDelayOf(next.s.profile) - 1);
+  const checks = [];
+  src.forEach((x) => {
+    paydaysBetween(x.s.profile, addDays(afterStart, -1), afterEnd).forEach((date) => {
+      const { c, from } = checkAt(x, date);
+      checks.push({ id: x.s.id, name: x.s.name, date, c, from, order: x.order });
+    });
+  });
+  checks.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.order - b.order));
   const nextBills = unpaid(afterStart, afterEnd);
   const nextBillsC = sumC(nextBills, (b) => toCents(num(b.amount)));
   const afterOther = incomeInWindow(budget, afterStart, afterEnd);
@@ -990,23 +1157,31 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
   const afterCatsC = sumC(budget.categories || [], (c) =>
     reserveC(c, today, afterStart, afterDays, used.get(c.id)),
   );
-  let projC, checkFrom;
-  if (np.periodIndex === idx) {
-    projC = inc.projectedCheck == null ? null : toCents(inc.projectedCheck);
-    checkFrom = inc.projectedFrom === 'nights' ? 'current' : inc.projectedFrom;
-  } else
-    ({ c: projC, from: checkFrom } = finishedCheckC(
-      profile,
-      nights,
-      np.periodIndex,
-      today,
-      inc.avgCheckPerPeriod,
-      index,
-    ));
+  // Goals are saved from their own restaurant's checks: each counts once if one of its checks arrives in the window.
+  const paidIn = new Set(checks.map((k) => k.id));
+  const goalsAllC = sumC(
+    goals.filter((g) => paidIn.has(g.funderId)),
+    (g) => g.amountC,
+  );
+  const known = checks.filter((k) => k.c != null);
+  const projC = known.length ? sumC(known, (k) => k.c) : null;
+  const first = checks[0] || { c: null, from: null };
 
   return {
     payday,
     daysAway,
+    paydaySource: { id: next.s.id, name: next.s.name },
+    sources: bySoonest.map((x) => {
+      const { c, from } = checkAt(x, x.np.date);
+      return {
+        id: x.s.id,
+        name: x.s.name,
+        payday: x.np.date,
+        daysAway: x.np.daysAway,
+        check: c == null ? null : fromCents(c),
+        checkFrom: from,
+      };
+    }),
     income: {
       source: entered ? 'entered' : saved ? 'balance' : 'cash',
       amount: fromCents(incomeC),
@@ -1023,6 +1198,7 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
       amount: fromCents(g.done ? 0 : g.amountC),
       due: fromCents(g.amountC),
       done: g.done,
+      funderId: g.funderId,
     })),
     goalsTotal: fromCents(goalsC),
     categories: cats.map((c) => ({
@@ -1035,8 +1211,16 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
     safe: fromCents(safeC),
     perDay: fromCents(Math.round(safeC / Math.max(1, daysAway))),
     after: {
+      checks: checks.map((k) => ({
+        id: k.id,
+        name: k.name,
+        date: k.date,
+        amount: k.c == null ? null : fromCents(k.c),
+        from: k.from,
+      })),
       projectedCheck: projC == null ? null : fromCents(projC),
-      checkFrom,
+      checkFrom: first.from,
+      unknownChecks: checks.length - known.length,
       bills: nextBills,
       billsTotal: fromCents(nextBillsC),
       goalsTotal: fromCents(goalsAllC),

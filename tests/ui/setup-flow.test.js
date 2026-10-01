@@ -31,7 +31,7 @@ test('guided setup: fields are blank with example placeholders, and Next/Next/Fi
     assert.match(page.text(), /Gross pay is needed/);
     assert.match(page.text(), /Pay period and gross pay/, 'still on step 1');
     assert.equal(page.state().profileExample, true, 'example profile untouched');
-    assert.equal(page.state().profile.gross, 2000);
+    assert.equal(page.state().workplaces[0].profile.gross, 2000);
     assert.match(page.text(), /Set up with one recent paystub \(about 3 minutes\)/, 'welcome line stays');
   } finally {
     await page.close();
@@ -63,15 +63,15 @@ test("guided setup: step 2 needs a deduction amount or the no-deductions box; Fi
     page.click(page.button('Finish setup'));
     const S = page.state();
     assert.equal(S.profileExample, false);
-    assert.equal(S.profile.gross, 1500);
-    assert.equal(S.profile.periodStart, '2026-09-01');
-    assert.equal(S.profile.periodEnd, '');
+    assert.equal(S.workplaces[0].profile.gross, 1500);
+    assert.equal(S.workplaces[0].profile.periodStart, '2026-09-01');
+    assert.equal(S.workplaces[0].profile.periodEnd, '');
     assert.deepEqual(
-      S.profile.deductions.map((d) => d.amount),
+      S.workplaces[0].profile.deductions.map((d) => d.amount),
       [120],
     );
-    assert.equal(S.profile.payTypes[0].rate, 10);
-    assert.equal(S.profile.tipout.on, false);
+    assert.equal(S.workplaces[0].profile.payTypes[0].rate, 10);
+    assert.equal(S.workplaces[0].profile.tipout.on, false);
     assert.doesNotMatch(page.text(), /You are looking at example numbers/);
   } finally {
     await page.close();
@@ -95,7 +95,7 @@ test('guided setup: "My paystub has no deductions" lets step 2 pass', async () =
     page.type(page.$('input[placeholder="e.g. 12"]', page.app), '11');
     page.click(page.button('Finish setup'));
     assert.equal(page.state().profileExample, false);
-    assert.equal(page.state().profile.deductions.length, 0);
+    assert.equal(page.state().workplaces[0].profile.deductions.length, 0);
   } finally {
     await page.close();
   }
@@ -133,21 +133,21 @@ test('guided setup: Skip swaps the example paystub for a blank one, and Tonight 
     page.click(page.button('Skip guided setup'));
     const S = page.state();
     assert.equal(S.profileExample, false);
-    assert.equal(S.profile.gross, 0, 'no example gross');
+    assert.equal(S.workplaces[0].profile.gross, 0, 'no example gross');
     assert.ok(
-      S.profile.deductions.every((d) => d.amount === 0),
+      S.workplaces[0].profile.deductions.every((d) => d.amount === 0),
       'no example deductions',
     );
     assert.equal(S.nightsExample, false);
     assert.match(page.text(), /import nights from a spreadsheet once your paystub numbers are in/);
     assert.equal(page.$('input[type=file]:not(#bk-file)', page.app), null, 'no importer before the basics');
     assert.equal(S.nights.length, 0);
-    assert.equal(S.settings.setupDone, undefined, 'skipping is not finishing');
+    assert.equal(S.workplaces[0].setupDone, undefined, 'skipping is not finishing');
     assert.match(page.text(), /Tonight shows your take-home once they are in/);
     assert.match(page.text(), /Still needed: your pay period start date, your gross pay/);
     const [start] = dateInputs(page);
     page.type(start, '2026-01-01');
-    assert.equal(page.state().profile.periodEnd, '');
+    assert.equal(page.state().workplaces[0].profile.periodEnd, '');
 
     page.tab('tonight');
     assert.match(page.text(), /Finish setup to see your take-home/);
@@ -162,7 +162,7 @@ test('guided setup: Skip swaps the example paystub for a blank one, and Tonight 
     const cb = page.must(page.$('#no-ded'), 'no deductions box on the full page');
     cb.checked = true;
     page.change(cb);
-    assert.equal(page.state().settings.noDeductions, true);
+    assert.equal(page.state().workplaces[0].noDeductions, true);
     page.tab('tonight');
     assert.ok(page.$('form button[type=submit]', page.app), 'Tonight unlocked');
     assert.match(page.text(), /Tips you made tonight/);
@@ -194,7 +194,11 @@ test('Skip: without a pay period start date TipNet is not set up, Setup asks for
   }
   page = await boot({ seed: JSON.parse(saved) });
   try {
-    assert.equal(page.state().profile.periodStart, '', 'not set to today behind the user’s back');
+    assert.equal(
+      page.state().workplaces[0].profile.periodStart,
+      '',
+      'not set to today behind the user’s back',
+    );
     assert.match(page.text(), /Still needed: your pay period start date/, 'lands on Setup');
     page.type(dateInputs(page)[0], '2026-09-01');
     assert.equal(page.$('#not-ready-text').closest('[role=status]').hidden, true);
@@ -207,8 +211,8 @@ test('Skip: without a pay period start date TipNet is not set up, Setup asks for
 
 test('restore: reachable from the first-launch Setup (twice), and lands on a working Tonight', async () => {
   const S = realState();
-  S.profile.gross = 4321;
-  S.settings.setupDone = true;
+  S.workplaces[0].profile.gross = 4321;
+  S.workplaces[0].setupDone = true;
   const code = encodeBackup(S);
   for (const from of ['banner', 'guided']) {
     const page = await boot();
@@ -218,7 +222,7 @@ test('restore: reachable from the first-launch Setup (twice), and lands on a wor
       const box = page.must(page.$('#bk-code'), 'restore box');
       page.type(box, code);
       page.click(page.button('Restore from code'));
-      assert.equal(page.state().profile.gross, 4321, from);
+      assert.equal(page.state().workplaces[0].profile.gross, 4321, from);
       assert.equal(page.state().profileExample, false);
       assert.equal(page.$('#tabs [aria-selected=true]').dataset.tab, 'tonight', 'restored: Tonight');
       assert.ok(page.$('form button[type=submit]', page.app), 'saving works');
@@ -231,7 +235,7 @@ test('restore: reachable from the first-launch Setup (twice), and lands on a wor
 
 test('toast: Undo stays past 5 s while hovered, and Escape dismisses', async () => {
   const S = realState();
-  S.settings.setupDone = true;
+  S.workplaces[0].setupDone = true;
   const page = await boot({ seed: S });
   try {
     page.tab('setup');
@@ -250,16 +254,16 @@ test('toast: Undo stays past 5 s while hovered, and Escape dismisses', async () 
 
 test('pay types: Remove has an Undo that puts the row back', async () => {
   const S = realState();
-  S.settings.setupDone = true;
+  S.workplaces[0].setupDone = true;
   const page = await boot({ seed: S });
   try {
     page.tab('setup');
-    const n = page.state().profile.payTypes.length;
+    const n = page.state().workplaces[0].profile.payTypes.length;
     page.click(page.byLabel('Remove Training'));
-    assert.equal(page.state().profile.payTypes.length, n - 1);
+    assert.equal(page.state().workplaces[0].profile.payTypes.length, n - 1);
     page.click(page.button('Undo', page.$('#toast')));
-    assert.equal(page.state().profile.payTypes.length, n);
-    assert.equal(page.state().profile.payTypes[1].name, 'Training');
+    assert.equal(page.state().workplaces[0].profile.payTypes.length, n);
+    assert.equal(page.state().workplaces[0].profile.payTypes[1].name, 'Training');
   } finally {
     await page.close();
   }
@@ -267,7 +271,7 @@ test('pay types: Remove has an Undo that puts the row back', async () => {
 
 test('tonight: only a short summary is in the live region, announced after typing pauses', async () => {
   const S = realState();
-  S.settings.setupDone = true;
+  S.workplaces[0].setupDone = true;
   const page = await boot({ seed: S });
   try {
     const live = page.$$('[aria-live]', page.app);
@@ -290,7 +294,7 @@ test('tonight: only a short summary is in the live region, announced after typin
 
 test('late nights: changing the rule re-dates an untouched Tonight entry but not a chosen date', async () => {
   const S = realState();
-  S.settings.setupDone = true;
+  S.workplaces[0].setupDone = true;
   const page = await boot({ seed: S });
   try {
     const dateOf = () => page.$('input[type=date]', page.app).value;

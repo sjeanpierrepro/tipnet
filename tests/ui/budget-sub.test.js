@@ -9,7 +9,7 @@ test('budget: bill checkboxes and goal amount fields have names that include the
   const page = await boot({
     url: DEV,
     seed: realState((S) => {
-      S.settings.setupDone = true;
+      S.workplaces[0].setupDone = true;
       S.budget = exampleBudget();
     }),
   });
@@ -39,7 +39,7 @@ test('budget: an unlocked user who has not finished setup can still manage the s
     payments: true,
     seed: realState((S) => {
       S.profileExample = true;
-      S.settings.setupDone = false;
+      S.workplaces[0].setupDone = false;
       S.settings.entitlement = {
         status: 'active',
         instanceId: 'inst-1',

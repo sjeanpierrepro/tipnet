@@ -4,9 +4,11 @@ import { boot, realState } from './harness.js';
 
 const seed = (nights = []) =>
   realState((S) => {
-    S.settings.setupDone = true;
+    S.workplaces[0].setupDone = true;
     S.nightsExample = false;
-    S.profile.payTypes = [{ id: 'p1', k: 'hourly', name: 'Bartending', rate: 12, unit: 'hr', usual: 7 }];
+    S.workplaces[0].profile.payTypes = [
+      { id: 'p1', k: 'hourly', name: 'Bartending', rate: 12, unit: 'hr', usual: 7 },
+    ];
     S.nights = nights;
   });
 async function pickFile(page, name, text) {
@@ -69,9 +71,11 @@ test('importer: no hourly pay type means hours are not imported, with a note', a
   const page = await boot({
     url: 'http://localhost/',
     seed: realState((S) => {
-      S.settings.setupDone = true;
+      S.workplaces[0].setupDone = true;
       S.nightsExample = false;
-      S.profile.payTypes = [{ id: 'p1', k: 'shift', name: 'Flat', rate: 80, unit: 'shift', usual: 1 }];
+      S.workplaces[0].profile.payTypes = [
+        { id: 'p1', k: 'shift', name: 'Flat', rate: 80, unit: 'shift', usual: 1 },
+      ];
       S.nights = [];
     }),
   });

@@ -7,13 +7,13 @@ import { snapshotFor } from '../../app/js/math.js';
 
 const tipsState = (mutate) =>
   realState((S) => {
-    S.settings.setupDone = true;
-    S.profile.entryMode = 'tips';
+    S.workplaces[0].setupDone = true;
+    S.workplaces[0].profile.entryMode = 'tips';
     if (mutate) mutate(S);
   });
 const totalState = (mutate) =>
   realState((S) => {
-    S.settings.setupDone = true;
+    S.workplaces[0].setupDone = true;
     if (mutate) mutate(S);
   });
 const box = (page) => page.must(page.$('[data-focus-key="night-total"]'), 'total field');
@@ -23,7 +23,7 @@ const submit = (page) => page.click(page.$('form button[type=submit]'));
 const today = () => businessDate(new Date(), 6);
 /** A snapshot of the example profile with the main rate changed (a night locked at an older rate). */
 const lockedAt = (S, rate) => {
-  const snap = snapshotFor(S.profile, 10);
+  const snap = snapshotFor(S.workplaces[0].profile, 10);
   snap.pay[0].rate = rate;
   return snap;
 };
@@ -136,7 +136,7 @@ test('tips mode: no "below your hourly pay" warning; cash is checked against the
 });
 
 test('tips mode with an after-tip-out basis says so in the hint', async () => {
-  const page = await boot({ seed: tipsState((S) => (S.profile.tipout.basis = 'after')) });
+  const page = await boot({ seed: tipsState((S) => (S.workplaces[0].profile.tipout.basis = 'after')) });
   try {
     assert.match(
       page.text(),
@@ -238,7 +238,7 @@ test('Setup: switching the entry mode changes the labels and never the saved nig
     const all = page.$('#em-total');
     all.checked = true;
     page.change(all);
-    assert.equal(page.state().profile.entryMode, 'total');
+    assert.equal(page.state().workplaces[0].profile.entryMode, 'total');
     assert.equal(JSON.stringify(page.state().nights), before, 'nights untouched');
     page.tab('tonight');
     assert.match(page.text(), /What you made tonight/);
@@ -246,7 +246,7 @@ test('Setup: switching the entry mode changes the labels and never the saved nig
     const tipsOnly = page.$('#em-tips');
     tipsOnly.checked = true;
     page.change(tipsOnly);
-    assert.equal(page.state().profile.entryMode, 'tips');
+    assert.equal(page.state().workplaces[0].profile.entryMode, 'tips');
     assert.equal(JSON.stringify(page.state().nights), before, 'nights untouched');
     page.tab('tonight');
     assert.match(page.text(), /Tips you made tonight/);
@@ -272,7 +272,7 @@ test('guided setup offers the entry-mode choice with tips preselected for a new 
     page.change(all);
     page.type(page.$('input[placeholder="e.g. 12"]', page.app), '10');
     page.click(page.button('Finish setup'));
-    assert.equal(page.state().profile.entryMode, 'total', 'the choice is kept on Finish');
+    assert.equal(page.state().workplaces[0].profile.entryMode, 'total', 'the choice is kept on Finish');
     assert.match(page.text(), /What you made tonight/);
   } finally {
     await page.close();

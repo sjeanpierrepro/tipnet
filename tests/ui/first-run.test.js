@@ -127,8 +127,8 @@ test('after Finish: Tonight asks for tips, $400 + 8 h x $12 saves 496 and shows 
     finishSetup(page);
     assert.equal(selectedTab(page), 'tonight');
     const S = page.state();
-    assert.equal(S.profile.entryMode, 'tips');
-    assert.equal(S.settings.setupDone, true);
+    assert.equal(S.workplaces[0].profile.entryMode, 'tips');
+    assert.equal(S.workplaces[0].setupDone, true);
     assert.match(page.text(), /Tips you made tonight/);
     assert.match(page.text(), /Cash tips \+ card tips\. TipNet adds the pay for the jobs below\./);
     page.type(page.$('[data-focus-key="night-total"]'), '400');
@@ -136,8 +136,8 @@ test('after Finish: Tonight asks for tips, $400 + 8 h x $12 saves 496 and shows 
     const hero = page.$('.result .hero').textContent;
     const expected = computeNight(
       { id: 'x', date: '2026-09-02', total: 496, cash: null, pay: { p1: 8 }, barback: true },
-      S.profile,
-      shiftsPerPeriod(S.profile, []).n,
+      S.workplaces[0].profile,
+      shiftsPerPeriod(S.workplaces[0].profile, []).n,
     );
     assert.equal(hero, money(expected.net));
     assert.ok(expected.net > 407 && expected.net < 408, 'about $407: ' + expected.net);
@@ -169,14 +169,18 @@ test('restore from the first launch lands on a working Tonight', async () => {
     assert.equal(selectedTab(page), 'tonight');
     assert.ok(page.$('form button[type=submit]', page.app));
     assert.ok(page.$('.result', page.app));
-    assert.equal(page.state().profile.entryMode, 'total', 'an old code with real nights keeps typing totals');
+    assert.equal(
+      page.state().workplaces[0].profile.entryMode,
+      'total',
+      'an old code with real nights keeps typing totals',
+    );
   } finally {
     await page.close();
   }
 });
 
 test('erase everything goes back to the first-launch Setup, in tips mode', async () => {
-  const page = await boot({ seed: realState((S) => (S.settings.setupDone = true)) });
+  const page = await boot({ seed: realState((S) => (S.workplaces[0].setupDone = true)) });
   try {
     assert.equal(selectedTab(page), 'tonight');
     page.tab('setup');
@@ -185,7 +189,7 @@ test('erase everything goes back to the first-launch Setup, in tips mode', async
     page.click(erase);
     assert.equal(selectedTab(page), 'setup');
     assert.match(page.text(), /Set up with one recent paystub/);
-    assert.equal(page.state().profile.entryMode, 'tips');
+    assert.equal(page.state().workplaces[0].profile.entryMode, 'tips');
     page.tab('tonight');
     assert.match(page.text(), /Finish setup to see your take-home/);
   } finally {
@@ -202,7 +206,7 @@ test('existing users (real nights, no entry mode saved) open on their last tab a
   });
   try {
     assert.equal(selectedTab(page), 'periods');
-    assert.equal(page.state().profile.entryMode, 'total');
+    assert.equal(page.state().workplaces[0].profile.entryMode, 'total');
     page.tab('tonight');
     assert.match(page.text(), /What you made tonight/);
   } finally {

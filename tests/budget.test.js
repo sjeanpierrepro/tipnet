@@ -367,9 +367,9 @@ test('paydayInfo never hangs on a missing or broken start date; a restore leaves
   }
   const restored = S.decodeBackup(S.encodeBackup({ profile: {}, nights: [] }));
   // a real profile never gets an invented start date: it stays blank, and TipNet is not set up until Setup has it
-  assert.equal(restored.profile.periodStart, '');
+  assert.equal(restored.workplaces[0].profile.periodStart, '');
   assert.equal(S.isSetUp(restored), false);
-  assert.equal(typeof B.paydayInfo(restored.profile, '2026-09-29').date, 'string');
+  assert.equal(typeof B.paydayInfo(restored.workplaces[0].profile, '2026-09-29').date, 'string');
 });
 
 /* ---------- review fixes ---------- */

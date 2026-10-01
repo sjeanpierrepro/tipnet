@@ -16,7 +16,7 @@ import {
   num,
 } from '../math.js';
 import { businessDate, cutoffFromSettings } from '../inputs.js';
-import { isSetUp } from '../storage.js';
+import { isSetUp, workplaceOf, findWorkplace, nightsOf, activeWorkplace } from '../storage.js';
 import {
   el,
   field,
@@ -36,6 +36,7 @@ import {
   bus,
   getState,
   keepFocus,
+  workplaceSwitcher,
 } from './common.js';
 import {
   nightFields,
@@ -54,9 +55,12 @@ let editingId = null;
 let calMsg = null; // {text}
 let calPeriod = null;
 let calActual = '';
-let calPending = null; // {idx, r}: a comparison waiting for "Apply this adjustment" / "Don't change"
+let calPending = null; // {idx, r, wid}: a comparison waiting for "Apply this adjustment" / "Don't change"
+let calWid = null; // the restaurant "Check my accuracy" is about (picked first when there is more than one)
 let shown = PAGE;
-let view = null; // last render: {S, ctx, sections: Map(period idx -> section)} so Edit/Cancel/Show older only rebuild what changed
+// last render: {S, ctxs: Map(restaurant id -> ctx), sections: Map(group key -> section)} so Edit/Cancel/Show older only
+// rebuild what changed. A group is one restaurant's pay period: key "<restaurant id>:<period index>".
+let view = null;
 
 /** Forget screen-local UI state (open editor, accuracy message, older periods shown). Called when leaving the tab and after erase/restore. */
 export function reset() {
@@ -65,9 +69,11 @@ export function reset() {
   calPeriod = null;
   calActual = '';
   calPending = null;
+  calWid = null;
   shown = PAGE;
   view = null;
 }
+const gkey = (wid, idx) => wid + ':' + idx;
 
 function nightSub(n, c, p) {
   const bits = [];
@@ -96,40 +102,50 @@ function announce(text) {
  */
 const editKey = (n) => 'edit-' + n.id + '-total';
 
-/** Rebuild only the given pay periods' sections (opening/closing the editor), keeping keyboard focus. */
-function redrawGroups(idxList) {
+/** Rebuild only the given pay periods' sections (opening/closing the editor), keeping keyboard focus. keys: gkey()s. */
+function redrawGroups(keys) {
   const root = document.getElementById('app');
-  const secs = idxList.map((i) => view && view.sections.get(i));
+  const secs = keys.map((k) => view && view.sections.get(k));
   if (!root || secs.some((s) => !s || !s.isConnected)) {
     bus.rerender();
     return;
   }
   keepFocus(root, () => {
-    [...new Set(idxList)].forEach((i) => {
-      const old = view.sections.get(i);
-      const fresh = group(view.S, i, view.ctx);
+    [...new Set(keys)].forEach((k) => {
+      const old = view.sections.get(k);
+      const wid = old.getAttribute('data-workplace');
+      const fresh = group(
+        view.S,
+        workplaceOf(view.S, wid),
+        Number(old.getAttribute('data-period')),
+        view.ctxs.get(wid),
+      );
       old.replaceWith(fresh);
     });
   });
 }
-const idxOfNight = (S, id) => {
+/** The group a night is listed in (its restaurant's pay period), or null. */
+const keyOfNight = (S, id) => {
   const n = S.nights.find((x) => x.id === id);
-  return n ? periodIndex(S.profile, n.date) : null;
+  return n ? gkey(n.workplaceId, periodIndex(workplaceOf(S, n.workplaceId).profile, n.date)) : null;
 };
 function openEditor(S, id) {
-  const before = editingId == null ? null : idxOfNight(S, editingId);
+  const before = editingId == null ? null : keyOfNight(S, editingId);
   editingId = id;
-  redrawGroups([idxOfNight(S, id), before].filter((i) => i != null));
+  redrawGroups([keyOfNight(S, id), before].filter((k) => k != null));
 }
 
+/** Edit a night within its own restaurant: its jobs, rates, tip-out and pay periods. */
 function editor(S, n) {
-  const p = S.profile;
+  const w = workplaceOf(S, n.workplaceId);
+  const p = w.profile;
+  const mine = nightsOf(S, w.id);
   const d = draftFromNight(n, p); // in tips mode d.total is the tips inside the stored total (the night's own rates if locked)
   d.note = n.note || ''; // the editor's own field; draftFromNight knows nothing about notes
   const typedAtOpen = JSON.stringify([d.total, d.pay]);
   let recalc = false;
   const preview = el('p', { class: 'hint', 'aria-live': 'polite' });
-  const shiftsFor = (date) => shiftsPerPeriod(p, S.nights, todayISO(), periodIndex(p, date)).n;
+  const shiftsFor = (date) => shiftsPerPeriod(p, mine, todayISO(), periodIndex(p, date)).n;
   /** The night as it will be saved. A locked night keeps its Setup numbers unless "Recalculate with current Setup" is ticked. */
   const build = () => {
     const out = storedNight(d, p, n.id);
@@ -227,9 +243,8 @@ function editor(S, n) {
       class: 'btn btn-secondary btn-small',
       'data-focus-key': editKey(n),
       onclick: () => {
-        const i = periodIndex(p, n.date);
         editingId = null;
-        redrawGroups([i]);
+        redrawGroups([gkey(w.id, periodIndex(p, n.date))]);
       },
     },
     'Cancel',
@@ -252,7 +267,7 @@ function editor(S, n) {
     });
     if (prob) return showEntryProblem(f, prob);
     const i = S.nights.findIndex((x) => x.id === n.id);
-    if (i >= 0) S.nights[i] = build();
+    if (i >= 0) S.nights[i] = { ...build(), workplaceId: w.id };
     save();
     editingId = null;
     bus.rerender();
@@ -263,8 +278,8 @@ function editor(S, n) {
 }
 
 const ARM_MS = 4000;
-function nightRow(S, n, shifts) {
-  const p = S.profile;
+function nightRow(S, w, n, shifts) {
+  const p = w.profile;
   if (editingId === n.id) return editor(S, n);
   const c = computeNight(n, p, shifts);
   const label = 'Delete night ' + fmtDate(n.date);
@@ -341,25 +356,28 @@ function nightRow(S, n, shifts) {
   );
 }
 
-/** The shift count for period idx. Entered and history counts are the same for every period, so they are worked out once (in `base`). */
-function group(S, idx, ctx) {
-  const p = S.profile,
+/**
+ * One restaurant's pay period. The shift count for period idx: entered and history counts are the same for every period,
+ * so they are worked out once per restaurant (ctx.base). ctx.named: start the label with the restaurant's name (the All list).
+ */
+function group(S, w, idx, ctx) {
+  const p = w.profile,
     today = ctx.today;
   const shifts =
-    ctx.base.source === 'default' ? shiftsPerPeriod(p, S.nights, today, idx, ctx.index).n : ctx.base.n;
-  const t = periodTotals(p, S.nights, idx, today, shifts, ctx.index);
-  const rows = t.ns.map((n) => nightRow(S, n, shifts));
+    ctx.base.source === 'default' ? shiftsPerPeriod(p, ctx.nights, today, idx, ctx.index).n : ctx.base.n;
+  const t = periodTotals(p, ctx.nights, idx, today, shifts, ctx.index);
+  const rows = t.ns.map((n) => nightRow(S, w, n, shifts));
   const editingRow = rows.length && t.ns.some((n) => n.id === editingId);
   const sec = el(
     'section',
-    { class: 'stack-sm', 'data-period': idx },
+    { class: 'stack-sm', 'data-period': idx, 'data-workplace': w.id },
     el(
       'div',
       { class: 'spread' },
       el(
         'span',
-        { class: 'label', tabindex: '-1', 'data-focus-key': 'period-' + idx },
-        periodLabel(p, idx) + (t.exact ? ' · final' : ''),
+        { class: 'label', tabindex: '-1', 'data-focus-key': 'period-' + w.id + '-' + idx },
+        (ctx.named ? w.name + ' · ' : '') + periodLabel(p, idx) + (t.exact ? ' · final' : ''),
       ),
       el('b', { class: 'num' }, money0(t.net) + ' take-home'),
     ),
@@ -371,7 +389,7 @@ function group(S, idx, ctx) {
         )
       : el('ul', { class: 'list' }, rows),
   );
-  if (view && view.ctx === ctx) view.sections.set(idx, sec);
+  if (view && view.ctxs.get(w.id) === ctx) view.sections.set(gkey(w.id, idx), sec);
   return sec;
 }
 
@@ -396,8 +414,8 @@ function focusId(id) {
 }
 
 /** The "old rate -> new rate" box shown before anything changes. */
-function pendingBox(S, r, idx, prev) {
-  const p = S.profile;
+function pendingBox(S, w, r, idx, prev) {
+  const p = w.profile;
   const warnMissing = r.missingNights > 0;
   const warn = warnMissing || r.suspect;
   const lines = [];
@@ -502,9 +520,9 @@ function pendingBox(S, r, idx, prev) {
       rateBefore: r.rOld,
       rateAfter: r.rateOverride,
     };
-    const at = prev ? S.calib.indexOf(prev) : -1;
-    if (at >= 0) S.calib[at] = entry;
-    else S.calib.push(entry);
+    const at = prev ? w.calib.indexOf(prev) : -1;
+    if (at >= 0) w.calib[at] = entry;
+    else w.calib.push(entry);
     save();
     calPending = null;
     calMsg = {
@@ -538,10 +556,34 @@ function pendingBox(S, r, idx, prev) {
   );
 }
 
-function calibCard(S, idxs, today) {
-  const p = S.profile;
+/**
+ * "Check my accuracy" for one restaurant: its own pay periods, nights, tax rate and history. With more than one
+ * restaurant, the restaurant is picked first (a paycheck comes from one employer).
+ */
+function calibCard(S, today) {
+  const w = workplaceOf(S, calWid);
+  calWid = w.id;
+  const p = w.profile;
+  const mine = nightsOf(S, w.id);
+  const idxs = [...indexNights(p, mine).keys()].sort((a, b) => b - a);
   const finished = (i) => isFinal(p, i, today);
   if (calPeriod == null || !idxs.includes(calPeriod)) calPeriod = defaultCalibPeriod(idxs, finished);
+  let wsel = null;
+  if (S.workplaces.length > 1) {
+    wsel = select(
+      S.workplaces.map((x) => [x.id, x.name]),
+      w.id,
+      { id: 'cal-workplace' },
+    );
+    wsel.addEventListener('change', () => {
+      calWid = wsel.value;
+      calPeriod = null;
+      calPending = null;
+      calMsg = null;
+      calActual = '';
+      bus.rerender();
+    });
+  }
   const sel = select(
     idxs.length
       ? idxs.map((i) => [i, periodLabel(p, i) + (finished(i) ? '' : ' (in progress)')])
@@ -609,10 +651,10 @@ function calibCard(S, idxs, today) {
     // dates twice. Only old entries saved without dates fall back to the period number.
     const rg = periodRange(p, idx);
     const prev =
-      S.calib.find((c) => (c.start && c.end ? c.start === rg.start && c.end === rg.end : c.idx === idx)) ||
+      w.calib.find((c) => (c.start && c.end ? c.start === rg.start && c.end === rg.end : c.idx === idx)) ||
       null;
     // Only the most recent comparison can be replaced: redoing an older one would throw away the later ones.
-    if (prev && S.calib.indexOf(prev) !== S.calib.length - 1)
+    if (prev && w.calib.indexOf(prev) !== w.calib.length - 1)
       return show(
         'You already compared this pay period (predicted ' +
           money(prev.pred) +
@@ -622,7 +664,7 @@ function calibCard(S, idxs, today) {
       );
     const base = prev && typeof prev.rateBefore === 'number' ? prev.rateBefore : undefined;
     const r = idxs.length
-      ? calibrate(p, S.nights, idx, numOf(actual.value), today, undefined, base)
+      ? calibrate(p, mine, idx, numOf(actual.value), today, undefined, base)
       : { ok: false, reason: 'nonights' };
     if (!r.ok) {
       if (r.reason === 'notFinal') return show(NOT_FINAL_TEXT);
@@ -641,7 +683,7 @@ function calibCard(S, idxs, today) {
     }
     // Nothing changes yet: show old -> new and ask.
     calMsg = null;
-    calPending = { idx, r, prev };
+    calPending = { idx, r, prev, wid: w.id };
     bus.rerender();
     focusId(r.missingNights > 0 || r.suspect ? 'cal-keep' : 'cal-apply');
   });
@@ -649,9 +691,9 @@ function calibCard(S, idxs, today) {
     label: 'Undo adjustments',
     armedLabel: 'Undo all adjustments?',
     onConfirm: () => {
-      const was = { rate: p.rateOverride, calib: S.calib };
+      const was = { rate: p.rateOverride, calib: w.calib };
       p.rateOverride = null;
-      S.calib = [];
+      w.calib = [];
       calPending = null;
       save();
       calMsg = { text: 'Back to the rates from your paystub.' };
@@ -659,7 +701,7 @@ function calibCard(S, idxs, today) {
       toast('Adjustments undone.', {
         undo: () => {
           p.rateOverride = was.rate;
-          S.calib = was.calib;
+          w.calib = was.calib;
           calMsg = null;
           save();
           bus.rerender();
@@ -667,10 +709,10 @@ function calibCard(S, idxs, today) {
       });
     },
   });
-  if (calPending && calPending.idx === calPeriod)
-    pendingNode = pendingBox(S, calPending.r, calPending.idx, calPending.prev);
+  if (calPending && calPending.idx === calPeriod && calPending.wid === w.id)
+    pendingNode = pendingBox(S, w, calPending.r, calPending.idx, calPending.prev);
   else calPending = null;
-  const hist = S.calib
+  const hist = w.calib
     .slice(-4)
     .reverse()
     .map((c) =>
@@ -698,6 +740,7 @@ function calibCard(S, idxs, today) {
       { class: 'note' },
       'When a paycheck lands, enter its amount. TipNet compares it with what it predicted for that pay period and suggests a tax rate adjustment so the next estimate is closer. Nothing changes until you apply it. Every night in the period needs a cash amount, and every shift you worked should be logged.',
     ),
+    wsel ? field('Restaurant', wsel) : null,
     field('Pay period', sel),
     field('Actual paycheck amount (take-home on the stub)', actual),
     el('div', { class: 'cluster' }, run, undo),
@@ -708,8 +751,8 @@ function calibCard(S, idxs, today) {
 }
 
 /** "Show older pay periods": adds the next PAGE periods in place (nothing else is rebuilt) and keeps focus. */
-function olderButton(S, idxs, ctx, host) {
-  const left = () => idxs.length - shown;
+function olderButton(S, items, host) {
+  const left = () => items.length - shown;
   const btn = el('button', { type: 'button', class: 'btn btn-secondary', id: 'periods-older' });
   const label = () => {
     btn.textContent = 'Show older pay periods (' + left() + ' more)';
@@ -717,8 +760,8 @@ function olderButton(S, idxs, ctx, host) {
   label();
   btn.addEventListener('click', () => {
     const from = shown;
-    shown = Math.min(idxs.length, shown + PAGE);
-    const added = idxs.slice(from, shown).map((i) => group(S, i, ctx));
+    shown = Math.min(items.length, shown + PAGE);
+    const added = items.slice(from, shown).map((g) => group(S, g.w, g.idx, view.ctxs.get(g.w.id)));
     added.forEach((sec) => host.insertBefore(sec, btn));
     if (left() > 0) {
       label();
@@ -740,7 +783,6 @@ function olderButton(S, idxs, ctx, host) {
 
 export function render(root) {
   const S = getState(),
-    p = S.profile,
     today = todayISO();
   if (!isSetUp(S)) {
     // Example nights are not listed as if they were real: nothing here until setup is done.
@@ -756,35 +798,76 @@ export function render(root) {
     );
     return;
   }
-  // One pass over the nights, shared by every period below (a long history stays fast).
-  const index = indexNights(p, S.nights);
-  const ctx = { today, index, base: shiftsPerPeriod(p, S.nights, today, undefined, index) };
-  view = { S, ctx, sections: new Map() };
-  const idxs = [...index.keys()].sort((a, b) => b - a);
+  const many = S.workplaces.length > 1;
+  // The filter: All (every restaurant, each period labelled with its name) or one restaurant. Remembered.
+  const pick = many ? S.settings.periodsFilter || 'all' : S.workplaces[0].id;
+  const shownW = pick === 'all' ? S.workplaces : [findWorkplace(S, pick) || S.workplaces[0]];
+  if (calWid == null || !findWorkplace(S, calWid))
+    calWid = pick !== 'all' ? shownW[0].id : activeWorkplace(S).id;
+  // One pass over each restaurant's nights, shared by every period below (a long history stays fast).
+  const ctxs = new Map();
+  const items = [];
+  shownW.forEach((w) => {
+    const nights = nightsOf(S, w.id);
+    const index = indexNights(w.profile, nights);
+    const base = shiftsPerPeriod(w.profile, nights, today, undefined, index);
+    ctxs.set(w.id, { today, index, base, nights, named: many && pick === 'all' });
+    index.forEach((list, idx) => items.push({ w, idx, end: periodRange(w.profile, idx).end }));
+  });
+  // Newest first; the same end date keeps the restaurants in their Setup order.
+  const order = new Map(S.workplaces.map((w, i) => [w.id, i]));
+  items.sort((a, b) => (a.end < b.end ? 1 : a.end > b.end ? -1 : order.get(a.w.id) - order.get(b.w.id)));
+  view = { S, ctxs, sections: new Map() };
   // The period with the open editor always stays visible.
   if (editingId != null) {
-    const at = idxs.indexOf(idxOfNight(S, editingId));
+    const k = keyOfNight(S, editingId);
+    const at = items.findIndex((g) => gkey(g.w.id, g.idx) === k);
     if (at >= shown) shown = Math.ceil((at + 1) / PAGE) * PAGE;
   }
   let list;
-  if (idxs.length) {
+  if (items.length) {
     list = el('div', { class: 'stack' });
-    idxs.slice(0, shown).forEach((i) => list.append(group(S, i, ctx)));
-    if (idxs.length > shown) list.append(olderButton(S, idxs, ctx, list));
+    items.slice(0, shown).forEach((g) => list.append(group(S, g.w, g.idx, ctxs.get(g.w.id))));
+    if (items.length > shown) list.append(olderButton(S, items, list));
   } else
     list = el(
       'div',
       { class: 'card' },
-      el('p', { class: 'hint' }, 'No nights yet. Log your first shift on the Tonight tab.'),
+      el(
+        'p',
+        { class: 'hint' },
+        pick === 'all' || !many
+          ? 'No nights yet. Log your first shift on the Tonight tab.'
+          : 'No nights at ' + shownW[0].name + ' yet. Log one on the Tonight tab.',
+      ),
     );
+  const filter = workplaceSwitcher(
+    S,
+    pick,
+    (id) => {
+      S.settings.periodsFilter = id;
+      shown = PAGE;
+      editingId = null;
+      if (id !== 'all') {
+        calWid = id;
+        calPeriod = null;
+        calPending = null;
+        calMsg = null;
+      }
+      save();
+      bus.rerender();
+    },
+    { key: 'periods-filter', label: 'Show pay periods for', all: 'All' },
+  );
   root.append(
     el(
       'div',
       { class: 'stack' },
       el('h1', null, 'Pay periods'),
+      filter,
       exampleBanner(),
       list,
-      calibCard(S, idxs, today),
+      calibCard(S, today),
     ),
   );
 }

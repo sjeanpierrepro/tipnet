@@ -11,7 +11,7 @@ import {
 } from '../csv.js';
 import { num } from '../math.js';
 import { el, clear, select, money, fmtDate, toast, save, bus, getState } from './common.js';
-import { lockFinished } from '../storage.js';
+import { lockFinished, isWorkplaceSetUp, nightsOf } from '../storage.js';
 
 const FIELDS = [
   ['date', 'Date', true],
@@ -30,9 +30,19 @@ const REASONS = {
 };
 
 export function renderImporter(host) {
-  const S = getState(),
-    p = S.profile;
-  const st = { rows: null, header: true, mapping: {}, employee: '', overwrite: false, fileName: '' };
+  const S = getState();
+  // The restaurants nights can go to: those set up (their paystub works the nights out). With more than one, the person
+  // picks; with one, it is that one.
+  const ready = S.workplaces.filter((w) => isWorkplaceSetUp(S, w));
+  const st = {
+    rows: null,
+    header: true,
+    mapping: {},
+    employee: '',
+    overwrite: false,
+    fileName: '',
+    wid: ready.length === 1 ? ready[0].id : '',
+  };
   const body = el('div', { class: 'stack' });
   host.append(
     el(
@@ -137,6 +147,22 @@ export function renderImporter(host) {
       }),
     );
     const empHost = el('div');
+    let wpField = null;
+    if (ready.length > 1) {
+      const s = select([['', 'Choose the restaurant']].concat(ready.map((w) => [w.id, w.name])), st.wid, {
+        id: 'map-workplace',
+      });
+      s.addEventListener('change', () => {
+        st.wid = s.value;
+        refresh();
+      });
+      wpField = el(
+        'div',
+        { class: 'field' },
+        el('label', { for: 'map-workplace' }, 'Which restaurant are these nights from?'),
+        s,
+      );
+    }
     function empPick() {
       clear(empHost);
       if (st.mapping.employee == null) {
@@ -181,7 +207,13 @@ export function renderImporter(host) {
         preview.append(el('p', { class: 'hint' }, 'Choose your name above to see a preview.'));
         return;
       }
-      // Hours and the hourly rate go on your first HOURLY pay type. A per-shift type is not paid by the hour.
+      const w = ready.find((x) => x.id === st.wid);
+      if (!w) {
+        preview.append(el('p', { class: 'hint' }, 'Choose the restaurant above to see a preview.'));
+        return;
+      }
+      const p = w.profile;
+      // Hours and the hourly rate go on that restaurant's first HOURLY pay type. A per-shift type is not paid by the hour.
       const hourly = (p.payTypes || []).find((t) => t.unit === 'hr');
       const { nights, skipped } = buildNights(dataRows(), m, {
         employee: st.employee,
@@ -190,10 +222,11 @@ export function renderImporter(host) {
         payId: hourly ? hourly.id : null,
         barback: true,
       });
-      const { duplicates } = dedupeNights(
-        nights,
-        S.nights.filter(() => !S.nightsExample),
-      );
+      nights.forEach((n) => {
+        n.workplaceId = w.id;
+      });
+      // Duplicate dates are looked for at that restaurant only: a night at another restaurant on the same date is separate.
+      const { duplicates } = dedupeNights(nights, S.nightsExample ? [] : nightsOf(S, w.id));
       preview.append(el('h3', null, 'Preview'));
       if (!nights.length) {
         preview.append(
@@ -208,7 +241,9 @@ export function renderImporter(host) {
           nights.length +
             ' night' +
             (nights.length > 1 ? 's' : '') +
-            ' ready to import, ' +
+            ' ready to import' +
+            (ready.length > 1 ? ' to ' + w.name : '') +
+            ', ' +
             fmtDate(nights[0].date) +
             ' to ' +
             fmtDate(nights[nights.length - 1].date) +
@@ -301,11 +336,11 @@ export function renderImporter(host) {
       go.addEventListener('click', () => {
         if (S.nightsExample) {
           S.nights = [];
-          S.calib = [];
+          S.workplaces[0].calib = [];
           S.nightsExample = false;
         }
-        const r = mergeNights(S.nights, nights, { overwrite: st.overwrite });
-        S.nights = r.nights;
+        const r = mergeNights(nightsOf(S, w.id), nights, { overwrite: st.overwrite });
+        S.nights = S.nights.filter((n) => n.workplaceId !== w.id).concat(r.nights);
         lockFinished({ force: true }); // imported nights in finished periods lock now, with the current Setup
         S.settings.csvMapping = mappingToNames(headerRow(), m);
         save();
@@ -344,6 +379,7 @@ export function renderImporter(host) {
         { class: 'hint' },
         'Match the columns. Tips is what you were tipped in all. TipNet adds hours times your hourly rate to get the total. If you pick Total made (tips plus pay), that is used as is. Or pick Cash tips and Card tips.',
       ),
+      wpField,
       grid,
       empHost,
       preview,

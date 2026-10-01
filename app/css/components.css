@@ -903,3 +903,32 @@ fieldset.field > legend {
 .backup-nudge {
   margin-bottom: var(--s-3);
 }
+/* restaurant switcher (Tonight, Setup, Pay periods): one button per restaurant, the picked one filled. Long names end in "…". */
+.wp-switch {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  gap: var(--s-2);
+}
+.wp-switch button {
+  min-height: var(--tap);
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--text);
+  font: 600 15px var(--font-body);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.wp-switch button:hover {
+  background: var(--sunk);
+}
+.wp-switch button[aria-checked='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+}

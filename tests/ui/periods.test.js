@@ -8,10 +8,10 @@ const today = todayISO();
 // 14-day periods; the current one started 3 days ago. One night every 3 days for ~20 periods.
 const seed = (count = 90) =>
   realState((S) => {
-    S.settings.setupDone = true;
-    S.profile.periodStart = addDays(today, -3 - 14 * 20);
-    S.profile.periodEnd = addDays(S.profile.periodStart, 13);
-    S.profile.shifts = 5;
+    S.workplaces[0].setupDone = true;
+    S.workplaces[0].profile.periodStart = addDays(today, -3 - 14 * 20);
+    S.workplaces[0].profile.periodEnd = addDays(S.workplaces[0].profile.periodStart, 13);
+    S.workplaces[0].profile.shifts = 5;
     S.nights = Array.from({ length: count }, (_, i) => ({
       id: i + 1,
       date: addDays(today, -i * 3),
@@ -102,7 +102,7 @@ test('a raise after a finished period leaves it unchanged; the open period follo
       S.nights.filter((n) => n.date >= addDays(today, -3)).every((n) => !n.snap),
       'the open period stays unlocked',
     );
-    S.profile.payTypes[0].rate = 20; // a raise
+    S.workplaces[0].profile.payTypes[0].rate = 20; // a raise
     page.tab('tonight');
     page.tab('periods');
     assert.equal(total(1), fin0, 'finished period unchanged');

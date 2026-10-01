@@ -5,7 +5,7 @@ import { businessDate } from '../../app/js/inputs.js';
 
 const seed = () =>
   realState((S) => {
-    S.settings.setupDone = true;
+    S.workplaces[0].setupDone = true;
   });
 const totalInput = (page) => page.must(page.$('[data-focus-key="night-total"]'), 'total field');
 const cashInput = (page) => page.must(page.$('[data-focus-key="night-cash"]'), 'cash field');
@@ -90,7 +90,7 @@ test('tonight: before 6 a.m. the default date is yesterday (fake clock), after 6
 });
 
 const payInput = (page) => {
-  const id = page.state().profile.payTypes[0].id;
+  const id = page.state().workplaces[0].profile.payTypes[0].id;
   return page.must(page.$('[data-focus-key="night-pay-' + id + '"]'), 'hours field');
 };
 const labelTexts = (page) => Array.from(page.doc.querySelectorAll('label')).map((l) => l.textContent);
@@ -111,8 +111,8 @@ test('tonight: cash label says "collected" when the barback is paid from cash be
 test('tonight: cash label is "taking home" when tip-out is off', async () => {
   const page = await boot({
     seed: realState((S) => {
-      S.settings.setupDone = true;
-      S.profile.tipout.on = false;
+      S.workplaces[0].setupDone = true;
+      S.workplaces[0].profile.tipout.on = false;
     }),
   });
   try {
@@ -146,7 +146,7 @@ test('tonight: hours typed as 7:30 are saved as 7.5', async () => {
     submit(page);
     const n = page.state().nights;
     assert.equal(n.length, 1);
-    assert.equal(n[0].pay[page.state().profile.payTypes[0].id], 7.5);
+    assert.equal(n[0].pay[page.state().workplaces[0].profile.payTypes[0].id], 7.5);
   } finally {
     await page.close();
   }
@@ -234,7 +234,7 @@ test('tonight: same date asks; Add, Replace and Separate each work', async () =>
 test('tonight: strip leaves out example nights once the profile is real', async () => {
   const page = await boot({
     seed: realState((S) => {
-      S.settings.setupDone = true;
+      S.workplaces[0].setupDone = true;
       S.nightsExample = true;
       S.nights = [
         { id: 1, date: businessDate(new Date(), 0), total: 500, cash: 100, pay: {}, barback: true },

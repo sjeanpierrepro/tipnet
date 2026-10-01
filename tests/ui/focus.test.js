@@ -12,7 +12,7 @@ const keyOf = (page) => {
 
 test('focus: ticking a bill Paid keeps focus on the same checkbox', async () => {
   const S = realState((s) => {
-    s.settings.setupDone = true;
+    s.workplaces[0].setupDone = true;
     s.budget = exampleBudget();
     s.budget.bills = [3, 8, 13, 18, 23, 28].map((d, i) => ({
       id: 'b' + (i + 1),
@@ -41,7 +41,7 @@ test('focus: ticking a bill Paid keeps focus on the same checkbox', async () => 
 test('focus: opening Edit night puts focus on a keyed control, not the page', async () => {
   const today = todayISO();
   const S = realState((s) => {
-    s.settings.setupDone = true;
+    s.workplaces[0].setupDone = true;
     s.nights = [{ id: 7, date: addDays(today, -1), total: 300, cash: 80, pay: { p1: 6 }, barback: true }];
   });
   const page = await boot({ seed: S });
@@ -66,7 +66,7 @@ test('focus: opening Edit night puts focus on a keyed control, not the page', as
 
 test('focus: adding a bill keeps its box open and focus in the form', async () => {
   const S = realState((s) => {
-    s.settings.setupDone = true;
+    s.workplaces[0].setupDone = true;
     s.budget = exampleBudget();
   });
   const page = await boot({ url: 'http://localhost/?unlock=dev', seed: S });
@@ -100,12 +100,12 @@ test('focus: adding a bill keeps its box open and focus in the form', async () =
 
 test('focus: removing a deduction moves focus to the next Remove button', async () => {
   const S = realState((s) => {
-    s.settings.setupDone = true;
+    s.workplaces[0].setupDone = true;
   });
   const page = await boot({ seed: S });
   try {
     page.tab('setup');
-    const rm = page.byLabel('Remove ' + getState().profile.deductions[0].name);
+    const rm = page.byLabel('Remove ' + getState().workplaces[0].profile.deductions[0].name);
     rm.focus();
     rm.click();
     const a = page.doc.activeElement;

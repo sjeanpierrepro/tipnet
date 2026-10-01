@@ -16,7 +16,7 @@ const CSV = [
 
 const seed = () =>
   realState((S) => {
-    S.settings.setupDone = true;
+    S.workplaces[0].setupDone = true;
     // 09-02 already has a night, so it is a duplicate date in the file
     S.nights = [{ id: 'ex', date: '2026-09-02', total: 50, cash: 10, pay: {}, barback: true }];
   });

@@ -110,18 +110,22 @@ test('possibleAside: the average finished check is used before the projected one
   } else assert.equal(pa.checkFrom, 'projected');
 });
 
-test('roundDownStep and asideSliderMax', () => {
+test('roundDownStep, roundUpStep and asideRange (the slider only goes as high as the budget leaves)', () => {
   assert.equal(B.roundDownStep(152.5), 150);
   assert.equal(B.roundDownStep(149.99), 145);
   assert.equal(B.roundDownStep(0), 0);
   assert.equal(B.roundDownStep(5), 5);
-  // 2 x possible, or finishing in one paycheck, whichever is bigger, rounded up to $5
-  assert.equal(B.asideSliderMax(150, 900), 900);
-  assert.equal(B.asideSliderMax(150, 100), 300);
-  assert.equal(B.asideSliderMax(152.5, 0), 305);
-  assert.equal(B.asideSliderMax(0, 0), 5);
-  // income unknown: $0 to $500
-  assert.equal(B.asideSliderMax(0, 12000, false), 500);
+  assert.equal(B.roundUpStep(101), 105);
+  assert.equal(B.roundUpStep(100), 100);
+  assert.equal(B.roundUpStep(0.01), 5);
+  // max = what is possible, rounded down to $5; start = max, or less when a smaller amount finishes the goal in one paycheck
+  assert.deepEqual(B.asideRange(152.5, 900), { capped: true, max: 150, start: 150, disabled: false });
+  assert.deepEqual(B.asideRange(152.5, 42), { capped: true, max: 150, start: 45, disabled: false });
+  assert.deepEqual(B.asideRange(152.5, 0), { capped: true, max: 150, start: 150, disabled: false });
+  // nothing left: the slider is off
+  assert.deepEqual(B.asideRange(3, 500), { capped: true, max: 0, start: 0, disabled: true });
+  // income unknown: no cap and no slider (the amount is typed and marked an estimate)
+  assert.deepEqual(B.asideRange(0, 12000, false), { capped: false, max: null, start: null, disabled: false });
 });
 
 test('live ready-by date follows the pay schedule: weekly, biweekly, semimonthly', () => {

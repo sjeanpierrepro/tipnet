@@ -7,7 +7,7 @@ import { addDays, todayISO } from '../../app/js/math.js';
 const DEV = 'http://localhost/?unlock=dev';
 const seed = (goals) =>
   realState((S) => {
-    S.settings.setupDone = true;
+    S.workplaces[0].setupDone = true;
     S.budget = exampleBudget();
     S.budget.bills = [];
     S.budget.categories = [];
@@ -38,8 +38,8 @@ test('tracker: record below plan raises the amount and explains it; the field is
   try {
     page.tab('budget');
     const S = page.state();
-    const payday = recordPayday(S.profile, todayISO());
-    const planned = purchasePlan(S.budget.goals[0], S.profile, todayISO()).perPaycheck;
+    const payday = recordPayday(S.workplaces[0].profile, todayISO());
+    const planned = purchasePlan(S.budget.goals[0], S.workplaces[0].profile, todayISO()).perPaycheck;
     const input = key(page, 'goal-rec-p1');
     assert.match(input.getAttribute('aria-label'), /^Amount saved for Car down payment from the .+ check$/);
     assert.equal(input.getAttribute('placeholder'), 'planned $' + planned.toFixed(2));
@@ -54,7 +54,7 @@ test('tracker: record below plan raises the amount and explains it; the field is
     assert.equal(g.contributions.length, 1);
     assert.equal(g.contributions[0].payday, payday);
     assert.equal(g.contributions[0].planned, planned);
-    const after = purchasePlan(g, page.state().profile, todayISO());
+    const after = purchasePlan(g, page.state().workplaces[0].profile, todayISO());
     assert.ok(after.perChange > 0);
     const t = page.text(row(page));
     assert.match(t, /Up \$\d+\.\d\d because this check was below plan\./);

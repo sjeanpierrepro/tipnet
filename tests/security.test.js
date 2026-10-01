@@ -77,7 +77,7 @@ test('encodeBackup never includes the entitlement', () => {
 
 /* ---------- 2. migrate never throws and always renders ---------- */
 function renders(state) {
-  const p = state.profile;
+  const p = state.workplaces[0].profile;
   const sh = M.shiftsPerPeriod(p, state.nights, '2026-09-29');
   state.nights.forEach((n) => M.computeNight(n, p, sh.n));
   const idx = M.periodIndex(p, '2026-09-29');
@@ -87,7 +87,7 @@ function renders(state) {
   M.fixedTotal(p);
   assert.ok(Array.isArray(p.payTypes) && p.payTypes.length >= 1);
   assert.ok(Array.isArray(p.deductions));
-  assert.ok(Array.isArray(state.nights) && Array.isArray(state.calib));
+  assert.ok(Array.isArray(state.nights) && Array.isArray(state.workplaces[0].calib));
   state.nights.forEach((n) => {
     assert.ok(Number.isFinite(M.parseISO(n.date)));
     assert.equal(typeof n.total, 'number');
@@ -129,7 +129,7 @@ test('migrate: garbage in every position never throws and renders', () => {
   for (const g of GARBAGE) {
     for (const f of fields) {
       const s = seedState();
-      s.profile[f] = g;
+      s.workplaces[0].profile[f] = g;
       renders(migrate(s));
     }
     for (const top of ['nights', 'calib', 'budget', 'settings', 'profile']) {
@@ -144,8 +144,8 @@ test('migrate: garbage in every position never throws and renders', () => {
       { date: '2026-09-22', total: g, cash: g, pay: g, id: g, barback: g },
       ...s.nights,
     ];
-    s.profile.payTypes = [g, { id: g, rate: g, unit: g, usual: g }];
-    s.profile.deductions = [g, { id: g, amount: g, mode: g }];
+    s.workplaces[0].profile.payTypes = [g, { id: g, rate: g, unit: g, usual: g }];
+    s.workplaces[0].profile.deductions = [g, { id: g, amount: g, mode: g }];
     renders(migrate(s));
     renders(migrate(g));
   }
@@ -183,11 +183,11 @@ test('migrate: random fuzz', () => {
   };
   for (let i = 0; i < 300; i++) {
     const s = seedState();
-    Object.keys(s.profile).forEach((k) => {
-      if (rnd() < 0.5) s.profile[k] = val();
+    Object.keys(s.workplaces[0].profile).forEach((k) => {
+      if (rnd() < 0.5) s.workplaces[0].profile[k] = val();
     });
     if (rnd() < 0.5) s.nights = val();
-    if (rnd() < 0.3) s.calib = val();
+    if (rnd() < 0.3) s.workplaces[0].calib = val();
     if (rnd() < 0.3) s.settings = val();
     renders(migrate(s));
   }

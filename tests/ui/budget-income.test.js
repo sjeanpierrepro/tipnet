@@ -7,7 +7,7 @@ import { addDays, todayISO } from '../../app/js/math.js';
 const DEV = 'http://localhost/?unlock=dev';
 const seed = (income) =>
   realState((S) => {
-    S.settings.setupDone = true;
+    S.workplaces[0].setupDone = true;
     S.budget = exampleBudget();
     S.budget.bills = [];
     S.budget.categories = [];
@@ -82,7 +82,7 @@ test('other income: safe to spend and the breakdown include it only when it arri
   try {
     page.tab('budget');
     const S = page.state();
-    const r = safeToSpend(S.budget, S.profile, [], todayISO());
+    const r = safeToSpend(S.budget, S.workplaces[0].profile, [], todayISO());
     assert.ok(r.otherIncomeTotal >= 150, 'arrives today');
     assert.match(page.text(), /Other income before payday\+\$150\.00/);
     assert.match(page.text(), /DoorDash, /);

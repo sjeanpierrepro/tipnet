@@ -327,6 +327,57 @@ export function setupFirstCard({ title = 'Finish setup first', text, example } =
   );
 }
 
+/* ---------- restaurant switcher ---------- */
+/**
+ * One button per restaurant (shown only when there is more than one), the picked one filled. A radio group: Tab reaches
+ * the picked button, the arrow keys (and Home/End) pick the next one right away. onPick(id) does the switching.
+ * Each button keeps a stable data-focus-key ('<key>-<restaurant id>') so focus survives the redraw that follows.
+ */
+export function workplaceSwitcher(S, current, onPick, { key = 'wp', label = 'Restaurant', all = null } = {}) {
+  const ws = (S && S.workplaces) || [];
+  if (ws.length < 2) return null;
+  // all: a label for an extra first choice that stands for every restaurant (id 'all'), e.g. the Pay periods filter.
+  const list = (all ? [{ id: 'all', name: all }] : []).concat(ws);
+  const group = el('div', { class: 'wp-switch', role: 'radiogroup', 'aria-label': label });
+  const buttons = list.map((w) => {
+    const on = w.id === current;
+    const b = el(
+      'button',
+      {
+        type: 'button',
+        role: 'radio',
+        'aria-checked': String(on),
+        tabindex: on ? '0' : '-1',
+        title: w.name,
+        'data-focus-key': key + '-' + w.id,
+        'data-workplace': w.id,
+      },
+      w.name,
+    );
+    b.addEventListener('click', () => {
+      if (w.id !== current) onPick(w.id);
+    });
+    return b;
+  });
+  group.addEventListener('keydown', (e) => {
+    const i = buttons.indexOf(document.activeElement);
+    if (i < 0) return;
+    const n = buttons.length;
+    let j = null;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') j = (i + 1) % n;
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') j = (i + n - 1) % n;
+    else if (e.key === 'Home') j = 0;
+    else if (e.key === 'End') j = n - 1;
+    if (j === null) return;
+    e.preventDefault();
+    buttons[j].focus(); // focus moves first, so the redraw keeps it on the newly picked restaurant
+    if (list[j].id !== current) onPick(list[j].id);
+  });
+  if (!buttons.some((b) => b.tabIndex === 0)) buttons[0].tabIndex = 0;
+  group.append(...buttons);
+  return group;
+}
+
 /* ---------- saving ---------- */
 let persistAsked = false;
 /**
@@ -402,7 +453,7 @@ export function exampleBanner({ restore = true } = {}) {
             class: 'btn btn-secondary btn-small',
             onclick: () => {
               S.nights = [];
-              S.calib = [];
+              S.workplaces[0].calib = []; // example mode is only ever about the first restaurant
               S.nightsExample = false;
               save();
               bus.rerender();
