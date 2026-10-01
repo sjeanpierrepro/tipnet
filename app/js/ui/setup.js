@@ -179,6 +179,7 @@ function makeCtx(w, blank = false, guidedNow = blank) {
     w,
     p: blank ? gProfile : w.profile,
     blank,
+    guided: guidedNow,
     ph: blank || guidedNow ? exampleProfile() : null, // example numbers as placeholders while setting up
     live,
     saved,
@@ -635,11 +636,11 @@ function dedCard(ctx) {
           el('span', null, 'My paystub has no deductions'),
         )
       : null,
-    ctx.blank ? dedErr : null,
+    ctx.guided ? dedErr : null,
     summaryBox,
   );
   card.validate = () => {
-    if (!ctx.blank) return true;
+    if (!ctx.guided) return true;
     const ok = noDed.checked || p.deductions.some((d) => num(d.amount) > 0);
     dedErr.hidden = ok;
     dedErr.textContent = ok
