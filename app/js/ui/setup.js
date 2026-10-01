@@ -169,7 +169,7 @@ function presetSelect(presets, current, id, fallback = 'other') {
 /* ============ context shared by the cards on one render ============ */
 let saveSeq = 0; // the newest edit's save decides the "All changes saved" line
 /** w: the restaurant being set up. blank: the guided steps fill in gProfile (the first restaurant, still the example). */
-function makeCtx(w, blank = false) {
+function makeCtx(w, blank = false, guidedNow = blank) {
   const S = getState();
   if (blank && !gProfile) gProfile = blankProfile();
   const live = [];
@@ -179,7 +179,7 @@ function makeCtx(w, blank = false) {
     w,
     p: blank ? gProfile : w.profile,
     blank,
-    ph: blank ? exampleProfile() : null,
+    ph: blank || guidedNow ? exampleProfile() : null, // example numbers as placeholders while setting up
     live,
     saved,
     /** Required-field errors wait until the field was left (blur) or Next/Finish was pressed. */
@@ -756,7 +756,7 @@ function payCard(ctx) {
       }
       ctx.touch(false);
     });
-    if (i === 0 && !(t.rate > 0) && !ctx.blank) fr.setError('Enter the rate from your stub.');
+    if (i === 0 && !(t.rate > 0) && !ctx.ph) fr.setError('Enter the rate from your stub.');
     if (i === 0) rateFields.push({ fr, rt });
     return fr;
   };
@@ -1348,14 +1348,17 @@ function guided(root, ctx) {
       window.scrollTo(0, 0);
       return;
     }
+    const tidy = (p) => {
+      p.deductions = p.deductions.filter((d) => num(d.amount) > 0);
+      p.payTypes = p.payTypes.filter((t, i) => i === 0 || t.unit === 'amt' || num(t.rate) > 0);
+      p.rateOverride = null;
+    };
     if (gProfile) {
       // the user's own numbers replace the example only now
-      gProfile.deductions = gProfile.deductions.filter((d) => num(d.amount) > 0);
-      gProfile.payTypes = gProfile.payTypes.filter((t, i) => i === 0 || t.unit === 'amt' || num(t.rate) > 0);
-      gProfile.rateOverride = null;
+      tidy(gProfile);
       w.profile = gProfile;
       gProfile = null;
-    }
+    } else if (!first) tidy(w.profile); // a restaurant added later: drop the blank rows it started with
     const hadExamples = S.nightsExample;
     if (hadExamples) {
       S.nights = [];
@@ -1555,7 +1558,7 @@ export function render(root) {
     !isWorkplaceSetUp(S0, w) &&
     !w.guideSkipped &&
     ((first && S0.profileExample) || guidedFor === w.id || (!first && w.setupDone === false));
-  const ctx = makeCtx(w, inGuided && ((first && S0.profileExample) || !!gProfile));
+  const ctx = makeCtx(w, inGuided && ((first && S0.profileExample) || !!gProfile), inGuided);
   if (inGuided) {
     if (guidedFor !== w.id) {
       // another restaurant's guided flow was running: this one starts at its first step
