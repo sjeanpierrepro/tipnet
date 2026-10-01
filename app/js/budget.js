@@ -23,7 +23,7 @@
 //                 One per payday per goal. Once one exists for the current check, that goal is no longer set aside from the money you have
 //                 until the next payday. (The old goalsDone ticks are dropped on load; saved is never changed by that.)
 //                 Any goal may have createdAt and startSaved (the schedule it is measured against).
-//   balance:    {amount, asOf} (absent if none)     money you said you had, and when (ISO date and time)
+//   balance:    {amount, asOf, example?} (absent if none)  money you said you had, and when (ISO date and time); example: the made-up one
 // Everything here is an estimate. It is a planning aid, not financial advice.
 import {
   num,
@@ -65,7 +65,7 @@ export function emptyBudget() {
  */
 export function exampleBudget(today = todayISO()) {
   const b = exampleBudgetBase(today);
-  b.balance = { amount: 2400, asOf: today + 'T12:00:00' };
+  b.balance = { amount: 2400, asOf: today + 'T12:00:00', example: true };
   billsDue(b, today, today).forEach((x) => {
     b.paidBills[paidKey(x.id, x.date)] = true;
   });
@@ -206,7 +206,9 @@ export function cleanBalance(b) {
   const amount = parseFloat(b.amount);
   if (!Number.isFinite(amount) || typeof b.asOf !== 'string' || !Number.isFinite(Date.parse(b.asOf)))
     return null;
-  return { amount: round2(amount), asOf: b.asOf };
+  const out = { amount: round2(amount), asOf: b.asOf };
+  if (b.example === true) out.example = true; // the made-up example balance, until the person types their own
+  return out;
 }
 export const BALANCE_STALE_DAYS = 3;
 /** True when the saved balance is more than about 3 days old. No balance is never "stale". */

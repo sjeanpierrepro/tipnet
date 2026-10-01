@@ -84,6 +84,10 @@ test('before setup: "See an example first" shows the example estimate with a cle
     assert.equal(page.$('.result .hero').textContent, '$420.46');
     // new installs type tips: the $585 example night is $489 of tips plus 8 hours at $12
     assert.match(page.text(), /Tips typed \(cash \+ card\)\$489\.00/);
+    assert.match(
+      page.text(),
+      /made \$489 in tips, \$210 of it in cash, \$73\.35 of which went to the barback\./,
+    );
     assert.match(page.text(), /Cash you keep\$136\.65/);
     assert.equal(page.$('form', page.app), null);
     assert.equal(page.byText('button', 'Save'), null, 'no Save anywhere');

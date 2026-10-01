@@ -259,3 +259,30 @@ test('tonight: has a visible h1 "Tonight" like the other tabs, and section headi
     await page.close();
   }
 });
+
+test('tonight: at 1 a.m. on a pay period’s first day, the pay period summary is still the one the night belongs to', async () => {
+  mock.timers.enable({ apis: ['Date'], now: new Date(2026, 9, 5, 1, 0) }); // Oct 5, 1 a.m.: a new period starts Oct 5
+  try {
+    const page = await boot({
+      seed: realState((S) => {
+        S.workplaces[0].setupDone = true;
+        Object.assign(S.workplaces[0].profile, {
+          freq: 14,
+          periodStart: '2026-09-21',
+          periodEnd: '2026-10-04',
+        });
+        S.nights = [{ id: 'a', date: '2026-10-04', total: 300, cash: 100, pay: { p1: 6 }, barback: false }];
+      }),
+    });
+    try {
+      assert.equal(page.$('[data-focus-key="night-date"]').value, '2026-10-04', 'tonight is still Oct 4');
+      const t = page.text();
+      assert.match(t, /Check so far this pay period \(1 night\): \$/);
+      assert.doesNotMatch(t, /No nights logged yet this period/);
+    } finally {
+      await page.close();
+    }
+  } finally {
+    mock.timers.reset();
+  }
+});

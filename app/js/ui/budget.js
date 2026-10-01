@@ -612,19 +612,21 @@ function heroCard(S, r0, src) {
     placeholder: 'Blank = cash tips so far',
     value: saved ? String(saved.amount) : '',
   });
+  // One persistent live region for the number: a region created on every redraw is never announced.
+  const heroLabel = el('div', { class: 'hero-label' });
+  const heroNum = el('div', { class: 'hero num', 'aria-live': 'polite', 'aria-atomic': 'true' });
+  const rest = el('div', { class: 'stack' });
+  host.append(heroLabel, heroNum, rest);
   const draw = (r) => {
     const neg = r.safe < 0;
     const bal = S.budget.balance;
-    clear(host).append(
+    heroLabel.textContent = many
+      ? 'Safe to spend until ' + fmtDate(r.payday) + ' — ' + r.paydaySource.name + ' check'
+      : 'Safe to spend until payday (' + fmtDate(r.payday) + ')';
+    const amount = money(r.safe);
+    if (heroNum.textContent !== amount) heroNum.textContent = amount;
+    clear(rest).append(
       ...[
-        el(
-          'div',
-          { class: 'hero-label' },
-          many
-            ? 'Safe to spend until ' + fmtDate(r.payday) + ' — ' + r.paydaySource.name + ' check'
-            : 'Safe to spend until payday (' + fmtDate(r.payday) + ')',
-        ),
-        el('div', { class: 'hero num', 'aria-live': 'polite' }, money(r.safe)),
         el(
           'div',
           { class: 'hint' },
@@ -636,7 +638,7 @@ function heroCard(S, r0, src) {
           ? el(
               'p',
               { class: 'hint' },
-              'Your balance as of ' +
+              (bal.example ? 'Example balance (made up) as of ' : 'Your balance as of ') +
                 asOfText(bal.asOf) +
                 (r.income.spent > 0 ? ', minus ' + money(r.income.spent) + ' you logged since.' : '.'),
             )
@@ -745,7 +747,11 @@ function breakdown(S, r, many = false) {
         ? [row('Money you entered', money(r.income.amount))]
         : [
             row(
-              r.income.source === 'balance' ? 'Your saved balance' : 'Cash tips this pay period',
+              r.income.source === 'balance'
+                ? S.budget.balance && S.budget.balance.example
+                  ? 'Example balance (made up)'
+                  : 'Your saved balance'
+                : 'Cash tips this pay period',
               money(r.income.cash),
             ),
             r.income.spent > 0

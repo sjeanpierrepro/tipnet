@@ -70,14 +70,23 @@ test('budget: the balance saves with an as-of time', async () => {
   const page = await boot({ url: DEV, seed: seed() });
   try {
     page.tab('budget');
+    // The example budget's made-up balance is labelled as an example until the person types their own.
+    assert.match(page.text(), /Example balance \(made up\) as of/);
+    assert.doesNotMatch(page.text(), /Your balance as of/);
+    const hero = page.must(page.$('.result .hero[aria-live]'), 'live hero number');
     const before = Date.now();
     const input = page.$('#budget-balance');
     page.type(input, '1234.50');
     page.change(input); // leaving the field saves at once
     const bal = page.state().budget.balance;
     assert.equal(bal.amount, 1234.5);
+    assert.equal(bal.example, undefined);
     assert.ok(Math.abs(new Date(bal.asOf).getTime() - before) < 5000);
     assert.match(page.text(), /Your balance as of/);
+    assert.doesNotMatch(page.text(), /Example balance/);
+    // One persistent live region: the same node, with the new number in it, so screen readers hear the change.
+    assert.equal(page.$('.result .hero[aria-live]'), hero);
+    assert.equal(hero.textContent, page.$('.result .hero').textContent);
     await flush();
     assert.equal(JSON.parse(page.win.localStorage.getItem('tipnet.v2')).budget.balance.amount, 1234.5);
   } finally {

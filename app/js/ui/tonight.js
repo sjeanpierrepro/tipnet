@@ -863,8 +863,10 @@ export function resultCard(c, w, note, hoursMissing = false) {
 }
 
 function stripCard(S, w) {
+  // The business date (Late nights rule), the same date Tonight's entries use: at 1 a.m. on a period's first day the
+  // night still belongs to the period before.
   const p = w.profile,
-    today = todayISO();
+    today = tonightOf(S);
   const idx = periodIndex(p, today);
   const nights = S.nightsExample && !S.profileExample ? [] : nightsOf(S, w.id);
   const t = periodTotals(p, nights, idx, today);
@@ -883,7 +885,12 @@ function stripCard(S, w) {
   // Not "your next check": with a payday delay the next check can belong to the previous pay period.
   const cap = t.ns.length
     ? t.allCash
-      ? 'Estimated check for this pay period: ' + money(t.chk) + '.'
+      ? 'Check so far this pay period (' +
+        t.ns.length +
+        (t.ns.length === 1 ? ' night' : ' nights') +
+        '): ' +
+        money(t.chk) +
+        '.'
       : 'Add cash amounts to every night to preview this pay period’s check.'
     : 'No nights logged yet this period.';
   return el(
@@ -925,7 +932,13 @@ function exampleView(S) {
       el(
         'p',
         null,
-        'A bartender paid $12 an hour worked 8 hours, made $489 in tips, and took $210 of it home in cash. Here is what TipNet estimates they keep. Your own paystub gives you your own numbers.',
+        'A bartender paid $12 an hour worked 8 hours and made $489 in tips, ' +
+          money0(night.cash) +
+          ' of it in cash' +
+          (c.cashInHand != null && num(night.cash) - c.cashInHand > 0.004
+            ? ', ' + money(num(night.cash) - c.cashInHand) + ' of which went to the barback'
+            : '') +
+          '. Here is what TipNet estimates they keep. Your own paystub gives you your own numbers.',
       ),
       setUp,
     ),

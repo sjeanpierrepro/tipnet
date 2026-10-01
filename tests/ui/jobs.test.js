@@ -441,7 +441,7 @@ test('Tonight: a date far in the future or before 2000 is refused; $0 tips canno
     page.type(page.$('[data-focus-key="night-cash"]'), '0');
     submit(page);
     assert.equal(page.state().nights.length, 1);
-    assert.match(page.text(), /Estimated check for this pay period: \$/);
+    assert.match(page.text(), /Check so far this pay period \(\d+ nights?\): \$/);
     assert.doesNotMatch(page.text(), /next check/);
   } finally {
     await page.close();
