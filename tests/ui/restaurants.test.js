@@ -344,3 +344,86 @@ test('import: with two restaurants it asks which one; duplicate dates are looked
     await page.close();
   }
 });
+
+/* ---------- Budget ---------- */
+const DEV = 'http://localhost/?unlock=dev';
+/** Two restaurants with nights that have cash, so both checks can be estimated. */
+const budgetState = () =>
+  twoState((S) => {
+    S.workplaces[0].profile.payDelay = 1;
+    S.workplaces[1].profile.payDelay = 2;
+    S.nights = [];
+    [2, 4, 6, 9, 12, 15, 18].forEach((ago, i) => {
+      S.nights.push({
+        id: 'a' + i,
+        date: addDays(today, -ago),
+        total: 400,
+        cash: 100,
+        pay: { p1: 6 },
+        barback: false,
+        workplaceId: 'w1',
+      });
+      S.nights.push({
+        id: 'b' + i,
+        date: addDays(today, -ago),
+        total: 150,
+        cash: 30,
+        pay: { p1: 4 },
+        barback: false,
+        workplaceId: 'w2',
+      });
+    });
+  });
+
+test('budget: safe to spend runs until the next money from either restaurant and lists both checks', async () => {
+  const page = await boot({ url: DEV, seed: budgetState() });
+  try {
+    page.tab('budget');
+    const label = page.$('.hero-label', page.app).textContent;
+    assert.match(
+      label,
+      /^Safe to spend until [A-Z][a-z]{2}, [A-Z][a-z]{2} \d+ — (Voodoo Bayou|Second Spot) check$/,
+    );
+    const how = page.text(page.byText('details', 'How this is worked out'));
+    assert.match(how, /Next checks \(counted once they arrive\)/);
+    assert.match(how, /Voodoo Bayou, [A-Z]/);
+    assert.match(how, /Second Spot, [A-Z]/);
+    const after = page.text(page.byText('section', 'After payday ('));
+    assert.match(after, /(Voodoo Bayou|Second Spot) check, [A-Z][a-z]{2}, [A-Z][a-z]{2} \d+ \(estimated\)/);
+  } finally {
+    await page.close();
+  }
+});
+
+test('budget: a goal asks which paycheck it is saved from, uses that restaurant, and says so', async () => {
+  const page = await boot({ url: DEV, seed: budgetState() });
+  try {
+    page.tab('budget');
+    const form = page.must(page.$('form[aria-label="Add a savings goal"]'), 'goal form');
+    page.type(key(page, 'ef-goal-new-name'), 'Emergency');
+    page.type(key(page, 'ef-goal-new-cost'), '3000');
+    const sel = key(page, 'ef-goal-new-funder');
+    assert.match(page.$('label[for="' + sel.id + '"]').textContent, /Save from which paycheck\?/);
+    assert.deepEqual(
+      Array.from(sel.options).map((o) => o.textContent),
+      ['Voodoo Bayou', 'Second Spot'],
+    );
+    // Voodoo Bayou pays every two weeks (26 a year), Second Spot twice a month (24): Voodoo Bayou by default
+    assert.equal(sel.value, 'w1');
+    assert.match(page.text(form), /a paycheck is safe to put aside from Voodoo Bayou/);
+    const fromA = key(page, 'ef-goal-new-slider').max;
+    sel.value = 'w2';
+    page.change(sel);
+    assert.match(page.text(form), /a paycheck is safe to put aside from Second Spot/);
+    assert.notEqual(key(page, 'ef-goal-new-slider').max, fromA, 'its own check and pay period');
+    page.click(page.button('Add goal', form));
+    const g = page.state().budget.goals.find((x) => x.name === 'Emergency');
+    assert.equal(g.fundedBy, 'w2');
+    const row = page.byText('li', 'Emergency');
+    assert.match(page.text(row), /Saved from Second Spot paychecks\./);
+    const amount = page.must(row.querySelector('[data-focus-key="goal-rec-' + g.id + '"]'), 'tracker field');
+    assert.match(amount.getAttribute('aria-label'), /from the Second Spot [A-Z][a-z]{2} \d+ check/);
+  } finally {
+    await page.close();
+  }
+});
