@@ -91,6 +91,7 @@ for (const withData of [false, true]) {
       await otherWindowSaves(page, withData);
       const gross = page.$$('input').find((i) => i.value === '2000');
       page.type(gross, '2500');
+      page.change(gross);
       await page.settle();
       await storage.flush();
       await page.settle();

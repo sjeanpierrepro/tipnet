@@ -42,13 +42,36 @@ export const weekdayMon0 = (s) => (new Date(parseISO(s)).getUTCDay() + 6) % 7;
 
 /* ---------- rates from the stub (6.1) ---------- */
 const sumDed = (p, f) => (p.deductions || []).filter(f).reduce((s, d) => s + num(d.amount), 0);
-export const baseRate = (p) => (num(p.gross) > 0 ? sumDed(p, (d) => d.mode === 'pct') / num(p.gross) : 0);
-export const rate = (p) => (p.rateOverride != null ? p.rateOverride : baseRate(p));
+/** A rate never goes above 100% (or below 0): a mistyped gross like $2 must not give a 16,650% tax. */
+export const MAX_RATE = 1;
+const clampRate = (x) => (Number.isFinite(x) ? Math.min(MAX_RATE, Math.max(0, x)) : 0);
+/** The paystub's % deductions / gross, NOT clamped (for the Setup warnings). */
+export const rawRate = (p) => (num(p.gross) > 0 ? sumDed(p, (d) => d.mode === 'pct') / num(p.gross) : 0);
+export const baseRate = (p) => clampRate(rawRate(p));
+export const rate = (p) => (p.rateOverride != null ? clampRate(Number(p.rateOverride)) : baseRate(p));
 export const fedRate = (p) =>
-  num(p.gross) > 0 ? sumDed(p, (d) => d.mode === 'pct' && d.k === 'fed') / num(p.gross) : 0;
+  num(p.gross) > 0 ? clampRate(sumDed(p, (d) => d.mode === 'pct' && d.k === 'fed') / num(p.gross)) : 0;
+/** Gross below this for one paycheck gets a calm "check this" note in Setup. */
+export const LOW_GROSS = 50;
+/** % deductions at or above this share of gross get a calm "check this" note in Setup. */
+export const HIGH_RATE = 0.6;
+/**
+ * Gentle Setup checks on the paystub numbers (never a block): {lowGross, highRate, capped, share (raw % deductions / gross)}.
+ * capped: the raw rate is above 100%, so TipNet uses 100%.
+ */
+export function stubWarnings(p) {
+  const g = num(p.gross);
+  const share = rawRate(p);
+  return {
+    lowGross: g > 0 && g < LOW_GROSS,
+    highRate: g > 0 && share >= HIGH_RATE,
+    capped: share > MAX_RATE,
+    share,
+  };
+}
 export const fixedTotal = (p) => sumDed(p, (d) => d.mode === 'fixed');
 /** Bonuses/commissions: swap the regular federal share for the 22% supplemental rate (6.5). */
-export const suppRate = (p) => Math.max(0, rate(p) - fedRate(p)) + 0.22;
+export const suppRate = (p) => Math.min(MAX_RATE, Math.max(0, rate(p) - fedRate(p)) + 0.22);
 
 /* ---------- pay period (6.3) ---------- */
 // Fixed lengths: 7, 14, 15, 30 (days). Calendar modes are the strings 'semimonthly' and 'monthly', anchored on the start date's day of month

@@ -20,6 +20,7 @@ import {
   applyPayPreset,
   applyDeductionPreset,
   fillFica,
+  stubWarnings,
 } from '../math.js';
 import {
   el,
@@ -40,6 +41,7 @@ import {
   arm,
   workplaceSwitcher,
   exampleShown,
+  debounce,
 } from './common.js';
 import { cutoffFromSettings } from '../inputs.js';
 import {
@@ -51,6 +53,7 @@ import {
   nightsOf,
   newWorkplaceId,
   MAX_WORKPLACES,
+  lockFinished,
 } from '../storage.js';
 import { renderImporter } from './importer.js';
 import { renderBackup, renderInstall } from './backup.js';
@@ -66,6 +69,8 @@ let gProfile = null;
 let noDeductions = false; // "My paystub has no deductions" ticked (on the blank copy)
 let adding = null; // "+ Set up another restaurant" is open: {name, error}
 export function reset() {
+  pendingEdits.forEach((f) => f.cancel());
+  pendingEdits.clear();
   guidedStep = 0;
   guidedFor = null;
   gProfile = null;
@@ -166,6 +171,36 @@ function presetSelect(presets, current, id, fallback = 'other') {
   s.value = current;
   if (s.value !== current) s.value = fallback;
   return s;
+}
+
+/* ============ numbers that change the paystub rate ============ */
+/**
+ * Gross pay and deduction amounts apply after a short pause in typing, when the field is left, or on any click (app.js
+ * calls flushEdits), never on every keystroke: typing "2100" must not pass through a $2 gross (a huge rate, a cleared
+ * accuracy adjustment, a save). Until then the saved line says "Saving…", so "All changes saved" stays true.
+ */
+const pendingEdits = new Set();
+const EDIT_PAUSE_MS = 600;
+/** Apply every typed number that is still waiting (before a click or when the page is hidden). */
+export function flushEdits() {
+  [...pendingEdits].forEach((f) => f.flush());
+}
+function onPause(ctx, input, apply) {
+  const run = debounce(() => {
+    if (!pendingEdits.delete(run)) return;
+    lockFinished(); // a pay period that ended meanwhile locks before the new number reaches it
+    apply();
+  }, EDIT_PAUSE_MS);
+  input.addEventListener('input', () => {
+    pendingEdits.add(run);
+    ctx.saved.textContent = 'Saving…';
+    run();
+  });
+  const now = () => {
+    if (pendingEdits.has(run)) run.flush();
+  };
+  input.addEventListener('change', now);
+  input.addEventListener('blur', now);
 }
 
 /* ============ context shared by the cards on one render ============ */
@@ -310,6 +345,19 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
   const fGross = field('Gross pay', gross, {
     hint: 'The top-line gross pay figure, before any deductions. Not “taxable wages.”',
   });
+  // A calm check, never a block: a gross this small is usually a typo (or a short first check).
+  const grossNote = el('p', { class: 'note', role: 'status', id: 'gross-check', hidden: true });
+  fGross.append(grossNote);
+  const showGrossNote = () => {
+    const low = stubWarnings(p).lowGross;
+    const text = low
+      ? 'That’s a small gross pay for one paycheck. If it’s right, carry on; if not, type the full gross amount for this pay period.'
+      : '';
+    if (grossNote.textContent !== text) grossNote.textContent = text;
+    grossNote.hidden = !low;
+  };
+  showGrossNote();
+  ctx.live.push(showGrossNote);
 
   const validate = () => {
     ctx.gate(fStart, Number.isFinite(parseISO(start.value)) ? '' : 'Pick the day your pay period started.');
@@ -396,7 +444,7 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
     }
     ctx.touch(false);
   });
-  gross.addEventListener('input', () => {
+  onPause(ctx, gross, () => {
     p.gross = numOf(gross.value);
     ctx.touch(true);
   });
@@ -451,10 +499,13 @@ function dedCard(ctx) {
   const ficaErr = el('p', { class: 'field-error', hidden: true, role: 'alert' });
 
   const lineText = (d) => {
-    if (d.mode === 'pct')
-      return p.gross > 0
-        ? ((num(d.amount) / p.gross) * 100).toFixed(2) + '% of every dollar you make'
-        : 'Enter gross pay to see the rate';
+    if (d.mode === 'pct') {
+      if (!(p.gross > 0)) return 'Enter gross pay to see the rate';
+      const share = num(d.amount) / p.gross;
+      return share > 1
+        ? 'More than your gross pay: check this amount'
+        : (share * 100).toFixed(2) + '% of every dollar you make';
+    }
     return money(num(d.amount) / shiftsPerPeriod(p, historyOf(S, w)).n) + ' per shift';
   };
   const drawSummary = () => {
@@ -495,6 +546,26 @@ function dedCard(ctx) {
           )
         : '',
     );
+    // Calm checks on the stub numbers (never a block). TipNet never uses a rate above 100%.
+    const wn = stubWarnings(p);
+    if (wn.capped)
+      summaryBox.append(
+        el(
+          'p',
+          { class: 'hint', id: 'rate-check' },
+          'Your “changes with my pay” deductions add up to more than your gross pay, so TipNet uses 100% for now. Check the gross pay and each amount against your paystub.',
+        ),
+      );
+    else if (wn.highRate)
+      summaryBox.append(
+        el(
+          'p',
+          { class: 'hint', id: 'rate-check' },
+          'Your “changes with my pay” deductions are ' +
+            Math.round(wn.share * 100) +
+            '% of your gross pay, which is unusually high. Check that they come from this paystub, not year-to-date.',
+        ),
+      );
   };
   const lines = new Map();
   const drawLines = () =>
@@ -574,7 +645,7 @@ function dedCard(ctx) {
         const f = document.getElementById('dk-' + d.id);
         if (f) f.focus();
       });
-      amt.addEventListener('input', () => {
+      onPause(ctx, amt, () => {
         d.amount = numOf(amt.value);
         fAmt.setError(d.amount < 0 ? 'Amounts on a stub are positive numbers.' : '');
         ctx.touch(true);

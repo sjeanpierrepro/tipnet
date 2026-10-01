@@ -177,7 +177,9 @@ test('Skip: without a pay period start date TipNet is not set up, Setup asks for
   try {
     page.click(page.button('Skip guided setup'));
     page.type(page.must(page.$('#pr-p1'), 'main rate'), '12');
-    page.type(page.byText('.field', 'Gross pay', page.app).querySelector('input'), '1800');
+    const gross = page.byText('.field', 'Gross pay', page.app).querySelector('input');
+    page.type(gross, '1800');
+    page.change(gross);
     const cb = page.must(page.$('#no-ded'), 'no deductions box');
     cb.checked = true;
     page.change(cb);

@@ -642,3 +642,25 @@ test('calibrate: rateBase measures the blend from the earlier rate, so repeating
   const again = m.calibrate(p2, nights, 0, 450, '2026-10-30', 3, a.rOld);
   assert.equal(again.rateOverride, a.rateOverride);
 });
+
+test('rates are never above 100%, and the Setup checks flag a tiny gross and very high % deductions', () => {
+  const p = { ...M.exampleProfile('2026-09-28'), gross: 2 };
+  assert.ok(M.rawRate(p) > 100, 'the raw share is huge');
+  assert.equal(M.baseRate(p), 1);
+  assert.equal(M.rate(p), 1);
+  assert.ok(M.fedRate(p) <= 1);
+  assert.ok(M.suppRate(p) <= 1);
+  assert.equal(M.rate({ ...p, rateOverride: 3 }), 1);
+  assert.equal(M.rate({ ...p, rateOverride: -0.2 }), 0);
+  assert.deepEqual(
+    { ...M.stubWarnings(p), share: undefined },
+    { lowGross: true, highRate: true, capped: true, share: undefined },
+  );
+  const ok = M.stubWarnings(M.exampleProfile('2026-09-28'));
+  assert.deepEqual([ok.lowGross, ok.highRate, ok.capped], [false, false, false]);
+  const high = M.stubWarnings({ ...M.exampleProfile('2026-09-28'), gross: 555 }); // 333 / 555 = 60%
+  assert.deepEqual([high.lowGross, high.highRate, high.capped], [false, true, false]);
+  // a night is never taxed more than it made
+  const c = M.computeNight({ date: '2026-09-28', total: 300, cash: 0, pay: {}, barback: false }, p, 10);
+  assert.ok(c.net >= -M.fixedTotal(p), 'take-home only goes below zero by fixed deductions');
+});

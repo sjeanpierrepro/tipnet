@@ -350,6 +350,7 @@ export function debounce(fn, ms = 300) {
     clearTimeout(t);
     fn(...a);
   };
+  d.cancel = () => clearTimeout(t);
   return d;
 }
 

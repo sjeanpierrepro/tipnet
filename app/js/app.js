@@ -265,10 +265,15 @@ async function boot() {
   });
   window.addEventListener('appinstalled', () => setInstallPrompt(null));
   // flush writes the quick localStorage copy first (synchronously), then IndexedDB, so a closing page keeps its entry.
-  window.addEventListener('pagehide', () => storage.flush());
+  window.addEventListener('pagehide', () => {
+    setup.flushEdits();
+    storage.flush();
+  });
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') storage.flush();
-    else if (storage.lockFinished()) render(); // back after a period boundary: lock it, then redraw
+    if (document.visibilityState === 'hidden') {
+      setup.flushEdits();
+      storage.flush();
+    } else if (storage.lockFinished()) render(); // back after a period boundary: lock it, then redraw
   });
   // Another copy of TipNet (a second tab, or the installed app and a browser tab) saved: show its data here too.
   // Changes made here that were not saved yet are merged in, not lost.
@@ -292,11 +297,13 @@ async function boot() {
   const retry = document.getElementById('save-retry');
   if (retry) retry.addEventListener('click', () => storage.flush());
   // Capture phase runs before the screens' own handlers, so a Setup edit made after midnight cannot reach a finished period first.
+  // A click (Next, Finish, a tab) also applies a Setup number still waiting for its typing pause (setup.flushEdits).
   ['input', 'change', 'click'].forEach((t) =>
     document.addEventListener(
       t,
       () => {
         storage.lockFinished();
+        if (t === 'click') setup.flushEdits();
       },
       true,
     ),
