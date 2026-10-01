@@ -685,7 +685,7 @@ export function nightFields(
     el(
       'p',
       { class: 'hint' },
-      'No tax was taken out of tonight’s cash, so your check is bigger. The IRS still counts all tips as income, so TipNet shows what to set aside.',
+      'Tick this if no tax was taken out of tonight’s cash, so your check is bigger. The IRS still counts all tips as income, so TipNet shows what to set aside.',
     ),
   );
   offField.hidden = true; // only once a cash amount is typed
