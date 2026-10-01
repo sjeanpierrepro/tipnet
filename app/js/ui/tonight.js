@@ -99,6 +99,15 @@ export function redateDraft(S) {
     if (!d.dateTouched) d.date = tonightOf(S);
   });
 }
+/** True when any restaurant's in-progress entry has something typed (an amount, cash or hours). */
+export function hasDraftInput() {
+  return Array.from(drafts.values()).some(
+    (d) =>
+      String(d.total || '').trim() !== '' ||
+      String(d.cash || '').trim() !== '' ||
+      Object.values(d.pay || {}).some((v) => String(v || '').trim() !== '' && String(v).trim() !== '1'),
+  );
+}
 /** A restaurant was removed: forget its entry. */
 export function dropDraft(id) {
   drafts.delete(id);

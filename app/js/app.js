@@ -10,6 +10,10 @@ import {
   keepFocus,
   toast,
   restoreRequest,
+  trackEdits,
+  captureTyped,
+  restoreTyped,
+  updateAction,
 } from './ui/common.js';
 import { budgetVisible, reloadConfig } from './billing.js';
 import { restoreFromCode, eraseEverything, backupReminder } from './ui/backup.js';
@@ -172,13 +176,17 @@ function setupServiceWorker() {
   const bar = document.getElementById('update-bar');
   const btn = document.getElementById('update-refresh');
   let waiting = null,
+    offered = false,
+    askedHere = false,
     reloading = false;
   const offer = (w) => {
     waiting = w;
+    offered = true;
     if (bar) bar.hidden = false;
   };
   if (btn) {
     btn.addEventListener('click', async () => {
+      askedHere = true;
       await storage.flush(); // never lose an entry to the reload
       if (waiting) waiting.postMessage({ type: 'SKIP_WAITING' });
       else location.reload();
@@ -193,7 +201,17 @@ function setupServiceWorker() {
       });
   });
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (reloading || !waiting) return; // first install also fires this; only reload after the user asked
+    if (reloading) return;
+    // Refresh tapped here: reload. Tapped in another window: reload too, unless something is typed here that is not
+    // saved yet; then the bar stays up and this window reloads when its user taps Refresh. First install: nothing.
+    const unsaved = tonight.hasDraftInput() || captureTyped(document.getElementById('app')).length > 0;
+    const act = updateAction({ askedHere, offered, unsaved });
+    if (act === 'ignore') return;
+    if (act === 'offer') {
+      waiting = null; // the new version is already in charge: Refresh just reloads
+      if (bar) bar.hidden = false;
+      return;
+    }
     reloading = true;
     location.reload();
   });
@@ -240,6 +258,7 @@ async function boot() {
     if (first) first.focus();
   };
   wireTabs();
+  trackEdits(document.getElementById('app'));
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     setInstallPrompt(e);
@@ -253,9 +272,13 @@ async function boot() {
   });
   // Another copy of TipNet (a second tab, or the installed app and a browser tab) saved: show its data here too.
   // Changes made here that were not saved yet are merged in, not lost.
+  // The redraw keeps focus, Tonight's entries (kept per restaurant) and whatever is typed in an open form.
   storage.setExternalHandler(({ conflict }) => {
     applyTheme(storage.getState().settings.theme);
+    const root = document.getElementById('app');
+    const typed = captureTyped(root);
     render();
+    restoreTyped(root, typed);
     if (conflict) toast('TipNet was updated in another window. Showing the latest.');
   });
   window.addEventListener('storage', (e) => {

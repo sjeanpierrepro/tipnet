@@ -172,6 +172,61 @@ export function restoreFocus(root, saved) {
     /* ignore */
   }
 }
+/**
+ * The service worker changed (controllerchange). askedHere: Refresh was tapped in this window. offered: this window
+ * knew an update was waiting. unsaved: something is typed here that is not saved yet.
+ * 'reload' now; 'offer' the "Update ready: Refresh" bar (another window's Refresh, with typing here); 'ignore' (first install).
+ */
+export function updateAction({ askedHere, offered, unsaved }) {
+  if (askedHere) return 'reload';
+  if (!offered) return 'ignore';
+  return unsaved ? 'offer' : 'reload';
+}
+/* ---------- half-typed entries across a redraw caused by another window ---------- */
+const edited = new WeakSet(); // fields the user typed in or changed since they were drawn
+const fieldKey = (n) => n.getAttribute('data-focus-key') || n.id || n.getAttribute('name') || null;
+/** Remember every field in root the user types in or changes (call once for the app's root). */
+export function trackEdits(root) {
+  const mark = (e) => {
+    const t = e.target;
+    if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) edited.add(t);
+  };
+  root.addEventListener('input', mark, true);
+  root.addEventListener('change', mark, true);
+}
+/** What the user typed into root's fields that have a stable key: [{key, value, checked, type}]. */
+export function captureTyped(root) {
+  return Array.from(root.querySelectorAll('input,select,textarea'))
+    .filter((n) => edited.has(n) && fieldKey(n))
+    .map((n) => ({ key: fieldKey(n), value: n.value, checked: n.checked, type: n.type }));
+}
+/**
+ * After a redraw: put back what was typed in fields that are still there and now show something else (an open form
+ * that was not saved yet), firing the field's own event so the screen takes it in. Fields already saved show the
+ * same value and are left alone.
+ */
+export function restoreTyped(root, typed) {
+  if (!typed || !typed.length) return;
+  const byKey = new Map();
+  root.querySelectorAll('input,select,textarea').forEach((n) => {
+    const k = fieldKey(n);
+    if (k && !byKey.has(k)) byKey.set(k, n);
+  });
+  typed.forEach((t) => {
+    const n = byKey.get(t.key);
+    if (!n || n.disabled) return;
+    const box = t.type === 'checkbox' || t.type === 'radio';
+    if (box ? n.checked === t.checked : n.value === t.value) return;
+    if (box) n.checked = t.checked;
+    else n.value = t.value;
+    edited.add(n);
+    try {
+      n.dispatchEvent(new Event(box || n.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }));
+    } catch (e) {
+      /* the value is back on screen either way */
+    }
+  });
+}
 /** Run redraw() (which rebuilds root's contents) and keep keyboard focus where it was. */
 export function keepFocus(root, redraw) {
   const saved = captureFocus(root);

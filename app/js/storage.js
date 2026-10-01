@@ -584,6 +584,7 @@ let opening = null;
 const writerId = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 let base = null; // the state as this copy last loaded or saved it: what "changed here" is measured against
 let lastKnown = 0; // _savedAt of that copy
+let written = null; // the state (JSON) as this copy last wrote or loaded it unchanged: a flush with nothing new writes nothing
 let onExternal = null;
 let onSaveResult = null;
 let channel = null;
@@ -792,6 +793,39 @@ export function mergeStates(b, mine, theirs) {
   delete out._writer;
   return out;
 }
+/**
+ * Make target hold src's data without replacing target itself, or the objects and arrays inside it (restaurants and
+ * nights are matched by id), so every reference a screen holds to the state (S, S.nights, a restaurant, its profile...)
+ * stays live after another window's data is taken in. src is not used afterwards (its parts move into target).
+ */
+function intoPlace(target, src) {
+  if (Array.isArray(target)) {
+    const ided = (x) => isObj(x) && x.id != null;
+    const byId = new Map();
+    target.forEach((x) => {
+      if (ided(x) && !byId.has(x.id)) byId.set(x.id, x);
+    });
+    const out = src.map((x) => {
+      if (!ided(x) || !byId.has(x.id)) return x;
+      const t = byId.get(x.id);
+      byId.delete(x.id);
+      return intoPlace(t, x);
+    });
+    target.length = 0;
+    out.forEach((x) => target.push(x));
+    return target;
+  }
+  Object.keys(target).forEach((k) => {
+    if (!(k in src)) delete target[k];
+  });
+  Object.keys(src).forEach((k) => {
+    const t = target[k];
+    const v = src[k];
+    if ((isObj(t) && isObj(v)) || (Array.isArray(t) && Array.isArray(v))) intoPlace(t, v);
+    else target[k] = v;
+  });
+  return target;
+}
 /** What this window shows, leaving out the choices that belong to one window (its tab, restaurant and filter). */
 const withoutTab = (S) => ({
   ...S,
@@ -812,8 +846,10 @@ function absorb(copy) {
   const picked = mine.settings && mine.settings.activeWorkplaceId;
   if (findWorkplace(next, picked)) next.settings.activeWorkplaceId = picked;
   const visible = !same(withoutTab(next), withoutTab(mine));
-  cache = next;
+  intoPlace(cache, next); // never a new state object: screens keep writing into the live one
   base = clone(theirs);
+  // Nothing of this copy's own was waiting: what it holds now is what is stored, so there is nothing to write back.
+  if (!hadChanges) written = JSON.stringify(cache);
   lastKnown = savedAtOf(copy);
   lockedOn = null;
   return { changed: true, conflict: hadChanges && !same(next, theirs), visible };
@@ -887,6 +923,13 @@ export async function load() {
   cache = migrate(raw);
   base = clone(cache);
   lastKnown = savedAtOf(raw);
+  written = null;
+  if (raw && savedAtOf(raw)) {
+    const plain = { ...raw };
+    delete plain._savedAt;
+    delete plain._writer;
+    if (same(plain, cache)) written = JSON.stringify(cache); // stored as is: a flush before any change writes nothing
+  }
   lockedOn = null;
   if (!db && opening) {
     // IndexedDB was slow: take in its copy once it opens (if newer), without holding up the first screen
@@ -919,7 +962,9 @@ export function lockFinished({ force = false, today = todayISO() } = {}) {
 }
 /** Replace the whole state (e.g. after restore or erase) and schedule a save. today: for tests (default: the real date). */
 export function setState(next, { today } = {}) {
-  cache = migrate(next, today ? { today } : undefined);
+  const fresh = migrate(next, today ? { today } : undefined);
+  if (cache && fresh !== cache) intoPlace(cache, fresh); // the same state object, so no screen holds a stale one
+  else cache = fresh;
   lockedOn = null;
   scheduleSave();
   return cache;
@@ -969,10 +1014,24 @@ export async function flush() {
       notify(absorb(lsGet(LS_KEY)));
       let at = Math.max(Date.now(), lastKnown + 1);
       let json = JSON.stringify(cache);
+      // Nothing changed since the last write (a page hidden, closed or reloaded without edits): write and announce
+      // nothing, so other open copies are left alone.
+      if (json === written) {
+        if (waiters) waiters.resolve(true);
+        if (onSaveResult) {
+          try {
+            onSaveResult(true);
+          } catch (e) {
+            /* ignore */
+          }
+        }
+        return true;
+      }
       const lsOk = lsSet(LS_KEY, stamped(json, at));
       if (lsOk) {
         base = JSON.parse(json);
         lastKnown = at;
+        written = json;
       }
       // 2. IndexedDB (may be slow or missing).
       let idbOk = false;
@@ -989,6 +1048,7 @@ export async function flush() {
         if (idbOk) {
           base = JSON.parse(json);
           lastKnown = at;
+          written = json;
         }
       }
       ok = lsOk || idbOk;
@@ -1030,6 +1090,7 @@ export function _resetCache() {
   cache = null;
   base = null;
   lastKnown = 0;
+  written = null;
 }
 /** Test helper: how long to wait for IndexedDB before carrying on without it (ms). */
 export function _setIdbWait(ms) {

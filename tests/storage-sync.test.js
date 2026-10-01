@@ -134,3 +134,50 @@ test('save results: a failed write resolves false and is reported; the next good
   assert.equal(await A.s.flush(), true);
   assert.deepEqual(results, [false, true]);
 });
+
+test('a flush with no changes writes nothing and broadcasts nothing; a real change still does', async () => {
+  store.setItem('tipnet.v2', JSON.stringify(realSeed()));
+  const A = await copy();
+  await A.s.flush(); // whatever loading tidied up is written once
+  const heard = [];
+  const ear = new BroadcastChannel('tipnet');
+  ear.onmessage = (e) => heard.push(e.data);
+  let writes = 0;
+  const set = store.setItem.bind(store);
+  store.setItem = (k, v) => {
+    writes++;
+    set(k, v);
+  };
+  try {
+    const before = store.getItem('tipnet.v2');
+    assert.equal(await A.s.flush(), true, 'nothing to save counts as saved');
+    assert.equal(await A.s.flush(), true);
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(writes, 0, 'nothing written');
+    assert.equal(store.getItem('tipnet.v2'), before, 'stored copy untouched (same stamp)');
+    assert.deepEqual(heard, [], 'nothing announced');
+    A.s.getState().settings.theme = 'dark';
+    assert.equal(await A.s.flush(), true);
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(writes, 1);
+    assert.equal(heard.length, 1, 'a real change is announced');
+  } finally {
+    store.setItem = set;
+    ear.close();
+  }
+});
+
+test('a copy just loaded from storage writes nothing when it is hidden or closed unchanged', async () => {
+  store.setItem('tipnet.v2', JSON.stringify(realSeed()));
+  const A = await copy();
+  await A.s.flush();
+  const stampA = stored()._savedAt;
+  const B = await copy(); // B reloads
+  await B.s.flush(); // and is hidden again without changes
+  assert.equal(stored()._savedAt, stampA, 'B wrote nothing');
+  const S = A.s.getState();
+  S.nights.push(night('a7', '2026-09-24'));
+  await A.s.flush();
+  assert.ok(stored().nights.some((n) => n.id === 'a7'));
+  assert.equal(A.s.getState(), S, 'A kept its state object');
+});
