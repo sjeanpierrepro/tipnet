@@ -5,11 +5,15 @@ import * as B from '../app/js/budget.js';
 // Weekly periods Mon-Sun, check arrives 5 days after the period ends (Fri)
 const profile = { freq: 7, periodStart: '2026-09-21', payDelay: 5 };
 const budget = () =>
-  B.migrateBudget({
-    bills: [{ id: 'rent', name: 'Internet', amount: 65, dueDay: 25 }],
-    categories: [],
-    goals: [],
-  });
+  B.migrateBudget(
+    {
+      bills: [{ id: 'rent', name: 'Internet', amount: 65, dueDay: 25 }],
+      categories: [],
+      goals: [],
+    },
+    undefined,
+    '2000-01-01',
+  );
 
 test('lastPayday: the most recent payday on or before today', () => {
   assert.equal(B.lastPayday(profile, '2026-09-28'), '2026-09-25'); // period 9-14..9-20 paid 9-25

@@ -14,7 +14,15 @@ const seed = () =>
     S.workplaces[0].setupDone = true;
     S.budget = exampleBudget();
     S.nights = [
-      { id: 'n0', date: addDays(todayISO(), -1), total: 300, cash: null, pay: { p1: 6 }, barback: true, workplaceId: 'w1' },
+      {
+        id: 'n0',
+        date: addDays(todayISO(), -1),
+        total: 300,
+        cash: null,
+        pay: { p1: 6 },
+        barback: true,
+        workplaceId: 'w1',
+      },
     ];
   });
 const key = (page, k) => page.must(page.$('[data-focus-key="' + k + '"]'), k);
@@ -27,7 +35,12 @@ async function otherWindowSaves(page, withData) {
   theirs.settings.lastTab = theirs.settings.lastTab === 'periods' ? 'setup' : 'periods';
   if (withData) {
     theirs.settings.theme = 'dark';
-    theirs.nights.push({ ...theirs.nights[0], id: 'fromB' + ++stamp, date: addDays(todayISO(), -2), total: 111 });
+    theirs.nights.push({
+      ...theirs.nights[0],
+      id: 'fromB' + ++stamp,
+      date: addDays(todayISO(), -2),
+      total: 111,
+    });
   }
   theirs._savedAt = Date.now() + 1000 + ++stamp;
   theirs._writer = 'window-B';
@@ -139,7 +152,8 @@ for (const withData of [false, true]) {
       // bill (due tomorrow-ish, so no "already paid" question)
       const det = page.$$('details').find((d) => /Add a bill/.test(d.textContent));
       det.open = true;
-      const f = (l) => page.$$('input').find((i) => i.labels && i.labels[0] && i.labels[0].textContent.startsWith(l));
+      const f = (l) =>
+        page.$$('input').find((i) => i.labels && i.labels[0] && i.labels[0].textContent.startsWith(l));
       page.type(f('Bill name'), 'Gym');
       page.type(f('Amount'), '30');
       page.type(f('Due day'), '28');
@@ -147,10 +161,22 @@ for (const withData of [false, true]) {
       await page.settle();
       await bothKept(page, withData);
       for (const S of [storage.getState(), disk(page)]) {
-        assert.ok(S.budget.categories.some((c) => c.name === 'Groceries2'), 'category');
-        assert.ok((S.budget.income || []).some((c) => c.name === 'DoorDash'), 'income');
-        assert.ok(S.budget.goals.some((c) => c.name === 'Trip'), 'goal');
-        assert.ok(S.budget.bills.some((c) => c.name === 'Gym'), 'bill');
+        assert.ok(
+          S.budget.categories.some((c) => c.name === 'Groceries2'),
+          'category',
+        );
+        assert.ok(
+          (S.budget.income || []).some((c) => c.name === 'DoorDash'),
+          'income',
+        );
+        assert.ok(
+          S.budget.goals.some((c) => c.name === 'Trip'),
+          'goal',
+        );
+        assert.ok(
+          S.budget.bills.some((c) => c.name === 'Gym'),
+          'bill',
+        );
       }
     } finally {
       await page.close();
@@ -173,7 +199,10 @@ for (const withData of [false, true]) {
       await page.settle();
       await bothKept(page, withData);
       for (const S of [storage.getState(), disk(page)])
-        assert.ok(S.budget.categories.some((c) => c.name === name), 'restored');
+        assert.ok(
+          S.budget.categories.some((c) => c.name === name),
+          'restored',
+        );
     } finally {
       await page.close();
     }

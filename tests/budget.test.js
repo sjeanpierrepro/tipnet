@@ -5,10 +5,11 @@ import * as B from '../app/js/budget.js';
 
 const P = () => M.exampleProfile(TODAY); // period 2026-09-21 .. 2026-10-04
 const TODAY = '2026-09-28';
+const LONG_AGO = '2000-01-01'; // bills that started long ago: every due date counts
 const dates = (list) => list.map((b) => b.id + '@' + b.date);
 
 test('bills due: month rollover', () => {
-  const b = B.exampleBudget();
+  const b = B.exampleBudget(LONG_AGO);
   assert.deepEqual(dates(B.billsDue(b, '2026-09-28', '2026-10-16')), ['b1@2026-10-01', 'b2@2026-10-15']);
   assert.deepEqual(dates(B.billsDue(b, '2026-12-25', '2027-01-02')), ['b1@2027-01-01']);
   assert.deepEqual(dates(B.billsDue(b, '2026-09-15', '2026-09-15')), ['b2@2026-09-15']);
@@ -165,23 +166,27 @@ test('migrateBudget handles garbage', () => {
   assert.deepEqual(B.migrateBudget(null), B.emptyBudget());
   assert.deepEqual(B.migrateBudget('nope'), B.emptyBudget());
   assert.deepEqual(B.migrateBudget({ bills: 5, goals: 'x', paidBills: [] }), B.emptyBudget());
-  const m = B.migrateBudget({
-    bills: [
-      null,
-      { name: '', amount: 'abc', dueDay: 99 },
-      { id: 'k', name: 'Gym', amount: '19.999', dueDay: -3 },
-    ],
-    categories: [{ monthly: -5 }],
-    goals: [{ target: 'x' }],
-    spends: [
-      { date: 'bad', amount: 5 },
-      { date: '2026-09-01', amount: '12.5', categoryId: 7, note: 'tacos' },
-    ],
-    paidBills: { '0:b1': true, '1:b1': 'yes' },
-  });
+  const m = B.migrateBudget(
+    {
+      bills: [
+        null,
+        { name: '', amount: 'abc', dueDay: 99 },
+        { id: 'k', name: 'Gym', amount: '19.999', dueDay: -3 },
+      ],
+      categories: [{ monthly: -5 }],
+      goals: [{ target: 'x' }],
+      spends: [
+        { date: 'bad', amount: 5 },
+        { date: '2026-09-01', amount: '12.5', categoryId: 7, note: 'tacos' },
+      ],
+      paidBills: { '0:b1': true, '1:b1': 'yes' },
+    },
+    undefined,
+    '2026-09-28',
+  );
   assert.deepEqual(m.bills, [
-    { id: 'b1', name: 'Bill', amount: 0, dueDay: 31 },
-    { id: 'k', name: 'Gym', amount: 20, dueDay: 1 },
+    { id: 'b1', name: 'Bill', amount: 0, dueDay: 31, since: '2026-09-28' },
+    { id: 'k', name: 'Gym', amount: 20, dueDay: 1, since: '2026-09-28' },
   ]);
   assert.deepEqual(m.categories, [{ id: 'c1', name: 'Category', monthly: 0 }]);
   assert.deepEqual(m.goals, [{ id: 'g1', name: 'Goal', target: 0, saved: 0, perPaycheck: 0 }]);
@@ -266,7 +271,7 @@ test('payDelay 0: check arrives on the last day of the period', () => {
   assert.deepEqual(B.nextPayday(p, TODAY), { date: '2026-10-04', daysAway: 6 });
   assert.equal(B.nextPayday(p, '2026-10-04').date, '2026-10-18'); // payday today counts as paid
   assert.equal(B.nextPayday(p, '2026-10-05').date, '2026-10-18');
-  const r = B.safeToSpend(B.exampleBudget(), p, M.exampleNights(TODAY), TODAY, { cashOnHand: 2000 });
+  const r = B.safeToSpend(B.exampleBudget(LONG_AGO), p, M.exampleNights(TODAY), TODAY, { cashOnHand: 2000 });
   // due before 10-04; b3 (9-20) fell on the last payday and is still unpaid, so it still counts
   assert.deepEqual(dates(r.bills), ['b3@2026-09-20', 'b1@2026-10-01']);
   assert.equal(r.after.periodStart, '2026-10-04');
@@ -289,12 +294,16 @@ test('semimonthly paydays use payDelay, short months and pre-start dates', () =>
 });
 
 test('safeToSpend on semimonthly counts bills up to payday and in the following half', () => {
-  const b = B.migrateBudget({
-    bills: [
-      { id: 'b1', name: 'Rent', amount: 100, dueDay: 12 },
-      { id: 'b2', name: 'Phone', amount: 40, dueDay: 20 },
-    ],
-  });
+  const b = B.migrateBudget(
+    {
+      bills: [
+        { id: 'b1', name: 'Rent', amount: 100, dueDay: 12 },
+        { id: 'b2', name: 'Phone', amount: 40, dueDay: 20 },
+      ],
+    },
+    undefined,
+    LONG_AGO,
+  );
   const p = { freq: 'semimonthly', periodStart: '2026-09-01', shifts: 6, payTypes: [], deductions: [] };
   const r = B.safeToSpend(b, p, [], '2026-09-10');
   assert.equal(r.payday, '2026-09-16');

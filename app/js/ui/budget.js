@@ -413,6 +413,29 @@ function entityForm(kind, item) {
         )
       : null;
   const freqField = freqSel ? field('How often', freqSel) : null;
+  // A new bill whose due day already passed this month: was this month's one paid? (Yes unless they untick it.)
+  const paidCb =
+    kind === 'bill' && !item
+      ? el('input', { type: 'checkbox', checked: true, 'data-focus-key': 'ef-bill-new-paid' })
+      : null;
+  const paidText = el('span', null, 'Already paid this month?');
+  const paidField = paidCb ? el('label', { class: 'check', hidden: true }, paidCb, paidText) : null;
+  const passedDue = () => {
+    const d = Math.round(numOf(ins.dueDay ? ins.dueDay.value : ''));
+    if (!(d >= 1 && d <= 31)) return null;
+    const today = todayISO();
+    const due = billsDue({ bills: [{ id: 'x', dueDay: d }] }, today.slice(0, 8) + '01', today)[0];
+    return due && due.date < today ? due.date : null;
+  };
+  if (paidField) {
+    const sync = () => {
+      const due = passedDue();
+      paidField.hidden = !due;
+      if (due) paidText.textContent = 'Already paid this month? (it was due ' + fmtDate(due) + ')';
+    };
+    ins.dueDay.addEventListener('input', sync);
+    sync();
+  }
   const btn = el(
     'button',
     {
@@ -442,6 +465,7 @@ function entityForm(kind, item) {
     { class: 'stack-sm', novalidate: true },
     fs.map((x) => x[1]),
     freqField,
+    paidField,
     el('div', { class: 'cluster' }, btn, cancel),
   );
   form.addEventListener('submit', (e) => {
@@ -490,6 +514,13 @@ function entityForm(kind, item) {
         delete item.anchor;
       }
       Object.assign(item, out);
+    } else if (kind === 'bill') {
+      // A bill counts from the day it is added; if this month's due date already passed, from that date, and it is
+      // marked paid unless "Already paid this month?" was unticked (then it shows as owed).
+      const due = passedDue();
+      const bill = { id: newId('b'), ...out, since: due || todayISO() };
+      B.bills.push(bill);
+      if (due && paidCb.checked) B.paidBills[paidKey(bill.id, due)] = true;
     } else B[K.list].push({ id: newId(kind[0]), ...out });
     editing = null;
     save();

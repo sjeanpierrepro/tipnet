@@ -438,7 +438,7 @@ function migrateUnsafe(input, today) {
   const nights = lockAll(workplaces, cleanNights(rawNights), today).nights;
   // Old states and old backup codes have no budget: they get an empty one. Old "Paid" ticks (keyed by pay period) are
   // converted with the first restaurant's schedule, the only one there was then.
-  const budget = migrateBudget(S.budget, workplaces[0].profile);
+  const budget = migrateBudget(S.budget, workplaces[0].profile, today);
   // A goal saved from a restaurant that is gone falls back to the default one (see fundingWorkplaceId in budget.js).
   (budget.goals || []).forEach((g) => {
     if (g.fundedBy !== undefined && !ids.includes(g.fundedBy)) delete g.fundedBy;

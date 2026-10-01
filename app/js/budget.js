@@ -2,7 +2,10 @@
 // Money is added up in whole cents so totals never drift. Dates are "YYYY-MM-DD" strings.
 //
 // Data shape (lives at state.budget):
-//   bills:      [{id, name, amount, dueDay (1-31), category?}]   a bill that repeats every month
+//   bills:      [{id, name, amount, dueDay (1-31), category?, since}]   a bill that repeats every month
+//                 since: the first day it counts (ISO). Due dates before it never show as owed. Set when the bill is added
+//                 (its due date this month when that already passed, so "Already paid this month?" can tick it);
+//                 bills saved before this existed get the day the app was updated.
 //   categories: [{id, name, monthly, freq?, anchor?}]            a spending limit. "monthly" is the amount per period (the name is old).
 //                 freq: 'weekly' (resets Mon-Sun) | 'biweekly' (every 14 days counted from anchor) | absent = monthly (calendar month).
 //                 anchor: the date the category started (ISO), used for biweekly.
@@ -56,13 +59,13 @@ const isDateStr = (v) =>
 export function emptyBudget() {
   return { bills: [], categories: [], goals: [], spends: [], paidBills: {} };
 }
-/** A realistic example for a bartender. Fresh copy each call. */
-export function exampleBudget() {
+/** A realistic example for a bartender. Fresh copy each call. Its bills start today, so none is already overdue. */
+export function exampleBudget(today = todayISO()) {
   return {
     bills: [
-      { id: 'b1', name: 'Rent', amount: 1200, dueDay: 1, category: 'Housing' },
-      { id: 'b2', name: 'Phone', amount: 65, dueDay: 15, category: 'Utilities' },
-      { id: 'b3', name: 'Car insurance', amount: 140, dueDay: 20, category: 'Transport' },
+      { id: 'b1', name: 'Rent', amount: 1200, dueDay: 1, category: 'Housing', since: today },
+      { id: 'b2', name: 'Phone', amount: 65, dueDay: 15, category: 'Utilities', since: today },
+      { id: 'b3', name: 'Car insurance', amount: 140, dueDay: 20, category: 'Transport', since: today },
     ],
     categories: [
       { id: 'c1', name: 'Groceries', monthly: 400 },
@@ -218,7 +221,7 @@ function spentSinceBalance(spends, balance, today) {
  * Pass the profile so old "<periodIndex>:<billId>" paid ticks can be converted to due dates (see convertPaidKeys);
  * without it they are kept as they are until something that has the profile converts them.
  */
-export function migrateBudget(x, profile) {
+export function migrateBudget(x, profile, today = todayISO()) {
   const out = emptyBudget();
   if (!x || typeof x !== 'object') return out;
   const list = (v) => (Array.isArray(v) ? v.filter((i) => i && typeof i === 'object') : []);
@@ -235,6 +238,8 @@ export function migrateBudget(x, profile) {
       dueDay: Math.min(31, Math.max(1, day || 1)),
     };
     if (typeof b.category === 'string' && b.category) bill.category = b.category;
+    // A bill from before "since" existed starts today, so its earlier due dates don't suddenly show as overdue.
+    bill.since = isDateStr(b.since) ? b.since : today;
     return bill;
   });
   out.categories = list(x.categories).map((c, i) => {
@@ -403,7 +408,8 @@ export function billsDue(budget, fromDate, toDate) {
     (budget.bills || []).forEach((bill) => {
       const day = Math.min(Math.max(1, Math.round(num(bill.dueDay)) || 1), last);
       const date = y + '-' + pad(m) + '-' + pad(day);
-      if (date >= fromDate && date <= toDate) found.push({ ...bill, date });
+      if (date >= fromDate && date <= toDate && !(isDateStr(bill.since) && date < bill.since))
+        found.push({ ...bill, date });
     });
     m++;
     if (m > 12) {
