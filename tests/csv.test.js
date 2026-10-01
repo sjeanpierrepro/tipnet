@@ -273,3 +273,17 @@ test('accounting brackets after a currency symbol and "$-3" hours are read as ne
     ['negative', 'negative'],
   );
 });
+
+test('buildNights: with today given, dates after tomorrow are skipped as unreadable dates', () => {
+  const rows = [
+    ['2026-10-01', '100'],
+    ['2026-10-02', '100'], // tomorrow is fine (a shift can run past midnight)
+    ['2026-10-03', '100'],
+  ];
+  const { nights, skipped } = buildNights(rows, { date: 0, total: 1 }, { today: '2026-10-01' });
+  assert.deepEqual(
+    nights.map((n) => n.date),
+    ['2026-10-01', '2026-10-02'],
+  );
+  assert.deepEqual(skipped, [{ row: 3, reason: 'date' }]);
+});

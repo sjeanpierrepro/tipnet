@@ -153,3 +153,4 @@
 - Setup clears the accuracy adjustment only when gross pay or the total of percentage deductions changes (per restaurant), says so in one line, and restores it if the rates are put back. Fixed-deduction edits (like insurance) no longer clear it.
 - Tonight shows a live "Estimated take-home" line right under the tips box on phones, in addition to the full breakdown below.
 - Tapping Refresh for an update reloads other open windows only when nothing is typed there; otherwise they show "Update ready: Refresh".
+- CSV import: rows dated after tomorrow are skipped as unreadable dates (the same bound Tonight uses); the import screen no longer prints a stray "null" when there is one restaurant.

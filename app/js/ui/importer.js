@@ -9,7 +9,7 @@ import {
   dedupeNights,
   mergeNights,
 } from '../csv.js';
-import { num, computeNight } from '../math.js';
+import { num, computeNight, todayISO } from '../math.js';
 import { el, clear, select, money, fmtDate, toast, save, bus, getState } from './common.js';
 import { lockFinished, isWorkplaceSetUp, nightsOf } from '../storage.js';
 
@@ -23,7 +23,7 @@ const FIELDS = [
   ['employee', 'Employee', false],
 ];
 const REASONS = {
-  date: 'no date we could read',
+  date: 'no date we could read, or a date after tomorrow',
   amount: 'no amount',
   negative: 'a negative amount or hours',
   hours: 'hours we could not read, or more than 24',
@@ -218,6 +218,7 @@ export function renderImporter(host) {
       const { nights, skipped } = buildNights(dataRows(), m, {
         employee: st.employee,
         refYear: new Date().getFullYear(),
+        today: todayISO(),
         rate: hourly ? num(hourly.rate) : 0,
         payId: hourly ? hourly.id : null,
         barback: true,
@@ -390,7 +391,7 @@ export function renderImporter(host) {
         { class: 'hint' },
         'Match the columns. Tips is what you were tipped in all. TipNet adds hours times your hourly rate to get the total. If you pick Total made (tips plus pay), that is used as is. Or pick Cash tips and Card tips.',
       ),
-      wpField,
+      ...(wpField ? [wpField] : []),
       grid,
       empHost,
       preview,

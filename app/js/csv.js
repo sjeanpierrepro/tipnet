@@ -1,6 +1,6 @@
 // CSV import helpers. Everything is parsed locally; nothing is uploaded.
 import { toCents, fromCents, formatISO } from './math.js';
-import { parseHoursInput } from './inputs.js';
+import { parseHoursInput, dateProblem } from './inputs.js';
 
 /** RFC 4180-ish parser. Returns an array of rows (arrays of strings). Handles BOM, quotes, "" escapes,
  *  commas and newlines inside quotes, CRLF/LF/CR. Blank lines are dropped. */
@@ -199,7 +199,7 @@ export function listEmployees(rows, mapping) {
 /**
  * buildNights(rows, mapping, opts) -> {nights, skipped}
  *  rows: DATA rows (no header) as arrays. mapping: column indexes {date,total,tips,cash,card,hours,employee}.
- *  opts: {employee, refYear, rate (hourly $ for hours*rate), payId (id of the first HOURLY pay type; hours are stored there;
+ *  opts: {today (ISO; dates after tomorrow are skipped as 'date'), employee, refYear, rate (hourly $ for hours*rate), payId (id of the first HOURLY pay type; hours are stored there;
  *         null = no hourly pay type, so hours are ignored), barback (default true)}
  *  total = total column, else tips (or cash + card) + hours * rate. When the Tips column is mapped the night also stores
  *  `tips`. Several rows on the same date are summed.
@@ -207,7 +207,7 @@ export function listEmployees(rows, mapping) {
  *  reason is 'date', 'amount', 'hours' (unreadable, ambiguous or over 24), or 'negative' for a negative money or hours value).
  */
 export function buildNights(rows, mapping, opts = {}) {
-  const { employee, refYear, rate = 0, payId = 'p1', barback = true } = opts;
+  const { employee, refYear, rate = 0, payId = 'p1', barback = true, today } = opts;
   const useHours = payId != null;
   const byDate = new Map();
   const skipped = [];
@@ -215,7 +215,7 @@ export function buildNights(rows, mapping, opts = {}) {
     const rowNo = i + 1;
     if (mapping.employee != null && employee && String(r[mapping.employee] || '').trim() !== employee) return;
     const date = parseDate(r[mapping.date], refYear);
-    if (!date) {
+    if (!date || (today && dateProblem(date, today))) {
       skipped.push({ row: rowNo, reason: 'date' });
       return;
     }
