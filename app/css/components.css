@@ -212,6 +212,14 @@ textarea {
   color: var(--muted);
   margin: 0;
 }
+/* Tonight: the take-home right under the tips box, so it shows on a phone without scrolling past Save */
+.quick-net {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
 .note {
   font-size: 14px;
   padding: var(--s-2) var(--s-3);

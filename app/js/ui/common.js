@@ -475,9 +475,12 @@ export function setInstallPrompt(e) {
 export const restoreRequest = { open: false };
 
 /* ---------- example banner (shown on Tonight, Pay periods, Setup) ---------- */
+/** The example nights were on screen this session ("Example nights cleared." is only said to someone who saw them). */
+export const exampleShown = { seen: false };
 export function exampleBanner({ restore = true } = {}) {
   const S = getState();
   if (!S.profileExample && !S.nightsExample) return null;
+  if (!S.profileExample) exampleShown.seen = true; // "The nights listed are examples": they are on screen
   const text = S.profileExample
     ? 'You are looking at example numbers. Open Setup and enter your own paystub to get your real take-home.'
     : 'The nights listed are examples. Clear them before you start logging.';

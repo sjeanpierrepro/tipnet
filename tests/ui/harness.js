@@ -80,6 +80,7 @@ export async function boot({ url = 'http://localhost/', seed = null, payments = 
   common.install.deferred = null;
   common.install.listeners.clear();
   common.install.last = null;
+  common.exampleShown.seen = false;
   BILLING.provider = payments ? 'lemonsqueezy' : null;
   BILLING.checkout.monthly = '';
   BILLING.checkout.yearly = '';

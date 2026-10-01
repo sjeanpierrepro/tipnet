@@ -963,7 +963,8 @@ export function lockFinished({ force = false, today = todayISO() } = {}) {
 /** Replace the whole state (e.g. after restore or erase) and schedule a save. today: for tests (default: the real date). */
 export function setState(next, { today } = {}) {
   const fresh = migrate(next, today ? { today } : undefined);
-  if (cache && fresh !== cache) intoPlace(cache, fresh); // the same state object, so no screen holds a stale one
+  if (cache && fresh !== cache)
+    intoPlace(cache, fresh); // the same state object, so no screen holds a stale one
   else cache = fresh;
   lockedOn = null;
   scheduleSave();

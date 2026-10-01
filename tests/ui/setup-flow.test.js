@@ -368,24 +368,34 @@ test('guided setup: ticking the tip-out box shows no error until the amount is l
   }
 });
 
-test('guided setup: Finish clears the example nights and says so', async () => {
-  const page = await boot();
-  try {
-    assert.equal(page.state().nightsExample, true);
-    assert.ok(page.state().nights.length > 0);
-    page.tab('setup');
-    page.type(dateInputs(page)[0], '2026-09-01');
-    page.type(page.$('input[placeholder="e.g. 2,000"]', page.app), '1500');
-    next(page);
-    page.click(page.$('#no-ded'));
-    next(page);
-    page.type(page.$('input[placeholder="e.g. 12"]', page.app), '10');
-    page.click(page.button('Finish setup'));
-    const S = page.state();
-    assert.equal(S.nightsExample, false);
-    assert.equal(S.nights.length, 0);
-    assert.match(page.doc.body.textContent, /Example nights cleared\./);
-  } finally {
-    await page.close();
-  }
-});
+for (const saw of [true, false])
+  test(
+    'guided setup: Finish clears the example nights' +
+      (saw ? ' and says so' : '; never shown, so nothing is said about them'),
+    async () => {
+      const page = await boot();
+      try {
+        assert.equal(page.state().nightsExample, true);
+        assert.ok(page.state().nights.length > 0);
+        if (saw) {
+          page.tab('tonight');
+          page.click(page.button('See an example first'));
+        }
+        page.tab('setup');
+        page.type(dateInputs(page)[0], '2026-09-01');
+        page.type(page.$('input[placeholder="e.g. 2,000"]', page.app), '1500');
+        next(page);
+        page.click(page.$('#no-ded'));
+        next(page);
+        page.type(page.$('input[placeholder="e.g. 12"]', page.app), '10');
+        page.click(page.button('Finish setup'));
+        const S = page.state();
+        assert.equal(S.nightsExample, false);
+        assert.equal(S.nights.length, 0);
+        if (saw) assert.match(page.doc.body.textContent, /Example nights cleared\./);
+        else assert.doesNotMatch(page.doc.body.textContent, /Example nights cleared/);
+      } finally {
+        await page.close();
+      }
+    },
+  );

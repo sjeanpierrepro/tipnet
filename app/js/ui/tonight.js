@@ -48,6 +48,7 @@ import {
   fmtDate,
   periodLabel,
   exampleBanner,
+  exampleShown,
   setupFirstCard,
   workplaceSwitcher,
   save,
@@ -375,7 +376,7 @@ export function jobsText(n, p) {
 /**
  * nightFields(p, d, {big, onInput, key, rateOf}) builds the entry fields bound to draft d.
  *   rateOf(t): the rate shown for pay type t (default its Setup rate; the editor passes a locked night's own rates).
- * Returns {root, totalInput, setTotalError, setHoursError, setDateError, refresh, focusPay(id)}.
+ * Returns {root, totalInput, totalNode (the tips/total box), setTotalError, setHoursError, setDateError, refresh, focusPay(id)}.
  */
 export function nightFields(
   p,
@@ -729,6 +730,7 @@ export function nightFields(
   return {
     root: rootEl,
     totalInput,
+    totalNode,
     setTotalError,
     setHoursError,
     setDateError: (m) => dateField.setError(m),
@@ -828,7 +830,8 @@ export function resultCard(c, w, note, hoursMissing = false) {
           'after your cash, what is left on the check does not cover this night’s share of your fixed deductions, so this night shrinks your check.',
         ),
       );
-    } else {
+    } else if (!c.cashOffPayroll) {
+      // Not said when tonight's cash wasn't run through payroll: then no tax on it comes out of the check.
       kids.push(
         el(
           'p',
@@ -966,6 +969,7 @@ export function render(root) {
             text: 'TipNet works out your take-home from one recent paystub. It takes about 3 minutes, and your numbers stay on this device.',
             example: () => {
               showExample = true;
+              exampleShown.seen = true;
               bus.rerender();
               const h = document.getElementById('example-heading');
               if (h) h.focus();
@@ -1020,6 +1024,9 @@ export function render(root) {
   }, 800);
   const savedMsg = el('p', { class: 'hint', role: 'status' });
   const dupHost = el('div');
+  // On a phone the full card is far below Save: a short line right under the tips box follows the typing. Not a live
+  // region (the debounced summary above already speaks it).
+  const quick = el('p', { class: 'quick-net', 'data-focus-key': 'night-quick-net' });
 
   const update = () => {
     const hist = historyOf(S, w);
@@ -1060,6 +1067,12 @@ export function render(root) {
       resultCard(c, w, low && ot ? el('div', { class: 'stack-sm' }, low, ot) : low || ot, hoursMissing),
     );
     lastSummary = c.total && !(tipsMode(p) && hoursMissing) ? 'Estimated take-home ' + money(c.net) : '';
+    quick.textContent = !c.total
+      ? ''
+      : tipsMode(p) && hoursMissing
+        ? 'Add tonight’s hours to see your take-home.'
+        : 'Estimated take-home: ' + money(c.net);
+    quick.hidden = !c.total;
     if (!started) {
       started = true;
       liveSummary.textContent = lastSummary;
@@ -1085,6 +1098,7 @@ export function render(root) {
     el('button', { class: 'btn btn-block', type: 'submit' }, many ? 'Save night at ' + w.name : 'Save night'),
     savedMsg,
   );
+  fields.totalNode.after(quick);
   const finish = (night, net, cashWas, verb) => {
     if (S.nightsExample) {
       S.nights = [];

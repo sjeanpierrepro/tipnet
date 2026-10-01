@@ -814,6 +814,21 @@ const CHECK_HINT = {
   average:
     'No night in the pay period this check pays for has cash entered yet, so the projected check is your average check from past pay periods.',
 };
+/** True when any restaurant has a night with cash entered in its current pay period. */
+function cashLoggedNow(src, today = todayISO()) {
+  return src.some((s) => {
+    if (!s.profile || !s.profile.periodStart) return false;
+    const r = periodRange(s.profile, periodIndex(s.profile, today));
+    return s.nights.some(
+      (n) =>
+        n.date >= r.start &&
+        n.date <= r.end &&
+        n.cash !== '' &&
+        n.cash != null &&
+        Number.isFinite(parseFloat(n.cash)),
+    );
+  });
+}
 function nextCheckCard(S, r0, src) {
   const a = r0.after;
   const known = a.projectedCheck != null;
@@ -864,7 +879,9 @@ function nextCheckCard(S, r0, src) {
               ? 'A check marked “Not known yet” is left out until TipNet can estimate it. '
               : '') + 'Each check is worked out from that restaurant’s own nights.'
           : CHECK_HINT[a.checkFrom] || CHECK_HINT.current
-        : 'Log a night with its cash in hand and TipNet can estimate your check. The check is what is left after the cash you already took home.',
+        : cashLoggedNow(src)
+          ? 'This check pays for a pay period with no nights with cash entered, so TipNet can’t estimate it yet. The check is what is left after the cash you already took home.'
+          : 'Log a night with its cash in hand and TipNet can estimate your check. The check is what is left after the cash you already took home.',
     ),
   );
 }

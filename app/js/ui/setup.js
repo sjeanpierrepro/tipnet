@@ -39,6 +39,7 @@ import {
   restoreRequest,
   arm,
   workplaceSwitcher,
+  exampleShown,
 } from './common.js';
 import { cutoffFromSettings } from '../inputs.js';
 import {
@@ -71,6 +72,7 @@ export function reset() {
   noDeductions = false;
   adding = null;
   restoreRequest.open = false;
+  rateCleared.clear();
 }
 /**
  * The guided flow is kept in the saved state (settings.guidedDraft = {workplaceId, step, noDeductions, profile?}), so a
@@ -168,12 +170,31 @@ function presetSelect(presets, current, id, fallback = 'other') {
 
 /* ============ context shared by the cards on one render ============ */
 let saveSeq = 0; // the newest edit's save decides the "All changes saved" line
+/** What the paystub rate is worked out from: gross pay and the percentage deductions' total (in cents). */
+const rateSig = (p) =>
+  JSON.stringify([
+    Math.round(num(p.gross) * 100),
+    Math.round(
+      (p.deductions || []).filter((d) => d.mode === 'pct').reduce((s, d) => s + num(d.amount), 0) * 100,
+    ),
+  ]);
+/** Restaurant id -> {sig, value}: its accuracy adjustment was cleared by a paystub change this session. */
+const rateCleared = new Map();
+export const RATE_NOTE =
+  'Your paystub rates changed, so TipNet’s accuracy adjustment was cleared. Check a paycheck again after payday.';
 /** w: the restaurant being set up. blank: the guided steps fill in gProfile (the first restaurant, still the example). */
 function makeCtx(w, blank = false, guidedNow = blank) {
   const S = getState();
   if (blank && !gProfile) gProfile = blankProfile();
   const live = [];
   const saved = el('p', { class: 'hint', role: 'status', 'aria-live': 'polite' });
+  const rateNote = el('p', { class: 'hint', role: 'status', 'aria-live': 'polite' });
+  const showRateNote = () => {
+    const on = !blank && !!w && rateCleared.has(w.id);
+    const text = on ? RATE_NOTE : '';
+    if (rateNote.textContent !== text) rateNote.textContent = text;
+    rateNote.hidden = !on;
+  };
   const ctx = {
     S,
     w,
@@ -189,15 +210,31 @@ function makeCtx(w, blank = false, guidedNow = blank) {
     gate(f, msg) {
       f.setError(ctx.showAll || ctx.seen.has(f) ? msg : '');
     },
-    /** Call after any profile edit. resetRate: the tax rate from paystub changed, so drop the calibration adjustment. */
-    touch(resetRate) {
+    rateNote,
+    /**
+     * Call after any profile edit. The accuracy adjustment (rateOverride) is cleared only when the paystub rates really
+     * changed: gross pay, or a percentage deduction's amount or mode (a fixed amount or a name never does). Putting the
+     * rates back (Undo) brings the adjustment back. The argument is kept for older calls and is not used.
+     */
+    touch() {
       if (blank) {
         live.forEach((f) => f());
         keepGuided(S); // guided on the example: only the draft is saved until Finish
         return;
       }
       S.profileExample = false;
-      if (resetRate) w.profile.rateOverride = null;
+      const pw = w.profile;
+      const sig = rateSig(pw);
+      const was = rateCleared.get(w.id);
+      if (was && was.sig === sig && pw.rateOverride == null) {
+        pw.rateOverride = was.value; // back to the rates it was learned with
+        rateCleared.delete(w.id);
+      } else if (pw.rateOverride != null && ctx.sig != null && sig !== ctx.sig) {
+        rateCleared.set(w.id, { sig: ctx.sig, value: pw.rateOverride });
+        pw.rateOverride = null;
+      }
+      ctx.sig = sig;
+      showRateNote();
       saved.textContent = 'Saving…';
       // "All changes saved" only after the write really worked (a full or blocked storage says so instead)
       const n = ++saveSeq;
@@ -210,6 +247,8 @@ function makeCtx(w, blank = false, guidedNow = blank) {
       live.forEach((f) => f());
     },
   };
+  ctx.sig = blank || !w ? null : rateSig(w.profile);
+  showRateNote();
   return ctx;
 }
 
@@ -1417,7 +1456,7 @@ function guided(root, ctx) {
     toast(
       (many ? w.name + ' is set up.' : 'Setup saved.') + ' Enter a night to see your estimated take-home.',
     );
-    if (hadExamples) toast('Example nights cleared.');
+    if (hadExamples && exampleShown.seen) toast('Example nights cleared.');
   });
   const skip = el(
     'button',
@@ -1543,6 +1582,7 @@ function guided(root, ctx) {
       steps,
       body,
       ctx.saved,
+      ctx.rateNote,
       el('div', { class: 'cluster' }, back, next),
       skip,
       cancel ? el('div', null, cancel) : null,
@@ -1651,6 +1691,7 @@ export function render(root) {
         : null,
       notReadyNote(ctx),
       ctx.saved,
+      ctx.rateNote,
       addWorkplaceCard(S0),
       workplaceCard(ctx),
       periodCard(ctx, { title: 'From your paystub' }),
