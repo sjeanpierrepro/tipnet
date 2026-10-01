@@ -261,7 +261,7 @@ export function migrateBudget(x, profile, today = todayISO()) {
     if (c.freq === 'weekly' || c.freq === 'biweekly') {
       cat.freq = c.freq;
       if (isDateStr(c.anchor)) cat.anchor = c.anchor;
-      else if (c.freq === 'biweekly') cat.anchor = todayISO();
+      else if (c.freq === 'biweekly') cat.anchor = today;
     }
     return cat;
   });

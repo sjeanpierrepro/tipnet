@@ -9,7 +9,7 @@ import {
   dedupeNights,
   mergeNights,
 } from '../csv.js';
-import { num, computeNight, todayISO } from '../math.js';
+import { num, computeNight, todayISO, shiftsPerPeriod, periodIndex } from '../math.js';
 import { el, clear, select, money, fmtDate, toast, save, bus, getState } from './common.js';
 import { lockFinished, isWorkplaceSetUp, nightsOf } from '../storage.js';
 
@@ -226,8 +226,12 @@ export function renderImporter(host) {
       nights.forEach((n) => {
         n.workplaceId = w.id;
       });
-      // What the math will use after import: the stored night itself, so the preview cannot differ from the result.
-      const takeHome = (n) => computeNight(n, p).net;
+      // What the math will use after import: the stored night itself, with the shift count from that restaurant's history
+      // (its real nights plus these), so the preview cannot differ from the result.
+      const history = (S.nightsExample ? [] : nightsOf(S, w.id)).concat(nights);
+      const today = todayISO();
+      const takeHome = (n) =>
+        computeNight(n, p, shiftsPerPeriod(p, history, today, periodIndex(p, n.date)).n).net;
       // Duplicate dates are looked for at that restaurant only: a night at another restaurant on the same date is separate.
       const { duplicates } = dedupeNights(nights, S.nightsExample ? [] : nightsOf(S, w.id));
       preview.append(el('h3', null, 'Preview'));

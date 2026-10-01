@@ -317,14 +317,24 @@ test('pay periods: All / one restaurant filter (remembered), names under All, ed
 test('import: with two restaurants it asks which one; duplicate dates are looked for at that restaurant only', async () => {
   const seed = twoState((S) => {
     S.nights = [
-      { id: 'ex', date: '2026-09-02', total: 50, cash: 10, pay: {}, barback: true, workplaceId: 'w1' },
+      {
+        id: 'ex',
+        date: addDays(todayISO(), -40),
+        total: 50,
+        cash: 10,
+        pay: {},
+        barback: true,
+        workplaceId: 'w1',
+      },
     ];
   });
   const page = await boot({ seed });
   try {
     page.tab('setup');
     const input = page.must(page.$('input[type=file]', page.app), 'file input');
-    const csv = ['Date,Total,Cash', '2026-09-01,120,40', '2026-09-02,90,30'].join('\n');
+    // dated relative to (fake) today, so the file is never in the future (tools/run-dates.mjs)
+    const d = (n) => addDays(todayISO(), n);
+    const csv = ['Date,Total,Cash', d(-41) + ',120,40', d(-40) + ',90,30'].join('\n');
     Object.defineProperty(input, 'files', {
       value: [{ name: 'spot.csv', text: async () => csv }],
       configurable: true,

@@ -220,3 +220,12 @@ test('spendingPerPaycheck: per-day allowance times the days in a pay period', ()
   // Per year: 100 x 52 + 200 x 26 + 400 x 12 = 15200. A 14-day period: 15200 x 14 / 365 = 583.01
   assert.equal(B.spendingPerPaycheck(b, P(), TODAY), 583.01);
 });
+
+test('migrateBudget: a bad biweekly anchor falls back to the today passed in, not the real clock', () => {
+  const m = B.migrateBudget(
+    { categories: [{ id: 'f', name: 'F', monthly: 10, freq: 'biweekly', anchor: 'nope' }] },
+    undefined,
+    '2031-05-06',
+  );
+  assert.equal(m.categories[0].anchor, '2031-05-06');
+});

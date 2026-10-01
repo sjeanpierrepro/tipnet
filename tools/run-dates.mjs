@@ -11,10 +11,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const preload = pathToFileURL(path.join(root, 'tools', 'fake-today.mjs')).href;
-// Right after the example pay period ends (the old time bomb), a new year, and a leap day.
+// Right after the example pay period ends (the old time bomb), a new year, a leap day, a month end before the fixtures'
+// September (2026-01-31) and the US daylight-saving switch (2026-03-08).
 const dates = process.argv.slice(2).length
   ? process.argv.slice(2)
-  : ['2026-10-05', '2027-01-01', '2028-02-29'];
+  : ['2026-10-05', '2027-01-01', '2028-02-29', '2026-01-31', '2026-03-08'];
 const testGlob = 'tests/**/*.test.js';
 
 const failed = [];

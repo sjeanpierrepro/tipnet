@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { boot, realState } from './harness.js';
+import { addDays, todayISO } from '../../app/js/math.js';
+
+// Fixture dates are written as September 2026 and moved to about six weeks before (fake) today, so a file is never
+// in the future whatever date the tests run on (tools/run-dates.mjs).
+const day = (n) => addDays(todayISO(), n - 45);
+const dated = (s) => s.replace(/2026-09-(\d\d)/g, (_, d) => day(Number(d)));
 
 const seed = (nights = []) =>
   realState((S) => {
@@ -13,7 +19,10 @@ const seed = (nights = []) =>
   });
 async function pickFile(page, name, text) {
   const input = page.must(page.$('input[type=file]', page.app), 'file input');
-  Object.defineProperty(input, 'files', { value: [{ name, text: async () => text }], configurable: true });
+  Object.defineProperty(input, 'files', {
+    value: [{ name, text: async () => dated(text) }],
+    configurable: true,
+  });
   page.change(input);
   await page.settle();
 }
@@ -34,11 +43,11 @@ test('importer: a "Total Tips" column imports as tips, plus hours at the hourly 
     assert.match(t, /Row 3: hours we could not read, or more than 24/);
     page.click(page.button('Import 2 nights'));
     await page.settle();
-    const n = page.state().nights.find((x) => x.date === '2026-09-05');
+    const n = page.state().nights.find((x) => x.date === day(5));
     assert.equal(n.total, 384); // 300 tips + 7 h x $12
     assert.equal(n.tips, 300);
     assert.deepEqual(n.pay, { p1: 7 });
-    assert.equal(page.state().nights.find((x) => x.date === '2026-09-07').pay.p1, 7.5);
+    assert.equal(page.state().nights.find((x) => x.date === day(7)).pay.p1, 7.5);
   } finally {
     await page.close();
   }
@@ -46,8 +55,8 @@ test('importer: a "Total Tips" column imports as tips, plus hours at the hourly 
 
 test('importer: Replace says it replaces every night on the date, and does', async () => {
   const two = [
-    { id: 'a', date: '2026-09-05', total: 50, cash: 10, pay: { p1: 4 }, barback: true },
-    { id: 'b', date: '2026-09-05', total: 40, cash: 5, pay: { p1: 3 }, barback: true },
+    { id: 'a', date: day(5), total: 50, cash: 10, pay: { p1: 4 }, barback: true },
+    { id: 'b', date: day(5), total: 40, cash: 5, pay: { p1: 3 }, barback: true },
   ];
   const page = await boot({ url: 'http://localhost/', seed: seed(two) });
   try {
@@ -59,7 +68,7 @@ test('importer: Replace says it replaces every night on the date, and does', asy
     page.change(replace);
     page.click(page.button('Import 1 night'));
     await page.settle();
-    const on5 = page.state().nights.filter((n) => n.date === '2026-09-05');
+    const on5 = page.state().nights.filter((n) => n.date === day(5));
     assert.equal(on5.length, 1);
     assert.equal(on5[0].total, 200);
   } finally {
@@ -106,7 +115,7 @@ test('importer: Total and Tips both mapped: Total wins, no tips stored, preview 
     assert.match(t, /Total made is used as is/);
     page.click(page.button('Import 1 night'));
     await page.settle();
-    const n = page.state().nights.find((x) => x.date === '2026-09-05');
+    const n = page.state().nights.find((x) => x.date === day(5));
     assert.equal(n.total, 320);
     assert.equal(n.tips, undefined);
   } finally {
