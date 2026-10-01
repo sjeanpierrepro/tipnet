@@ -224,6 +224,7 @@ export function buildNights(rows, mapping, opts = {}) {
     const tips = mapping.tips != null ? parseMoney(r[mapping.tips]) : null;
     const hours = mapping.hours != null && useHours ? parseHours(r[mapping.hours]) : 0;
     let total = mapping.total != null ? parseMoney(r[mapping.total]) : null;
+    const hadTotal = total != null;
     // A negative amount or hours (refund, void, typo) is not a night we can trust: skip the row and say why.
     const negHours = mapping.hours != null && useHours && looksNegative(r[mapping.hours]);
     if (
@@ -248,10 +249,12 @@ export function buildNights(rows, mapping, opts = {}) {
       }
       total = fromCents(toCents(tipsAmt || 0) + toCents(hours * rate));
     }
-    const cur = byDate.get(date) || { date, totalC: 0, cashC: null, tipsC: null, hours: 0 };
+    const cur = byDate.get(date) || { date, totalC: 0, cashC: null, tipsC: null, hours: 0, noTips: false };
     cur.totalC += toCents(total);
     if (cash != null) cur.cashC = (cur.cashC || 0) + toCents(cash);
-    if (tips != null) cur.tipsC = (cur.tipsC || 0) + toCents(tips);
+    // A Total column wins: that row's total is stored as is, and no tips are stored beside it (tips + current pay could differ).
+    if (hadTotal) cur.noTips = true;
+    else if (tips != null) cur.tipsC = (cur.tipsC || 0) + toCents(tips);
     cur.hours += hours;
     byDate.set(date, cur);
   });
@@ -267,7 +270,7 @@ export function buildNights(rows, mapping, opts = {}) {
         pay: c.hours ? { [payId]: c.hours } : {},
         barback,
       };
-      if (c.tipsC != null) n.tips = fromCents(c.tipsC);
+      if (c.tipsC != null && !c.noTips) n.tips = fromCents(c.tipsC);
       return n;
     });
   return { nights, skipped };

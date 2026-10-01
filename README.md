@@ -38,6 +38,8 @@ To check that no test depends on today's date, run the same tests as if today we
 npm run test:dates
 ```
 
+(`npm test` runs `tests/**/*.test.js`; the date check is tools/run-dates.mjs and prints the test count per date.)
+
 To see TipNet running locally:
 
 ```
@@ -60,8 +62,8 @@ Both give you an https link that works on any device.
 ## Project folders
 
 - `app/` — the TipNet website. Everything you deploy goes here.
-- `tests/` — unit tests for all the money math.
-- `tools/` — build scripts (like make-icons.ps1).
+- `tests/` — automated tests: the money math, storage, budget and the screens.
+- `tools/` — build and check scripts (make-icons.ps1, check-version.mjs, run-dates.mjs).
 - `app/js/math.js` — pure math functions (no buttons or screens). This is what the tests check.
 - `integrations/` — the "Toast seam" (kept outside `app/` so it isn't published). Today TipNet imports any CSV file (Setup > Import nights). Toast has no built-in support yet: once a real Toast export is available, it becomes a saved column preset in `app/js/csv.js` (see `integrations/README.md`). A live Toast connection would need a server and is not part of this app.
 - `archive/` — the original approved prototype, kept for reference.

@@ -9,7 +9,7 @@ import {
   dedupeNights,
   mergeNights,
 } from '../csv.js';
-import { num } from '../math.js';
+import { num, computeNight } from '../math.js';
 import { el, clear, select, money, fmtDate, toast, save, bus, getState } from './common.js';
 import { lockFinished, isWorkplaceSetUp, nightsOf } from '../storage.js';
 
@@ -225,6 +225,8 @@ export function renderImporter(host) {
       nights.forEach((n) => {
         n.workplaceId = w.id;
       });
+      // What the math will use after import: the stored night itself, so the preview cannot differ from the result.
+      const takeHome = (n) => computeNight(n, p).net;
       // Duplicate dates are looked for at that restaurant only: a night at another restaurant on the same date is separate.
       const { duplicates } = dedupeNights(nights, S.nightsExample ? [] : nightsOf(S, w.id));
       preview.append(el('h3', null, 'Preview'));
@@ -261,11 +263,20 @@ export function renderImporter(host) {
                 'li',
                 { class: 'list-row' },
                 el('div', { class: 'main' }, fmtDate(n.date)),
-                el('div', { class: 'num' }, money(n.total)),
+                el('div', { class: 'num' }, money(n.total) + ' made'),
+                el('div', { class: 'hint' }, 'about ' + money(takeHome(n)) + ' take-home'),
               ),
             ),
         ),
       );
+      if (m.total != null && m.tips != null)
+        preview.append(
+          el(
+            'p',
+            { class: 'hint' },
+            'Both Total made and Tips are chosen: Total made is used as is, and Tips is ignored.',
+          ),
+        );
       if (nights.length > 5)
         preview.append(el('p', { class: 'hint' }, 'and ' + (nights.length - 5) + ' more.'));
       if (m.hours != null && !hourly)

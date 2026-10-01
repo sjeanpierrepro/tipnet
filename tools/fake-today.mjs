@@ -1,4 +1,4 @@
-// Preloaded by tools/test-dates.mjs (node --import): when TIPNET_FAKE_TODAY=YYYY-MM-DD is set, the clock starts at noon
+// Preloaded by tools/run-dates.mjs (node --import): when TIPNET_FAKE_TODAY=YYYY-MM-DD is set, the clock starts at noon
 // on that day and keeps ticking from there. `new Date()` and `Date.now()` see the fake time; dates built from explicit
 // values are unchanged. Without the variable this file does nothing.
 import process from 'node:process';

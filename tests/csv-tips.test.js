@@ -94,3 +94,26 @@ test('Replace removes every existing night on that date', () => {
   assert.equal(n.cash, null);
   assert.deepEqual(n.pay, { p1: 7 });
 });
+
+test('Total mapped wins over Tips: total stored as is, no night.tips', () => {
+  const { nights } = buildNights(
+    [['9/5/2026', '$300', '7', '$320']],
+    { date: 0, tips: 1, hours: 2, total: 3 },
+    { rate: 12, payId: 'p1' },
+  );
+  assert.equal(nights[0].total, 320);
+  assert.equal(nights[0].tips, undefined);
+});
+
+test('Total mapped with a blank total on one row: that row falls back to tips + pay, and the date stores no tips', () => {
+  const { nights } = buildNights(
+    [
+      ['9/5/2026', '$100', '', '$150'],
+      ['9/5/2026', '$50', '', ''],
+    ],
+    { date: 0, tips: 1, total: 3 },
+    {},
+  );
+  assert.equal(nights[0].total, 200);
+  assert.equal(nights[0].tips, undefined);
+});

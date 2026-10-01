@@ -31,7 +31,7 @@ export const BILLING = {
   // Set it to true while you try a test purchase (see PAYMENTS.md), and set it back to false before going live.
   allowTestMode: false,
 
-  // Leave this empty. It is only used if browsers ever stop allowing direct calls to
-  // Lemon Squeezy; see proxy/lemonsqueezy-worker.js and DECISIONS.md.
+  // Leave this empty. Only if browsers ever block direct calls to Lemon Squeezy: set it to a proxy you run and add its
+  // origin to connect-src. See DECISIONS.md (Payments) and git history for a proxy example.
   proxyUrl: '',
 };

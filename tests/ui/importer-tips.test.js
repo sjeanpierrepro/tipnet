@@ -92,3 +92,24 @@ test('importer: no hourly pay type means hours are not imported, with a note', a
     await page.close();
   }
 });
+
+test('importer: Total and Tips both mapped: Total wins, no tips stored, preview shows it', async () => {
+  const page = await boot({ url: 'http://localhost/', seed: seed() });
+  try {
+    page.tab('setup');
+    await pickFile(page, 'x.csv', 'Date,Tips,Total made,Hours\n2026-09-05,300,320,7');
+    assert.equal(page.$('#map-tips').value, '1');
+    assert.equal(page.$('#map-total').value, '2');
+    const t = page.text();
+    assert.match(t, /[$]320[.]00 made/);
+    assert.match(t, /take-home/);
+    assert.match(t, /Total made is used as is/);
+    page.click(page.button('Import 1 night'));
+    await page.settle();
+    const n = page.state().nights.find((x) => x.date === '2026-09-05');
+    assert.equal(n.total, 320);
+    assert.equal(n.tips, undefined);
+  } finally {
+    await page.close();
+  }
+});

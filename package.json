@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test",
-    "test:dates": "node tools/test-dates.mjs",
+    "test": "node --test \"tests/**/*.test.js\"",
+    "test:dates": "node tools/run-dates.mjs",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write ."
   },
