@@ -175,7 +175,7 @@ export function restoreFocus(root, saved) {
 /**
  * The service worker changed (controllerchange). askedHere: Refresh was tapped in this window. offered: this window
  * knew an update was waiting. unsaved: something is typed here that is not saved yet.
- * 'reload' now; 'offer' the "Update ready: Refresh" bar (another window's Refresh, with typing here); 'ignore' (first install).
+ * 'reload' now; 'offer' the "Update available. Refresh" bar (another window's Refresh, with typing here); 'ignore' (first install).
  */
 export function updateAction({ askedHere, offered, unsaved }) {
   if (askedHere) return 'reload';
@@ -316,13 +316,14 @@ export function toast(message, { undo, ms } = {}) {
 /** First tap arms (label changes, data-armed), second within ms confirms. Never uses confirm(). */
 export function arm(btn, { label, armedLabel, onConfirm, ms = 4000 }) {
   let timer = null;
+  const text = (v) => (typeof v === 'function' ? v() : v); // a function: the label follows a rename
   const reset = () => {
     clearTimeout(timer);
     timer = null;
     btn.removeAttribute('data-armed');
-    btn.textContent = label;
+    btn.textContent = text(label);
   };
-  btn.textContent = label;
+  btn.textContent = text(label);
   btn.addEventListener('click', () => {
     if (timer) {
       reset();
@@ -330,7 +331,7 @@ export function arm(btn, { label, armedLabel, onConfirm, ms = 4000 }) {
       return;
     }
     btn.setAttribute('data-armed', 'true');
-    btn.textContent = armedLabel;
+    btn.textContent = text(armedLabel);
     timer = setTimeout(reset, ms);
   });
   btn.addEventListener('blur', () => {

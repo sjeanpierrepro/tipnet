@@ -55,3 +55,29 @@ test('bills: the example budget starts today, so it never opens with overdue bil
     'nothing before today: ' + dates(r.bills),
   );
 });
+
+test('bills: the example budget opens with a positive safe-to-spend on any day (1st, 14th, 26th-31st, leap day, new year)', async () => {
+  const M = await import('../app/js/math.js');
+  const days = [
+    '2026-10-01',
+    '2026-10-04',
+    '2026-10-05',
+    '2026-10-14',
+    '2026-10-31',
+    '2027-01-01',
+    '2028-02-29',
+  ];
+  const real = M.todayISO();
+  for (let i = 0; i < 400; i++) days.push(M.addDays(real, i));
+  for (let i = 0; i < 400; i++) days.push(M.addDays('2026-10-01', i));
+  days.forEach((d) => {
+    const p = { ...M.exampleProfile(d), entryMode: 'tips' };
+    const ex = B.exampleBudget(d);
+    const r = B.safeToSpend(ex, p, M.exampleNights(d), d);
+    assert.ok(r.safe >= 0, 'safe to spend on ' + d + ' is ' + r.safe);
+    assert.ok(
+      B.billsDue(ex, d, d).every((x) => ex.paidBills[B.paidKey(x.id, x.date)]),
+      'a bill due ' + d + ' is already paid',
+    );
+  });
+});

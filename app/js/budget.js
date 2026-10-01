@@ -59,8 +59,19 @@ const isDateStr = (v) =>
 export function emptyBudget() {
   return { bills: [], categories: [], goals: [], spends: [], paidBills: {} };
 }
-/** A realistic example for a bartender. Fresh copy each call. Its bills start today, so none is already overdue. */
+/**
+ * A realistic example for a bartender. Fresh copy each call. Its bills start today, and any that fall due today are
+ * marked paid, and it has a balance of $2,400 as of today, so safe-to-spend is positive on any day of the month.
+ */
 export function exampleBudget(today = todayISO()) {
+  const b = exampleBudgetBase(today);
+  b.balance = { amount: 2400, asOf: today + 'T12:00:00' };
+  billsDue(b, today, today).forEach((x) => {
+    b.paidBills[paidKey(x.id, x.date)] = true;
+  });
+  return b;
+}
+function exampleBudgetBase(today) {
   return {
     bills: [
       { id: 'b1', name: 'Rent', amount: 1200, dueDay: 1, category: 'Housing', since: today },

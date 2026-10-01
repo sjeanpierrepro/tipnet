@@ -1318,6 +1318,23 @@ function removeWorkplace(S, w) {
     },
   );
 }
+/** A rename shows right away everywhere on this screen (switcher buttons, heading, notes, Remove), without a redraw. */
+function showName(w) {
+  document.querySelectorAll('[data-workplace="' + w.id + '"]').forEach((b) => {
+    b.textContent = w.name;
+    b.title = w.name;
+  });
+  const h = document.getElementById('setup-h1');
+  if (h) h.textContent = 'Setup: ' + w.name;
+  const hint = document.getElementById('setup-wp-hint');
+  if (hint)
+    hint.textContent =
+      'The paystub, jobs and tip-out below are for ' +
+      w.name +
+      '. Late nights, appearance and backups are shared by all your restaurants.';
+  const rm = document.getElementById('wp-remove');
+  if (rm && !rm.hasAttribute('data-armed')) rm.textContent = 'Remove ' + w.name;
+}
 /** The restaurant's name (rename in place, autosaved) and Remove. */
 function workplaceCard(ctx) {
   const { S, w } = ctx;
@@ -1341,6 +1358,7 @@ function workplaceCard(ctx) {
       return f.setError('You already have a restaurant called ' + n + '.');
     f.setError('');
     w.name = n;
+    showName(w);
     ctx.touch(false);
   });
   name.addEventListener('blur', () => {
@@ -1354,10 +1372,11 @@ function workplaceCard(ctx) {
     const n = nightsOf(S, w.id).length;
     rm = el('button', { type: 'button', class: 'btn btn-danger btn-small', id: 'wp-remove' });
     arm(rm, {
-      label: 'Remove ' + w.name,
-      armedLabel: n
-        ? 'Tap again: this also removes its ' + n + ' night' + (n === 1 ? '' : 's')
-        : 'Tap again to remove ' + w.name,
+      label: () => 'Remove ' + w.name,
+      armedLabel: () =>
+        n
+          ? 'Tap again: this also removes its ' + n + ' night' + (n === 1 ? '' : 's')
+          : 'Tap again to remove ' + w.name,
       onConfirm: () => removeWorkplace(S, w),
     });
   }
@@ -1679,11 +1698,11 @@ export function render(root) {
         label: 'Restaurant to set up',
       }),
       exampleBanner(),
-      el('h1', null, many ? 'Setup: ' + w.name : 'Setup'),
+      el('h1', { id: 'setup-h1' }, many ? 'Setup: ' + w.name : 'Setup'),
       many
         ? el(
             'p',
-            { class: 'hint' },
+            { class: 'hint', id: 'setup-wp-hint' },
             'The paystub, jobs and tip-out below are for ' +
               w.name +
               '. Late nights, appearance and backups are shared by all your restaurants.',

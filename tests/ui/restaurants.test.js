@@ -434,3 +434,18 @@ test('budget: a goal asks which paycheck it is saved from, uses that restaurant,
     await page.close();
   }
 });
+
+test('setup: renaming a restaurant updates the switcher button, heading and Remove label at once', async () => {
+  const page = await boot({ seed: twoState((S) => (S.settings.activeWorkplaceId = 'w2')) });
+  try {
+    page.tab('setup');
+    const btn = () => page.$('[data-workplace="w2"]');
+    assert.equal(btn().textContent, 'Second Spot');
+    page.type(page.$('#wp-name'), 'Spot 2');
+    assert.equal(btn().textContent, 'Spot 2');
+    assert.match(page.$('#setup-h1').textContent, /Setup: Spot 2/);
+    assert.match(page.$('#wp-remove').textContent, /Remove Spot 2/);
+  } finally {
+    await page.close();
+  }
+});
