@@ -80,7 +80,7 @@ test('expected income: the check projection uses only nights with cash entered',
 });
 
 const budgetWithSpends = () => {
-  const b = B.exampleBudget();
+  const b = B.exampleBudget(LONG_AGO);
   b.spends = [
     { id: 's1', date: '2026-09-10', amount: 60, categoryId: 'c2' },
     { id: 's2', date: '2026-09-12', amount: 25.5, categoryId: 'c2' },

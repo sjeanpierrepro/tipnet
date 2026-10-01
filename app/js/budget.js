@@ -103,7 +103,7 @@ export function convertPaidKeys(paid, bills, profile) {
     const bill = (bills || []).find((b) => b.id === m[2]);
     if (!bill) return;
     const r = periodRange(profile, Number(m[1]));
-    const due = billsDue({ bills: [bill] }, r.start, r.end);
+    const due = billsDue({ bills: [{ ...bill, since: null }] }, r.start, r.end); // every due date, so no tick is lost
     if (due.length === 1) out[paidKey(bill.id, due[0].date)] = true;
   });
   return out;
