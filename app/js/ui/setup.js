@@ -1071,20 +1071,25 @@ function cutoffCard(ctx) {
     id: 'day-cutoff',
     'data-focus-key': 'day-cutoff',
   });
+  // The hint describes what the current setting actually does (it used to describe the 2 a.m. rule even when off).
+  const hintFor = (h) =>
+    h === 0
+      ? 'Off: a night is dated the day you enter it, even after midnight. You can always change the date.'
+      : 'If you enter your night before ' +
+        h +
+        ' a.m., TipNet dates it the day your shift started. You can always change the date.';
+  const f = field('Shifts logged before this time count as the night before', sel, {
+    hint: hintFor(cutoffFromSettings(S.settings)),
+  });
   sel.addEventListener('change', () => {
     S.settings.dayCutoffHour = Number(sel.value);
+    const hint = f.querySelector('.hint');
+    if (hint) hint.textContent = hintFor(S.settings.dayCutoffHour);
     redateDraft(S);
     save();
     toast('Saved.');
   });
-  return el(
-    'section',
-    { class: 'card stack' },
-    el('h2', null, 'Late nights'),
-    field('Shifts logged before this time count as the night before', sel, {
-      hint: 'If you enter your night at 2 a.m., TipNet dates it the day your shift started. You can always change the date.',
-    }),
-  );
+  return el('section', { class: 'card stack' }, el('h2', null, 'Late nights'), f);
 }
 
 /* ============ theme ============ */

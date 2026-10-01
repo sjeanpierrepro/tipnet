@@ -172,6 +172,13 @@ test('setup: shared settings (late nights, theme, backup) stay global; the impor
     page.click(radios(page, 'Restaurant to set up')[1]);
     assert.equal(page.$('#day-cutoff').value, '4', 'the same Late nights setting for both');
     assert.equal(page.state().settings.dayCutoffHour, 4);
+    // The hint describes the setting that is actually chosen, including "off".
+    const hint = () => page.$('#day-cutoff').closest('.field').querySelector('.hint').textContent;
+    assert.match(hint(), /before 4 a\.m\./);
+    const sel2 = page.$('#day-cutoff');
+    sel2.value = '0';
+    page.change(sel2);
+    assert.match(hint(), /^Off: a night is dated the day you enter it/);
   } finally {
     await page.close();
   }
