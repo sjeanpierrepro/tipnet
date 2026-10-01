@@ -1728,7 +1728,7 @@ function goalForm(item, kind = 'plan') {
       per = rg.max;
       perCheck.value = per > 0 ? String(per) : '';
       capNote.textContent = CAP_TEXT;
-    } else capNote.textContent = '';
+    } else if (!(rg.capped && per === rg.max && capNote.textContent)) capNote.textContent = '';
     return per;
   };
   const howLink = () =>
