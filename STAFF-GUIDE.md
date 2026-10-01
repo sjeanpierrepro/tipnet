@@ -52,6 +52,8 @@ Enter: start Sep 1, end Sep 14, shifts 10, every two weeks, gross $2,000, the fo
 
 Something changed (raise, new insurance)? Update it in **Setup**.
 
+**Work at a second restaurant?** In **Setup**, tap **+ Set up another restaurant**, type its name, and do the same three steps with a paystub from there. Its pay schedule, jobs and tip-out are kept apart from the first one. Rename or remove a restaurant at the top of Setup (removing one also removes its nights; **Undo** brings them back).
+
 ## 4. Every night
 
 - **Tips you made tonight:** type your tips (cash + card); TipNet adds the pay for the jobs you worked. (If you picked **Everything** in Setup, the box says **What you made tonight**: type tips plus hourly pay.)
@@ -59,12 +61,13 @@ Something changed (raise, new insurance)? Update it in **Setup**.
 - **Cash:** if you pay the barback out of your cash, type all the cash tips you collected, before paying the barback (TipNet takes their cash out). Otherwise type the cash you are taking home.
 - Hours are typed every night, because shifts are never quite the same length.
 - Tap **Save night**.
+- **Two restaurants?** The buttons at the top of Tonight pick the restaurant. One tap switches the jobs, rates and pay period; what you half-typed at the other one is still there when you switch back. The message says where it was saved ("Saved to Second Spot: ...").
 
 You see your estimated take-home, the cash you keep, and what should land on your check. If the same date already has a night, TipNet asks whether to add to it, replace it, or save a separate night.
 
 ## 5. After a pay period ends (optional)
 
-**Pay periods** > **Check my accuracy**. Pick a pay period that has already ended. Enter the **take-home amount on your check** (the amount actually deposited, not gross). Tap **Compare and adjust**.
+**Pay periods** > **Check my accuracy**. With two restaurants, pick the restaurant first. Pick a pay period that has already ended. Enter the **take-home amount on your check** (the amount actually deposited, not gross). Tap **Compare and adjust**.
 
 The estimate usually gets closer after a check or two.
 
@@ -78,4 +81,4 @@ The estimate usually gets closer after a check or two.
 - **Tax questions?** Ask payroll or a tax professional. TipNet is not tax advice.
 
 ## 6. Budget (optional, paid)
-The Budget tab shows how much you can spend before your next payday, after bills and savings. Add your bills (name, amount, day of the month), spending categories (like groceries) and goals. Tick "Paid" when a bill is paid, and use "Log spending" when you buy something. Everything is an estimate. Budget is not part of the free app.
+The Budget tab shows how much you can spend before your next payday, after bills and savings. With two restaurants it counts both paychecks and shows whose check comes next; each goal asks **Save from which paycheck?** Add your bills (name, amount, day of the month), spending categories (like groceries) and goals. Tick "Paid" when a bill is paid, and use "Log spending" when you buy something. Everything is an estimate. Budget is not part of the free app.

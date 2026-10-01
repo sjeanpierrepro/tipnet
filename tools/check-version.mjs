@@ -29,6 +29,11 @@ if (!changed.length) {
   console.log('check-version: nothing under app/ changed, ok.');
   process.exit(0);
 }
+// billing-config.js alone needs no bump: installed apps refresh it in the background (network first in sw.js).
+if (changed.every((f) => f === 'app/js/billing-config.js')) {
+  console.log('check-version: only app/js/billing-config.js changed (refreshed in the background), ok.');
+  process.exit(0);
+}
 // Only lines that changed count: the new VERSION line must differ from the old one.
 const swDiff = git('diff', '-U0', before, after, '--', 'app/sw.js');
 const bumped = swDiff.split('\n').some((l) => /^[+-]\s*const VERSION\s*=/.test(l));

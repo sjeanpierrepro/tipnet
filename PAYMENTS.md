@@ -43,7 +43,7 @@ Edit files in the `tipnet` folder on your computer (any text editor, such as Not
 1. Turn test mode off. Open TipNet Budget and use "Copy to Live Mode" (test products don't carry over by themselves).
 2. Get the live Monthly and Yearly links and the live product ID (they differ from the test ones) and put them into `app/js/billing-config.js` as in Phase 3.
 3. **Set `allowTestMode` back to `false`.** With it on, free test keys from anyone's test store would unlock Budget.
-4. In `app/sw.js`, increase the number at the end of the `VERSION` line by one (for example `tipnet-v25` becomes `tipnet-v26`; always one higher than what is there now). Installed apps only fetch your changes when this number changes, and the publishing check fails if you forget.
+4. Recommended: in `app/sw.js`, increase the number at the end of the `VERSION` line by one (for example `tipnet-v25` becomes `tipnet-v26`; always one higher than what is there now). It is optional when `billing-config.js` is the only file you changed: installed apps refresh that file in the background on their next open, and the publishing check lets it through. Bumping it anyway makes every installed copy pick the change up right away.
 5. Commit and push with GitHub Desktop. The site rebuilds in a minute or two; customers get the update the next time they open the app and tap Refresh.
 6. Before the first real sale: have the Privacy and Terms pages reviewed, and check that the support email on Lemon Squeezy's receipts is the one you want customers to write to.
 

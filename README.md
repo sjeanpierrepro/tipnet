@@ -10,6 +10,7 @@ All the numbers stay on your phone or computer. Your bar cannot see them. No acc
 - **Start with your paystub**: A new install opens in Setup. Tonight and Pay periods show no numbers until setup is done (or a backup is restored), so no estimate is ever based on example taxes. "See an example first" shows made-up numbers, clearly marked.
 - **See your split**: Find out instantly how much is cash in hand and how much hits your check.
 - **Set up once**: Tell TipNet about your pay schedule (weekly, every two weeks, twice a month, or monthly), your gross pay, and your deductions (taxes, health insurance, etc.).
+- **Work at more than one restaurant**: In Setup, tap **+ Set up another restaurant**, give it a name and go through the same three steps with a paystub from there. Each restaurant keeps its own pay schedule, paystub, jobs, tip-out, entry style and accuracy history. On Tonight, a row of restaurant buttons at the top switches everything with one tap (a half-typed entry at each restaurant is kept), and the restaurant you used last opens next time. Pay periods can show all restaurants or one, and Budget counts every restaurant's paychecks. Late nights, appearance and backups are shared. With one restaurant nothing changes.
 - **Track accuracy**: At the end of a pay period, enter your actual paycheck and let TipNet learn. Each check you compare brings the next estimate closer.
 - **Install like an app**: Tap "Install to home screen" in your browser. It works on iPhone, Android, Windows, and Mac.
 
@@ -84,7 +85,7 @@ TipNet is built for current versions of Safari (iPhone and Mac), Chrome (Android
 
 ## Releasing an update
 
-When you change any file in `app/`, also change the `VERSION` line at the top of `app/sw.js` (for example `tipnet-v2` to `tipnet-v3`). That is how phones learn there is a new version; they then show "Update available: Refresh".
+When you change any file in `app/`, also change the `VERSION` line at the top of `app/sw.js` (for example `tipnet-v2` to `tipnet-v3`). That is how phones learn there is a new version; they then show "Update available: Refresh". The one exception is `app/js/billing-config.js` on its own (switching payments on): installed apps refresh it in the background, so the bump is optional there, though still recommended.
 
 ## Privacy
 
@@ -97,7 +98,7 @@ Changing the contact email: edit `CONTACT_EMAIL` in `app/js/legal.js` (the Priva
 TipNet gives estimates, not tax advice. Your numbers stay on your device. It does not collect your name, Social Security number, or any personal information beyond what you voluntarily type into it.
 
 ## Budget (optional paid add-on)
-The Budget tab helps plan money between paychecks: "safe to spend until payday", next paycheck, bills, spending categories and savings goals. It costs $1.99 a month or $20 a year; everything else in TipNet stays free. Budget data stays on the device like everything else.
+The Budget tab helps plan money between paychecks: "safe to spend until payday", next paycheck, bills, spending categories and savings goals. With more than one restaurant it counts all of them: safe to spend runs until the next check from any restaurant (and says whose), the after-payday view lists each check that arrives, and each goal is saved from one restaurant's paychecks ("Save from which paycheck?"). It costs $1.99 a month or $20 a year; everything else in TipNet stays free. Budget data stays on the device like everything else.
 
 The Budget tab is hidden until you switch on payments (in `app/js/billing-config.js`; click-by-click steps are in `PAYMENTS.md`). Once payments are on, customers can buy a license key and paste it into the Budget tab to unlock the feature.
 
