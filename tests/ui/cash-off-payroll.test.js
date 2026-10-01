@@ -32,7 +32,10 @@ test('tonight: the cash box shows only once cash is typed; ticking it raises tak
       page.$('label[for="' + cb.id + '"]').textContent,
       'Cash tips weren’t run through payroll tonight',
     );
-    assert.match(page.text(), /Tick this if no tax was taken out of tonight’s cash, so your check is bigger\./);
+    assert.match(
+      page.text(),
+      /Tick this if no tax was taken out of tonight’s cash, so your check is bigger\./,
+    );
     const before = heroNum(page);
     cb.checked = true;
     page.change(cb);
