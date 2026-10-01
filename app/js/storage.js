@@ -956,7 +956,12 @@ export function lockFinished({ force = false, today = todayISO() } = {}) {
   const S = getState();
   const r = lockAll(S.workplaces, S.nights, today); // each restaurant locks on its own pay schedule
   if (!r.stamped) return 0;
-  S.nights = r.nights;
+  // Stamp in place: the same night objects (and the same array) get their snapshot, so a screen that still holds a night
+  // (a duplicate-date prompt, an open editor, an Undo) keeps a live reference across a period-ending midnight.
+  r.nights.forEach((n, i) => {
+    const old = S.nights[i];
+    if (n !== old) Object.assign(old, n); // lockAll keeps the order, so index i is the same night
+  });
   scheduleSave();
   return r.stamped;
 }

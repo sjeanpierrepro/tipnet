@@ -267,10 +267,17 @@ function editor(S, n) {
       today: businessDate(new Date(), cutoffFromSettings(S.settings)),
     });
     if (prob) return showEntryProblem(f, prob);
+    // Looked up by id now: the night may have been locked or merged from another window since the editor opened.
     const i = S.nights.findIndex((x) => x.id === n.id);
-    if (i >= 0) S.nights[i] = { ...build(), workplaceId: w.id };
-    save();
     editingId = null;
+    if (i < 0) {
+      bus.rerender();
+      toast('That night was deleted, so nothing was changed.');
+      return;
+    }
+    n = S.nights[i]; // build() reads the current night (its lock, its stored total)
+    S.nights[i] = { ...build(), workplaceId: w.id };
+    save();
     bus.rerender();
     toast('Night updated.');
   });
@@ -297,6 +304,7 @@ function nightRow(S, w, n, shifts) {
       bus.rerender();
       toast('Night deleted.', {
         undo: () => {
+          if (S.nights.some((x) => x.id === gone.id)) return; // already back (e.g. from another window)
           S.nights.push(gone);
           save();
           bus.rerender();

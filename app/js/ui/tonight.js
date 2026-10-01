@@ -1138,6 +1138,15 @@ export function render(root) {
     // so the base pay is counted once, at the rates that night is shown with.
     const onto = (target) =>
       tipsMode(p) && target.snap ? storedNight(d, p, night.id, { snap: target.snap }) : night;
+    /**
+     * Write over the saved night, looked up by id when the button is clicked (it may have been locked, merged from another
+     * window or deleted since the question was shown). If it is gone, tonight is saved on its own instead.
+     */
+    const overDup = (make) => {
+      const at = S.nights.findIndex((x) => x.id === dup.id);
+      if (at < 0) S.nights.push(night);
+      else S.nights[at] = make(S.nights[at]);
+    };
     const add = el(
       'button',
       { type: 'button', class: 'btn', 'data-focus-key': 'dup-add' },
@@ -1146,7 +1155,7 @@ export function render(root) {
     add.addEventListener(
       'click',
       choose(() => {
-        S.nights[S.nights.indexOf(dup)] = mergeNights(dup, onto(dup), p);
+        overDup((cur) => mergeNights(cur, onto(cur), p));
       }),
     );
     const rep = el(
@@ -1157,12 +1166,12 @@ export function render(root) {
     rep.addEventListener(
       'click',
       choose(() => {
-        S.nights[S.nights.indexOf(dup)] = {
-          ...onto(dup),
-          id: dup.id,
+        overDup((cur) => ({
+          ...onto(cur),
+          id: cur.id,
           workplaceId: w.id,
-          ...(dup.snap ? { snap: dup.snap } : {}),
-        };
+          ...(cur.snap ? { snap: cur.snap } : {}),
+        }));
       }),
     );
     const sep = el(
