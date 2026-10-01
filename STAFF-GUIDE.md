@@ -70,7 +70,7 @@ You see your estimated take-home, the cash you keep, and what should land on you
 
 **Pay periods** > **Check my accuracy**. With two restaurants, pick the restaurant first. Pick a pay period that has already ended. Enter the **take-home amount on your check** (the amount actually deposited, not gross). Tap **Compare and adjust**.
 
-The estimate usually gets closer after a check or two.
+The estimate usually gets closer after a check or two. Changing gross pay or a deduction that changes with your pay in Setup clears this adjustment (Setup says so); fixed amounts and names do not.
 
 ---
 
@@ -82,4 +82,4 @@ The estimate usually gets closer after a check or two.
 - **Tax questions?** Ask payroll or a tax professional. TipNet is not tax advice.
 
 ## 6. Budget (optional, paid)
-The Budget tab shows how much you can spend before your next payday, after bills and savings. With two restaurants it counts both paychecks and shows whose check comes next; each goal asks **Save from which paycheck?** Add your bills (name, amount, day of the month), spending categories (like groceries) and goals. Tick "Paid" when a bill is paid, and use "Log spending" when you buy something. Everything is an estimate. Budget is not part of the free app.
+The Budget tab shows how much you can spend before your next payday, after bills and savings. With two restaurants it counts both paychecks and shows whose check comes next; each goal asks **Save from which paycheck?** Add your bills (name, amount, day of the month), spending categories (like groceries) and goals. A new bill counts from the day you add it; if its due day already passed this month, TipNet asks **Already paid this month?** (ticked unless you untick it). Tick "Paid" when a bill is paid, and use "Log spending" when you buy something. Everything is an estimate. Budget is not part of the free app.
