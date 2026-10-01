@@ -89,6 +89,7 @@ function refExpectedIncome(profile, nights, today) {
   if (withCash > 0) projected = M.round2(t.chk * Math.max(1, Math.max(expected, t.ns.length) / withCash));
   else projected = avgChk;
   const projectedFrom = withCash > 0 ? 'nights' : avgChk == null ? null : 'average';
+  const kept = (x) => M.toCents(x.net) - M.toCents(x.setAside);
   return {
     cashSoFar: t.cash,
     setAsideSoFar: t.setAside,
@@ -97,6 +98,12 @@ function refExpectedIncome(profile, nights, today) {
     projectedFrom,
     avgCheckPerPeriod: avgChk,
     avgTakeHomePerPeriod: avg,
+    avgKeptPerPeriod: past.length
+      ? M.fromCents(Math.round(past.reduce((s, x) => s + kept(x), 0) / past.length))
+      : null,
+    projectedKept: t.ns.length
+      ? M.fromCents(Math.round(kept(t) * Math.max(1, expected / t.ns.length)))
+      : null,
   };
 }
 

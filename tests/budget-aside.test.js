@@ -6,7 +6,8 @@ import * as B from '../app/js/budget.js';
 const TODAY = '2026-09-28';
 const P = () => M.exampleProfile(TODAY); // 14-day periods: 09-21..10-04, paydays 10-05, 10-19 ...
 const nights = () => M.exampleNights(TODAY);
-const check = () => B.expectedIncome(P(), nights(), TODAY).projectedCheck; // no finished period yet, so the projected check
+// No finished period yet, so this period's projected take-home (check + cash kept).
+const check = () => B.typicalTakeHome(P(), nights(), TODAY).amount;
 const budget = (over = {}) => ({ ...B.emptyBudget(), ...over });
 
 test('possibleAside: a check with no bills, spending, goals or other income is all there is to put aside', () => {
@@ -104,10 +105,13 @@ test('possibleAside: the average finished check is used before the projected one
   const later = '2026-10-10'; // period 09-21..10-04 is finished
   const pa = B.possibleAside(budget(), P(), nights(), later);
   const inc = B.expectedIncome(P(), nights(), later);
-  if (inc.avgCheckPerPeriod != null) {
-    assert.equal(pa.checkFrom, 'average');
-    assert.equal(pa.check, inc.avgCheckPerPeriod);
-  } else assert.equal(pa.checkFrom, 'projected');
+  assert.equal(pa.checkFrom, 'average');
+  assert.equal(pa.check, inc.avgKeptPerPeriod);
+  assert.equal(
+    pa.check,
+    M.periodTotals(P(), nights(), 0, later).net,
+    'check + cash kept of the finished period',
+  );
 });
 
 test('roundDownStep, roundUpStep and asideRange (the slider only goes as high as the budget leaves)', () => {

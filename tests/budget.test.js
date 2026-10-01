@@ -56,6 +56,8 @@ test('expected income', () => {
     projectedFrom: null,
     avgCheckPerPeriod: null,
     avgTakeHomePerPeriod: null,
+    avgKeptPerPeriod: null,
+    projectedKept: null,
   });
   // a finished period gives an average take-home, and an average check when every night has cash entered
   const later = B.expectedIncome(P(), M.exampleNights(TODAY), '2026-10-10');
@@ -127,7 +129,11 @@ test('safe to spend: hand-computed example', () => {
   const t = M.periodTotals(P(), M.exampleNights(TODAY), 0, TODAY);
   assert.deepEqual(dates(r.after.bills), ['b2@2026-10-15']);
   assert.equal(r.after.projectedCheck, M.round2(t.chk * 2.5));
-  assert.equal(r.after.left, M.round2(M.round2(t.chk * 2.5) - 65 - 40 - 320.65));
+  // Cash tips likely kept in the 14-day window: the typical cash per 14-day pay period (take-home - check), x 14 / 14.
+  const th = B.typicalTakeHome(P(), M.exampleNights(TODAY), TODAY);
+  assert.ok(th.cash > 0);
+  assert.equal(r.after.cashExpectedTotal, th.cash);
+  assert.equal(r.after.left, M.round2(M.round2(t.chk * 2.5) + th.cash - 65 - 40 - 320.65));
   assert.equal(r.after.categoriesTotal, 320.65); // 710 x 14 / 31 for 10-05..10-18
 });
 
@@ -263,7 +269,8 @@ test('payDelay 4: between period end and payday, next payday is for the previous
   assert.deepEqual(dates(r.after.bills), ['d@2026-10-08', 'c@2026-10-10']);
   // Projected check is the finished period's check estimate, not the current period's.
   assert.equal(r.after.projectedCheck, M.periodTotals(p, nights, 0, today).chk);
-  assert.equal(r.after.left, M.round2(r.after.projectedCheck - 75));
+  assert.equal(r.after.left, M.round2(r.after.projectedCheck + r.after.cashExpectedTotal - 75));
+  assert.ok(r.after.cashExpectedTotal > 0, 'cash tips in the window count too');
 });
 
 test('payDelay 0: check arrives on the last day of the period', () => {

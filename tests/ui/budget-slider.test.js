@@ -50,16 +50,16 @@ test('slider: it only goes as high as the budget leaves, and says so', async () 
   try {
     page.tab('budget');
     fill(page, 'ef-plan-new-name', 'New phone');
-    fill(page, 'ef-plan-new-cost', '900');
+    fill(page, 'ef-plan-new-cost', '5000');
     const pa = possibleOf(page);
     assert.equal(pa.known, true, 'the seeded nights give a typical check');
     const max = roundDownStep(pa.possible);
-    assert.ok(max > 300 && max < 900, 'this seed leaves room, but less than the whole cost');
+    assert.ok(max > 300 && max < 5000, 'this seed leaves room, but less than the whole cost');
     const t = page.text(planForm(page));
     assert.ok(
       t.includes(
         'Up to $' +
-          max +
+          max.toLocaleString('en-US') +
           ' a paycheck is safe to put aside — that’s what your budget leaves after bills, spending and your other goals.',
       ),
     );
@@ -80,7 +80,7 @@ test('slider: it only goes as high as the budget leaves, and says so', async () 
     assert.match(page.$('label[for="' + field.id + '"]').textContent, /type an amount a paycheck/);
     // The working-out lists every piece.
     const how = page.text(page.byText('details', 'How we worked this out'));
-    assert.match(how, /take-home per paycheck/);
+    assert.match(how, /take-home per pay period \(check \+ cash you keep\)/);
     assert.match(how, /Bills per paycheck/);
     assert.match(how, /Spending categories per paycheck/);
     assert.match(how, /Your other goals per paycheck/);

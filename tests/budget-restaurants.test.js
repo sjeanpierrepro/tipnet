@@ -156,10 +156,10 @@ test('what is possible from one restaurant: its check plus the others over the s
   assert.equal(pb.periodDays, 15, 'Second Spot pay period Oct 1-15');
   assert.equal(pb.known, true);
   assert.equal(pb.otherChecksList.length, 1);
-  const tcA = B.typicalCheck(A(), s[0].nights, TODAY);
+  const tcA = B.typicalTakeHome(A(), s[0].nights, TODAY);
   assert.equal(
     pb.otherChecks,
-    Math.round((toCents(tcA.check) * 15) / 14) / 100,
+    Math.round((toCents(tcA.amount) * 15) / 14) / 100,
     'Voodoo Bayou scaled to 15 days',
   );
   assert.equal(pb.bills, Math.round((120000 * 12 * 15) / 365) / 100);

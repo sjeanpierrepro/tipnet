@@ -33,7 +33,7 @@ import {
   isPlan,
   purchasePlan,
   planShare,
-  expectedIncome,
+  typicalTakeHome,
   incomeDates,
   otherIncomeMonthly,
   otherIncomePerPaycheck,
@@ -857,6 +857,9 @@ function nextCheckCard(S, r0, src) {
       'dl',
       { class: 'breakdown' },
       ...checkRows,
+      ...(a.cashExpectedTotal > 0
+        ? [row('Cash tips you’ll likely keep in that window (estimated)', '+' + money(a.cashExpectedTotal))]
+        : []),
       ...(a.otherIncome.length
         ? [row('Other income in that window (' + a.otherIncome.length + ')', '+' + money(a.otherIncomeTotal))]
         : []),
@@ -882,6 +885,9 @@ function nextCheckCard(S, r0, src) {
         : cashLoggedNow(src)
           ? 'This check pays for a pay period with no nights with cash entered, so TipNet can’t estimate it yet. The check is what is left after the cash you already took home.'
           : 'Log a night with its cash in hand and TipNet can estimate your check. The check is what is left after the cash you already took home.',
+      known && a.cashExpectedTotal > 0
+        ? ' Cash tips are what you typically keep in a pay period, spread over these days.'
+        : '',
     ),
   );
 }
@@ -1233,13 +1239,13 @@ function trackerLines(g, p, tc) {
     lines.push([
       "That's about " +
         sh.pct +
-        '% of a typical check' +
+        '% of what you typically take home a pay period' +
         (tc.other > 0 ? ' plus your regular other income.' : '.'),
       true,
     ]);
     if (sh.pct > 50) {
       lines.push([
-        'That is more than half of a typical check, which may be hard to keep up. A later date lowers it.',
+        'That is more than half of what you typically take home a pay period, which may be hard to keep up. A later date lowers it.',
         true,
       ]);
       move = true;
@@ -1279,9 +1285,7 @@ function trackerLines(g, p, tc) {
     }
   } else if (p.paychecksLeft == null) {
     lines.push([
-      isPlan(g)
-        ? 'Enter an amount per paycheck to see a timeline.'
-        : 'Set an amount per paycheck to see a timeline.',
+      'Saving when you can: no set amount a paycheck yet. Edit it to pick one and see a timeline.',
       false,
     ]);
   } else {
@@ -1536,12 +1540,11 @@ function goalRemoveBtn(B, g, noun) {
 }
 
 /**
- * What the typical paycheck from one restaurant is, for comparing a plan to it: average take-home from finished periods,
- * else this period's projected check, plus regular other income over one of its pay periods.
+ * What one restaurant typically brings home per pay period, for comparing a plan to it: the same take-home (check + cash
+ * you keep) that "Room to put aside" uses (typicalTakeHome), plus regular other income over one of its pay periods.
  */
 function typicalCheckOf(S, s) {
-  const inc = expectedIncome(s.profile, s.nights, todayISO());
-  const check = inc.avgTakeHomePerPeriod != null ? inc.avgTakeHomePerPeriod : inc.projectedCheck;
+  const check = typicalTakeHome(s.profile, s.nights, todayISO()).amount;
   if (check == null) return { base: null, other: 0 };
   const other = otherIncomePerPaycheck(S.budget, s.profile, todayISO()); // regular other income, spread over one pay period
   return { base: check + other, other };
@@ -1572,7 +1575,7 @@ function planLines(p, tc) {
       lines.push(
         "That's about " +
           sh.pct +
-          '% of a typical check' +
+          '% of what you typically take home a pay period' +
           (tc.other > 0 ? ' plus your regular other income.' : '.'),
       );
       if (sh.big) lines.push("That's a big share of each check; a later date lowers it.");
@@ -1588,11 +1591,17 @@ const moneyShort = (n) => (Math.round(n * 100) % 100 === 0 ? money0(n) : money(n
 function asideBreakdown(pa, many = false) {
   const rows = [
     row(
-      (pa.checkFrom === 'average' ? 'Typical take-home per paycheck' : 'Projected take-home per paycheck') +
+      (pa.checkFrom === 'average'
+        ? 'Typical take-home per pay period (check + cash you keep)'
+        : 'Projected take-home per pay period (check + cash you keep)') +
         (many ? ' from ' + pa.funderName : ''),
       money(pa.check),
     ),
   ];
+  if (pa.paycheck != null && pa.cash > 0) {
+    rows.push(row('   Check', money(pa.paycheck), 'hint'));
+    rows.push(row('   Cash you keep', money(pa.cash), 'hint'));
+  }
   if (many) {
     rows.push(
       row('Your other restaurants over the same ' + pa.periodDays + ' days', '+' + money(pa.otherChecks)),
@@ -1711,7 +1720,7 @@ function goalForm(item, kind = 'plan') {
     fSaved = field('Already saved', saved, { optional: true }),
     fFunder = funderSel
       ? field('Save from which paycheck?', funderSel, {
-          hint: 'The paydays and the typical check of that restaurant set the plan.',
+          hint: 'The paydays and the typical take-home of that restaurant set the plan.',
         })
       : null,
     fDate = field('Date you want it by', byDate),
@@ -1872,6 +1881,13 @@ function goalForm(item, kind = 'plan') {
             (many ? funder.name + ' ' : '') +
             'paycheck right now: bills, spending and your other goals use it all. Lower a spending category or another goal to make room.',
         ),
+        el(
+          'p',
+          { class: 'hint' },
+          'You can still add this ' +
+            noun +
+            ' at $0 a paycheck and save when you can: whatever you put toward it is recorded, and you can pick an amount later.',
+        ),
         el('div', { class: 'cluster' }, toSpend, toGoals),
         howLink(),
       );
@@ -1922,9 +1938,8 @@ function goalForm(item, kind = 'plan') {
             ? "We'll compare it to your paychecks once you have a finished pay period."
             : "That's about " +
                 sh.pct +
-                '% of a typical ' +
-                (many ? funder.name + ' ' : '') +
-                'check' +
+                '% of what you typically take home a pay period' +
+                (many ? ' at ' + funder.name : '') +
                 (tc.other > 0 ? ' plus your regular other income.' : '.'),
         ),
       );
@@ -2014,11 +2029,10 @@ function goalForm(item, kind = 'plan') {
     check(fDate, mode === 'date' && !(d.targetDate > today) ? 'Pick a date after today.' : '');
     check(
       fPer,
-      mode !== 'fixed' || d.perPaycheck > 0 || d.target - d.saved <= 0
+      // With no room in the budget, a $0-a-paycheck goal ("save when you can") is allowed; the form says why.
+      mode !== 'fixed' || d.perPaycheck > 0 || d.target - d.saved <= 0 || (rg.capped && rg.disabled)
         ? ''
-        : rg.capped && rg.disabled
-          ? 'Your budget leaves nothing to put aside right now. Lower spending or another goal first.'
-          : 'Enter an amount above zero.',
+        : 'Enter an amount above zero.',
     );
     if (bad) {
       const first = form.querySelector('[aria-invalid]');
@@ -2054,7 +2068,9 @@ function goalForm(item, kind = 'plan') {
     editing = null;
     save();
     bus.rerender();
-    toast(item ? 'Saved.' : isPlanForm ? 'Plan added.' : 'Added.');
+    const whenYouCan =
+      !(fields.perPaycheck > 0) && fields.target > fields.saved ? ' Saving when you can.' : '';
+    toast((item ? 'Saved.' : isPlanForm ? 'Plan added.' : 'Added.') + whenYouCan);
   });
   refresh();
   return form;

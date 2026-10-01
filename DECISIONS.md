@@ -154,3 +154,7 @@
 - Tonight shows a live "Estimated take-home" line right under the tips box on phones, in addition to the full breakdown below.
 - Tapping Refresh for an update reloads other open windows only when nothing is typed there; otherwise they show "Update available. Refresh".
 - CSV import: rows dated after tomorrow are skipped as unreadable dates (the same bound Tonight uses); the import screen no longer prints a stray "null" when there is one restaurant.
+
+## Review 6 fixes
+- "Room to put aside", the slider cap, the realism line ("% of what you typically take home a pay period") and the "How we worked this out" label all use one figure: typicalTakeHome() = typical check + cash you keep, less the taxes to set aside on cash that skipped payroll, per restaurant (average of finished pay periods, else this period scaled up). The paycheck alone made mostly-cash workers look like they had $0 to save. The after-payday view adds the cash tips each restaurant typically keeps over that window's days.
+- When the budget leaves nothing, the slider and the amount box stay capped at $0 (owner rule kept), but a goal or plan can still be added at $0 a paycheck ("save when you can"); the form says why and the goal row says it has no set amount yet.
