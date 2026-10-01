@@ -84,6 +84,7 @@ function nightSub(n, c, p) {
   if (c.tipout) bits.push(money(c.tipout) + ' tip-out');
   else if ((n.snap ? n.snap.tipout.on : p.tipout.on) && !n.barback) bits.push('no barback');
   if (c.onCheck != null) bits.push(money(c.onCheck) + ' on check');
+  if (c.cashOffPayroll) bits.push('cash off payroll');
   return bits.join(' · ');
 }
 
@@ -381,6 +382,9 @@ function group(S, w, idx, ctx) {
       ),
       el('b', { class: 'num' }, money0(t.net) + ' take-home'),
     ),
+    t.setAside > 0
+      ? el('p', { class: 'hint' }, 'Taxes to set aside on cash (estimate): ' + money(t.setAside))
+      : null,
     editingRow
       ? el(
           'div',

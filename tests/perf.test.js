@@ -33,6 +33,7 @@ function refPeriodTotals(p, nights, idx, today, shifts) {
     chk = 0,
     kept = 0,
     cash = 0,
+    setAside = 0,
     fixedShares = 0,
     allCash = ns.length > 0;
   ns.forEach((night) => {
@@ -41,6 +42,7 @@ function refPeriodTotals(p, nights, idx, today, shifts) {
     hrs += c.hours;
     kept += M.toCents(c.kept);
     fixedShares += M.toCents(c.fixedPerShift);
+    setAside += M.toCents(c.taxOnCashToSetAside);
     if (c.onCheck == null) allCash = false;
     else {
       chk += M.toCents(c.onCheck);
@@ -60,6 +62,7 @@ function refPeriodTotals(p, nights, idx, today, shifts) {
     chk: M.fromCents(chk),
     kept: M.fromCents(kept),
     cash: M.fromCents(cash),
+    setAside: M.fromCents(setAside),
     allCash,
     exact,
   };
@@ -88,6 +91,7 @@ function refExpectedIncome(profile, nights, today) {
   const projectedFrom = withCash > 0 ? 'nights' : avgChk == null ? null : 'average';
   return {
     cashSoFar: t.cash,
+    setAsideSoFar: t.setAside,
     checkSoFar: t.chk,
     projectedCheck: projected,
     projectedFrom,

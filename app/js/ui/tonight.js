@@ -119,11 +119,13 @@ export function blankDraft(S, p) {
     rows: main ? [main.id] : [],
     showOther: false,
     barback: true,
+    cashOffPayroll: !!p.cashOffPayroll, // pre-ticked from the restaurant's Setup default until tonight's box is touched
     date: tonightOf(S),
   };
 }
 /** Keep a draft in step with Setup (a job removed or turned into other pay since): rows hold current jobs only, never twice. */
 export function syncDraft(d, p) {
+  if (!d.cashOffTouched) d.cashOffPayroll = !!p.cashOffPayroll;
   const jobs = jobsOf(p);
   const isJobId = (id) => jobs.some((t) => same(t.id, id));
   d.rows = (d.rows || []).filter((id, k, a) => isJobId(id) && a.findIndex((x) => same(x, id)) === k);
@@ -146,6 +148,8 @@ export function draftFromNight(n, p) {
     rows: [],
     showOther: false,
     barback: n.barback !== false,
+    cashOffPayroll: !!n.cashOffPayroll,
+    cashOffTouched: true, // a saved night keeps its own choice, whatever Setup says now
     date: n.date,
   };
   p.payTypes.forEach((t, i) => {
@@ -208,6 +212,7 @@ export function liveNight(d, id, p, { snap } = {}) {
     pay,
     barback: d.barback,
   };
+  if (d.cashOffPayroll && cash !== '') night.cashOffPayroll = true;
   if (tipsMode(p)) {
     const t = typedAmount(d.total);
     if (t != null && t >= 0) {
@@ -233,6 +238,7 @@ export function storedNight(d, p, id, { snap } = {}) {
     pay,
     barback: d.barback,
   };
+  if (ln.cashOffPayroll) out.cashOffPayroll = true;
   if (tipsMode(p) && hasTips(ln)) out.tips = ln.tips;
   return out;
 }
@@ -328,6 +334,11 @@ export function mergeNights(a, b, p) {
   const tb = a.snap ? num(b.total) : nightTotal(b, p);
   const out = { ...a, total: round2(nightTotal(a, p) + tb), cash, pay };
   delete out.tips;
+  // cash skipped payroll only if every part of the night's cash did (a part with no cash doesn't count)
+  const offA = !!a.cashOffPayroll || a.cash == null,
+    offB = !!b.cashOffPayroll || b.cash == null;
+  if (cash != null && offA && offB && (a.cashOffPayroll || b.cashOffPayroll)) out.cashOffPayroll = true;
+  else delete out.cashOffPayroll;
   const ta = tipsFromTotal(a, p);
   if (hasTips(b) && ta >= 0) {
     out.tips = round2(ta + b.tips);
@@ -655,6 +666,30 @@ export function nightFields(
     },
   );
   kids.push(cashField);
+  const offCb = el('input', { type: 'checkbox', id: uid('cop'), 'data-focus-key': key + '-cashoff' });
+  offCb.checked = !!d.cashOffPayroll;
+  offCb.addEventListener('change', () => {
+    d.cashOffPayroll = offCb.checked;
+    d.cashOffTouched = true;
+    onInput();
+  });
+  const offField = el(
+    'div',
+    { class: 'stack-sm' },
+    el(
+      'label',
+      { class: 'check', for: offCb.id },
+      offCb,
+      el('span', null, 'Cash tips weren’t run through payroll tonight'),
+    ),
+    el(
+      'p',
+      { class: 'hint' },
+      'No tax was taken out of tonight’s cash, so your check is bigger. The IRS still counts all tips as income, so TipNet shows what to set aside.',
+    ),
+  );
+  offField.hidden = true; // only once a cash amount is typed
+  kids.push(offField);
   const today = tonightOf(getState());
   const date = el('input', {
     type: 'date',
@@ -672,6 +707,8 @@ export function nightFields(
   kids.push(dateField);
   refresh = () => {
     cashField.setError(cashCheck(d, p).message);
+    offField.hidden = !(cashCheck(d, p).status === 'ok' && clean(d.cash) !== '');
+    offCb.checked = !!d.cashOffPayroll;
     rateLines.forEach(({ t, line }) => {
       line.textContent = rateText(t, d.pay[t.id]);
     });
@@ -792,6 +829,15 @@ export function resultCard(c, w, note, hoursMissing = false) {
       );
     }
   } else kids.push(el('p', { class: 'note' }, 'Add your cash amount to see what lands on your check.'));
+  if (c.taxOnCashToSetAside > 0)
+    kids.push(
+      el(
+        'p',
+        { class: 'note' },
+        el('strong', null, 'Set aside about ' + money(c.taxOnCashToSetAside)),
+        ' for taxes on tonight’s cash (estimate).',
+      ),
+    );
   const tip = [acc + ' '];
   if (c.fedOnTips > 0)
     tip.push(

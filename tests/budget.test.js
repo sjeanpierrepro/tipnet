@@ -49,6 +49,7 @@ test('expected income', () => {
   const none = B.expectedIncome(P(), [], TODAY);
   assert.deepEqual(none, {
     cashSoFar: 0,
+    setAsideSoFar: 0,
     checkSoFar: 0,
     projectedCheck: null,
     projectedFrom: null,

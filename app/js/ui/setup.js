@@ -973,6 +973,36 @@ function tipoutCard(ctx) {
     ),
     el('p', { class: 'hint' }, 'The tip-out percentage applies to your tips only, never to your hourly pay.'),
   );
+  const offCb = el('input', {
+    type: 'checkbox',
+    id: 'cash-off-payroll',
+    'data-focus-key': 'setup-cash-off-payroll',
+  });
+  offCb.checked = !!p.cashOffPayroll;
+  offCb.addEventListener('change', () => {
+    p.cashOffPayroll = offCb.checked;
+    ctx.touch(false);
+  });
+  const offRow = el(
+    'div',
+    { class: 'stack-sm' },
+    el('h3', null, 'Cash tips'),
+    el(
+      'label',
+      { class: 'check', for: 'cash-off-payroll' },
+      offCb,
+      el(
+        'span',
+        null,
+        'Cash tips here usually aren’t run through payroll',
+        el(
+          'small',
+          null,
+          'Tonight starts with “Cash tips weren’t run through payroll” ticked once you enter cash. You can change it any night.',
+        ),
+      ),
+    ),
+  );
   const sync = () => {
     fields.hidden = !to.on;
     fValue.querySelector('label').textContent = to.mode === 'pct' ? 'Percent of tips' : 'Dollars per shift';
@@ -1021,6 +1051,7 @@ function tipoutCard(ctx) {
       ),
     ),
     fields,
+    offRow,
   );
   card.validate = () => {
     ctx.showAll = true;

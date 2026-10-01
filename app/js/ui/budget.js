@@ -750,13 +750,22 @@ function breakdown(S, r, many = false) {
       ...r.categories
         .filter((c) => c.reserved > 0)
         .map((c) => row('   ' + (catName.get(c.id) || c.name), '−' + money(c.reserved), 'hint')),
+      ...(r.taxAsideTotal > 0
+        ? [
+            row('Set aside for taxes on cash (estimate)', '−' + money(r.taxAsideTotal)),
+            ...(many ? r.taxAside.map((t) => row('   ' + t.name, '−' + money(t.amount), 'hint')) : []),
+          ]
+        : []),
       row('Safe to spend', money(r.safe), 'total'),
       ...(many ? nextChecksRows(r) : []),
     ),
     el(
       'p',
       { class: 'hint', style: 'padding-top:var(--s-2)' },
-      'Set aside for spending is about ' +
+      (r.taxAsideTotal > 0
+        ? 'Set aside for taxes on cash is TipNet’s estimate of the tax on cash tips that weren’t run through payroll this pay period, so it isn’t spent before tax time. '
+        : '') +
+        'Set aside for spending is about ' +
         money(perDayCats) +
         ' a day across your spending categories (each one is its amount divided by the days in its week, two weeks or month), for the ' +
         plural(r.daysAway, 'day') +

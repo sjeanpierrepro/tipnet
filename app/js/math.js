@@ -320,7 +320,11 @@ function basePayWith(night, T) {
  * A locked night (night.snap) uses its snapshot's rates, pay types, tip-out, fixed total and shift count instead.
  * Returns dollars rounded to cents:
  * {total, basePay, hours, extra, extraTax, tips, tipout, kept, tax, fixedPerShift, net,
- *  fromCash, cashInHand (null if no cash entered), onCheck (null), fedOnTips, r, locked}
+ *  fromCash, cashInHand (null if no cash entered), onCheck (null), fedOnTips, r, locked,
+ *  cashOffPayroll (true when the night is marked and cash is entered), cashTipsKept, taxOnCashToSetAside}
+ * night.cashOffPayroll: the cash tips were not run through payroll, so no withholding was taken out of them. Payroll
+ * withholding then applies to (kept - cashTipsKept); cashTipsKept is the cash in hand, never more than the tips kept
+ * (hourly wages are always taxed). taxOnCashToSetAside = cashTipsKept x r: an estimate of what to put aside.
  */
 export function computeNight(night, p, shifts) {
   const T = termsOf(night, p, shifts);
@@ -340,20 +344,23 @@ export function computeNight(night, p, shifts) {
   }
   const keptC = total - tipoutC;
   const extraTaxC = toCents(bp.extraTax);
-  const taxC = toCents((keptC / 100) * r) + extraTaxC;
-  const fixedC = toCents(T.fixed / n);
-  const netC = keptC + extraC - taxC - fixedC;
-  const fedOnTipsC = toCents((Math.max(0, tipsC - tipoutC) / 100) * T.rf);
   let fromCashC = 0,
     cashInHandC = null,
-    onCheckC = null;
+    cashKeptC = 0;
   const hasCash = night.cash !== '' && night.cash != null && Number.isFinite(parseFloat(night.cash));
   if (hasCash) {
     const c = toCents(num(night.cash));
     fromCashC = useTO && to.from === 'cash' ? Math.min(c, tipoutC) : 0;
     cashInHandC = c - fromCashC;
-    onCheckC = netC - cashInHandC;
+    // cash not run through payroll: never more than the tips kept, so hourly wages are always taxed
+    if (night.cashOffPayroll) cashKeptC = Math.max(0, Math.min(cashInHandC, tipsC - tipoutC));
   }
+  const taxC = toCents(((keptC - cashKeptC) / 100) * r) + extraTaxC;
+  const fixedC = toCents(T.fixed / n);
+  const netC = keptC + extraC - taxC - fixedC;
+  // federal tax on tips that was actually withheld (none on cash that skipped payroll)
+  const fedOnTipsC = toCents((Math.max(0, tipsC - tipoutC - cashKeptC) / 100) * T.rf);
+  const onCheckC = hasCash ? netC - cashInHandC : null;
   const d = fromCents;
   return {
     total: d(total),
@@ -371,6 +378,9 @@ export function computeNight(night, p, shifts) {
     cashInHand: cashInHandC == null ? null : d(cashInHandC),
     onCheck: onCheckC == null ? null : d(onCheckC),
     fedOnTips: d(fedOnTipsC),
+    cashOffPayroll: hasCash && !!night.cashOffPayroll,
+    cashTipsKept: d(cashKeptC),
+    taxOnCashToSetAside: d(toCents((cashKeptC / 100) * r)),
     r,
     locked: !!night.snap,
   };
@@ -379,7 +389,7 @@ export function computeNight(night, p, shifts) {
 /* ---------- period totals (6.6) ---------- */
 /**
  * periodTotals(profile, nights, idx, today?, shifts?, index?) ->  (index: optional indexNights() result, for speed)
- * {ns, net, hrs, chk, kept, cash, allCash, exact}
+ * {ns, net, hrs, chk, kept, cash, setAside (taxes to set aside on cash that skipped payroll), allCash, exact}
  * When the period is final and has nights, the sum of per-shift fixed shares is replaced by the
  * exact fixed total (applied to net and expected check). Locked nights use their own snapshot, and the exact
  * total then comes from the period's snapshots (periodFixed), so a later Setup change leaves the period as it was.
@@ -392,6 +402,7 @@ export function periodTotals(p, nights, idx, today = todayISO(), shifts, index) 
     chk = 0,
     kept = 0,
     cash = 0,
+    setAside = 0,
     fixedShares = 0,
     allCash = ns.length > 0;
   ns.forEach((night) => {
@@ -400,6 +411,7 @@ export function periodTotals(p, nights, idx, today = todayISO(), shifts, index) 
     hrs += c.hours;
     kept += toCents(c.kept);
     fixedShares += toCents(c.fixedPerShift);
+    setAside += toCents(c.taxOnCashToSetAside);
     if (c.onCheck == null) allCash = false;
     else {
       chk += toCents(c.onCheck);
@@ -419,6 +431,7 @@ export function periodTotals(p, nights, idx, today = todayISO(), shifts, index) 
     chk: fromCents(chk),
     kept: fromCents(kept),
     cash: fromCents(cash),
+    setAside: fromCents(setAside),
     allCash,
     exact,
   };
@@ -456,10 +469,12 @@ export function calibrate(p, nights, idx, actual, today = todayISO(), shifts, ra
   const missing = cs.filter((c) => c.cashInHand == null).length;
   if (missing) return { ok: false, reason: 'missingCash', missingCash: missing };
   let T = 0,
+    Tt = 0,
     C = 0,
     predC = 0;
   cs.forEach((c) => {
     T += toCents(c.kept) + toCents(c.extra);
+    Tt += toCents(c.kept) + toCents(c.extra) - toCents(c.cashTipsKept); // the part payroll really taxed
     C += toCents(c.cashInHand);
     predC += toCents(c.onCheck) + toCents(c.fixedPerShift);
   });
@@ -469,7 +484,9 @@ export function calibrate(p, nights, idx, actual, today = todayISO(), shifts, ra
   const err = (pred - A) / A;
   const rOld = typeof rateBase === 'number' && Number.isFinite(rateBase) ? rateBase : rate(p); // rateBase: the rate in effect before this period was first adjusted (Replace)
   const rNew =
-    T > 0 ? Math.min(0.45, Math.max(0.02, 1 - (A + fromCents(F) + fromCents(C)) / fromCents(T))) : rOld;
+    Tt > 0
+      ? Math.min(0.45, Math.max(0.02, (fromCents(T) - (A + fromCents(F) + fromCents(C))) / fromCents(Tt)))
+      : rOld;
   const uncapped = (rOld + rNew) / 2; // blend to avoid overreacting to one check
   const rateOverride = Math.min(rOld + MAX_RATE_STEP, Math.max(rOld - MAX_RATE_STEP, uncapped));
   const expectedShifts = Math.max(1, Math.round(n));

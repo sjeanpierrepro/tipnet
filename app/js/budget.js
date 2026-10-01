@@ -448,6 +448,7 @@ export function expectedIncome(profile, nights, today = todayISO(), index = inde
   const projectedFrom = withCash > 0 ? 'nights' : avgChk == null ? null : 'average';
   return {
     cashSoFar: t.cash,
+    setAsideSoFar: t.setAside,
     checkSoFar: t.chk,
     projectedCheck: projected,
     projectedFrom,
@@ -1022,6 +1023,7 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
  *  sources:[{id, name, payday, daysAway, check (null if unknown), checkFrom}] (each restaurant's next check, soonest first),
  *  income:{source:'entered'|'balance'|'cash', amount, cash, spent (logged since the balance / this period; 0 for 'entered')}, bills:[...], billsTotal,
  *  goals:[{id,name,amount (0 once done),due (full amount),done,funderId}], goalsTotal (goals not done only), categories:[{id,name,remaining,reserved}], categoriesTotal,
+ *  taxAside:[{id,name,amount}] + taxAsideTotal (this pay period's estimated taxes to set aside on cash that skipped payroll, subtracted),
  *  safe (can be negative), perDay,
  *  (bills counted are unpaid ones due from the earliest restaurant's last payday up to the day before payday)
  *  after:{checks:[{id,name,date,amount (null if unknown),from}] (every check arriving from payday until the day before that restaurant's following payday),
@@ -1134,7 +1136,13 @@ export function safeToSpendAll(budget, sources, today = todayISO(), options = {}
   const otherItems = incomeInWindow(budget, today, addDays(payday, -1));
   const otherC = sumC(otherItems, (o) => toCents(o.amount));
 
-  const safeC = incomeC + otherC - billsC - goalsC - catsC;
+  // Taxes to set aside on cash that skipped payroll, this pay period, each restaurant (an estimate)
+  const taxAside = src
+    .map((x) => ({ id: x.s.id, name: x.s.name, amountC: toCents(x.inc.setAsideSoFar || 0) }))
+    .filter((x) => x.amountC > 0);
+  const taxAsideC = sumC(taxAside, (x) => x.amountC);
+
+  const safeC = incomeC + otherC - billsC - goalsC - catsC - taxAsideC;
 
   // After payday: from the next money arriving until the day before that restaurant's following payday. Every check that
   // arrives in that window (from any restaurant) is counted; bills, spending and goals in it come out of them.
@@ -1208,6 +1216,8 @@ export function safeToSpendAll(budget, sources, today = todayISO(), options = {}
       reserved: fromCents(c.reservedC),
     })),
     categoriesTotal: fromCents(catsC),
+    taxAside: taxAside.map((x) => ({ id: x.id, name: x.name, amount: fromCents(x.amountC) })),
+    taxAsideTotal: fromCents(taxAsideC),
     safe: fromCents(safeC),
     perDay: fromCents(Math.round(safeC / Math.max(1, daysAway))),
     after: {

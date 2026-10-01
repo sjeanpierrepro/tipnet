@@ -209,6 +209,7 @@ function cleanNights(list) {
         barback: n.barback === undefined ? true : !!n.barback,
         workplaceId: n.workplaceId,
       };
+      if (n.cashOffPayroll === true && hasCash) o.cashOffPayroll = true;
       if (typeof n.tips === 'number' && Number.isFinite(n.tips) && n.tips >= 0)
         o.tips = Math.round(n.tips * 100) / 100;
       if (typeof n.note === 'string' && n.note) o.note = n.note.slice(0, 500);
@@ -304,6 +305,8 @@ function cleanProfile(p, { startFallback, entryDefault }) {
     basis: text(to.basis, 'before') || 'before',
     from: text(to.from, 'cash') || 'cash',
   };
+  // "Cash tips here usually aren't run through payroll": the default for each new night (false for all old data)
+  out.cashOffPayroll = p.cashOffPayroll === true;
   out.entryMode = ENTRY_MODES.includes(p.entryMode) ? p.entryMode : entryDefault;
   return out;
 }
