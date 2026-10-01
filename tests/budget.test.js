@@ -125,7 +125,8 @@ test('safe to spend: hand-computed example', () => {
   const t = M.periodTotals(P(), M.exampleNights(TODAY), 0, TODAY);
   assert.deepEqual(dates(r.after.bills), ['b2@2026-10-15']);
   assert.equal(r.after.projectedCheck, M.round2(t.chk * 2.5));
-  assert.equal(r.after.left, M.round2(M.round2(t.chk * 2.5) - 65 - 40));
+  assert.equal(r.after.left, M.round2(M.round2(t.chk * 2.5) - 65 - 40 - 320.65));
+  assert.equal(r.after.categoriesTotal, 320.65); // 710 x 14 / 31 for 10-05..10-18
 });
 
 test('safe to spend uses cash from nights when no cash on hand is entered', () => {

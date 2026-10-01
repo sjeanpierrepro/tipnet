@@ -17,11 +17,8 @@ const seed = (goals = []) =>
 const key = (page, k) => page.must(page.$('[data-focus-key="' + k + '"]'), k);
 const planForm = (page) => page.$('form[aria-label="Plan a big purchase"]');
 const fill = (page, k, v) => page.type(key(page, k), v);
-const pick = (page, k) => {
-  const r = key(page, k);
-  r.checked = true;
-  page.change(r);
-};
+const toDate = (page) => page.click(page.byLabel('Need it by a certain date?'));
+const toAmount = (page) => page.click(page.byLabel('Choose an amount a paycheck instead'));
 const submit = (page) => page.click(page.button('Make this plan', planForm(page)));
 const plan = (over) => ({
   id: 'p1',
@@ -40,6 +37,7 @@ test('plans: create one by a date, with the numbers shown in plain words', async
   try {
     page.tab('budget');
     const date = addDays(todayISO(), 150);
+    toDate(page);
     fill(page, 'ef-plan-new-name', 'Car down payment');
     fill(page, 'ef-plan-new-cost', '2400');
     fill(page, 'ef-plan-new-saved', '400');
@@ -72,18 +70,22 @@ test('plans: create one by a date, with the numbers shown in plain words', async
   }
 });
 
-test('plans: create one with a set amount a paycheck, and a missing or past date is refused', async () => {
+test('plans: create one with a set amount a paycheck, and a missing amount or past date is refused', async () => {
   const page = await boot({ url: DEV, seed: seed() });
   try {
     page.tab('budget');
     fill(page, 'ef-plan-new-name', 'Laptop');
     fill(page, 'ef-plan-new-cost', '1000');
+    submit(page); // no amount chosen (TipNet does not know the paycheck yet)
+    assert.equal(page.state().budget.goals.filter((x) => x.kind === 'purchase').length, 0);
+    assert.match(page.text(planForm(page)), /Enter an amount above zero/);
+    toDate(page);
     submit(page); // no date chosen
     assert.equal(page.state().budget.goals.filter((x) => x.kind === 'purchase').length, 0);
     assert.match(page.text(planForm(page)), /Pick a date after today/);
-    pick(page, 'ef-plan-new-mode-fixed');
+    toAmount(page);
     fill(page, 'ef-plan-new-per', '110');
-    assert.match(page.text(planForm(page)), /About \$110\.00 a paycheck for 10 paychecks \(ready by /);
+    assert.match(page.text(planForm(page)), /\$110 a paycheck → about 10 paychecks → ready by about /);
     submit(page);
     const g = page.state().budget.goals.find((x) => x.name === 'Laptop');
     assert.equal(g.perPaycheck, 110);
@@ -99,7 +101,6 @@ test('plans: the realism line compares to a typical check, and a big share gets 
     page.tab('budget');
     fill(page, 'ef-plan-new-name', 'Trip');
     fill(page, 'ef-plan-new-cost', '1000');
-    pick(page, 'ef-plan-new-mode-fixed');
     fill(page, 'ef-plan-new-per', '10');
     const t = page.text(planForm(page));
     const m = /about (\d+)% of a typical check/i.exec(t);

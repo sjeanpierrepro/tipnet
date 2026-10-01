@@ -131,9 +131,6 @@ test('other income: a plan compares against the typical check plus regular other
     const f = form(page, 'Plan a big purchase');
     page.type(key(page, 'ef-plan-new-name'), 'Trip');
     page.type(key(page, 'ef-plan-new-cost'), '1000');
-    const r = key(page, 'ef-plan-new-mode-fixed');
-    r.checked = true;
-    page.change(r);
     page.type(key(page, 'ef-plan-new-per'), '100');
     const t = page.text(f);
     if (/% of a typical check/.test(t))

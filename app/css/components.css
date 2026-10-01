@@ -749,6 +749,20 @@ h1 {
   color: var(--hero);
   background: var(--sunk);
 }
+/* the put-aside slider: a plain track with a big thumb, no box around it */
+.field input[type='range'] {
+  min-height: var(--tap);
+  padding: 0;
+  background: transparent;
+  border: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.field input[type='range']:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
 .field input[type='date'] {
   min-width: 0;
   padding-left: 8px;

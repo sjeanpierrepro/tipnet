@@ -8,6 +8,16 @@ import {
   hasPayDelay,
   billsDue,
   categoryStatus,
+  CAT_FREQS,
+  CAT_FREQ_LABEL,
+  CAT_PERIOD_WORDS,
+  catFreq,
+  spendingMonthly,
+  possibleAside,
+  asideSliderMax,
+  roundDownStep,
+  ASIDE_STEP,
+  ASIDE_UNKNOWN_MAX,
   exampleBudget,
   migrateBudget,
   paidKey,
@@ -87,7 +97,6 @@ export function reset() {
   billsOpen = false;
   addOpen.bill = addOpen.category = addOpen.goal = addOpen.plan = addOpen.income = false;
   doneOpen = false;
-  planMode = 'date';
 }
 
 const newId = (p) => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
@@ -342,17 +351,7 @@ const KINDS = {
     noun: 'category',
     fields: [
       { k: 'name', label: 'Category name', type: 'text', ph: 'Groceries' },
-      { k: 'monthly', label: 'Monthly amount', type: 'money', req: true },
-    ],
-  },
-  goal: {
-    list: 'goals',
-    noun: 'goal',
-    fields: [
-      { k: 'name', label: 'Goal name', type: 'text', ph: 'Emergency fund' },
-      { k: 'target', label: 'Target amount', type: 'money', req: true },
-      { k: 'saved', label: 'Saved so far', type: 'money' },
-      { k: 'perPaycheck', label: 'Put aside each paycheck', type: 'money' },
+      { k: 'monthly', label: 'Amount', type: 'money', req: true },
     ],
   },
 };
@@ -388,6 +387,16 @@ function entityForm(kind, item) {
     ins[f.k] = input;
     fs.push([f, field(f.label, input)]);
   });
+  // A spending category repeats every week, every two weeks or every month.
+  const freqSel =
+    kind === 'category'
+      ? select(
+          CAT_FREQS.map((v) => [v, CAT_FREQ_LABEL[v]]),
+          item ? catFreq(item) : 'monthly',
+          { 'data-focus-key': 'ef-category-' + (item ? item.id : 'new') + '-freq' },
+        )
+      : null;
+  const freqField = freqSel ? field('How often', freqSel) : null;
   const btn = el(
     'button',
     {
@@ -416,6 +425,7 @@ function entityForm(kind, item) {
     'form',
     { class: 'stack-sm', novalidate: true },
     fs.map((x) => x[1]),
+    freqField,
     el('div', { class: 'cluster' }, btn, cancel),
   );
   form.addEventListener('submit', (e) => {
@@ -445,20 +455,26 @@ function entityForm(kind, item) {
       if (first) first.focus();
       return;
     }
-    if (kind === 'goal') {
-      // The schedule a goal is measured against starts when it is made, or again when its numbers are changed.
-      const changed =
-        !item ||
-        ['target', 'saved', 'perPaycheck'].some(
-          (k) => Math.round((Number(item[k]) || 0) * 100) !== Math.round(out[k] * 100),
-        );
-      if (changed) {
-        out.createdAt = todayISO();
-        out.startSaved = out.saved;
+    if (kind === 'category') {
+      const fq = freqSel.value;
+      const was = item ? catFreq(item) : 'monthly';
+      if (fq === 'monthly') {
+        out.freq = undefined;
+        out.anchor = undefined;
+      } else {
+        out.freq = fq;
+        // Every-two-weeks periods count from the day the category started (or from when it was switched to this).
+        out.anchor = item && was === fq && item.anchor ? item.anchor : todayISO();
       }
     }
-    if (item) Object.assign(item, out);
-    else B[K.list].push({ id: newId(kind[0]), ...out });
+    Object.keys(out).forEach((k) => out[k] === undefined && delete out[k]);
+    if (item) {
+      if (kind === 'category' && !out.freq) {
+        delete item.freq;
+        delete item.anchor;
+      }
+      Object.assign(item, out);
+    } else B[K.list].push({ id: newId(kind[0]), ...out });
     editing = null;
     save();
     bus.rerender();
@@ -695,9 +711,9 @@ function breakdown(S, r) {
       { class: 'hint', style: 'padding-top:var(--s-2)' },
       'Set aside for spending is about ' +
         money(perDayCats) +
-        ' a day across your spending categories (each one is its monthly amount divided by the days in the month), for the ' +
+        ' a day across your spending categories (each one is its amount divided by the days in its week, two weeks or month), for the ' +
         plural(r.daysAway, 'day') +
-        ' until payday. Where a category has less than that left this month, TipNet sets aside only what is left. Money from your next check is not counted until you are paid. Payday is the day your check arrives: set it in Setup, or TipNet assumes the day after your pay period ends. All figures are estimates.',
+        ' until payday. Where a category has less than that left in its current week, two weeks or month, TipNet sets aside only what is left. Money from your next check is not counted until you are paid. Payday is the day your check arrives: set it in Setup, or TipNet assumes the day after your pay period ends. All figures are estimates.',
     ),
   );
 }
@@ -731,6 +747,7 @@ function nextCheckCard(S, r0) {
         : []),
       row('Bills due in that window (' + a.bills.length + ')', '−' + money(a.billsTotal)),
       row('Savings goals', '−' + money(a.goalsTotal)),
+      row('Set aside for spending', '−' + money(a.categoriesTotal)),
       row('What is left', known ? money(a.left) : '–', 'total'),
     ),
     el(
@@ -866,7 +883,7 @@ function billsCard(S, r0) {
 function spendingCard(S) {
   const B = S.budget,
     today = todayISO();
-  const cats = categoryStatus(B, today.slice(0, 7)).map((c) => {
+  const cats = categoryStatus(B, today).map((c) => {
     if (isEditing('category', c.id))
       return el(
         'li',
@@ -881,6 +898,7 @@ function spendingCard(S) {
         ),
       );
     const over = c.remaining < 0;
+    const when = CAT_PERIOD_WORDS[c.freq || 'monthly'];
     return el(
       'li',
       { class: 'list-row wrap' },
@@ -893,8 +911,13 @@ function spendingCard(S) {
           el('span', null, c.name),
           el('b', { class: 'num' }, over ? money(-c.remaining) + ' over' : money(c.remaining) + ' left'),
         ),
-        bar(c.pct, c.name + ' spending this month'),
-        el('div', { class: 'hint' }, money(c.spent) + ' of ' + money(c.monthly) + ' this month'),
+        bar(c.pct, c.name + ' spending ' + when),
+        el(
+          'div',
+          { class: 'hint' },
+          money(c.spent) + ' of ' + money(c.monthly) + ' ' + when,
+          c.periodStart ? ' (' + fmtShort(c.periodStart) + ' – ' + fmtShort(c.periodEnd) + ')' : '',
+        ),
       ),
       el(
         'div',
@@ -1008,8 +1031,17 @@ function spendingCard(S) {
       : el(
           'p',
           { class: 'hint' },
-          'No categories yet. A category is money you plan to spend each month, like groceries or gas.',
+          'No categories yet. A category is money you plan to spend each week, every two weeks or each month, like groceries or gas.',
         ),
+    B.categories.some((c) => catFreq(c) !== 'monthly')
+      ? el(
+          'p',
+          { class: 'hint' },
+          'All your spending categories come to about ' +
+            money(spendingMonthly(B)) +
+            ' a month (a week counts as 52 ÷ 12 weeks a month, two weeks as 26 ÷ 12).',
+        )
+      : null,
     addBox('category', 'Add a spending category'),
     logBox,
     recent.length
@@ -1025,7 +1057,6 @@ function spendingCard(S) {
 
 /* ---------- (e) goals and big-purchase plans ---------- */
 let doneOpen = false; // keeps the "Done" list open after an Undo
-let planMode = 'date'; // which way the "Plan a big purchase" form was last set
 
 /** The local calendar day of an ISO date-time, "YYYY-MM-DD" ('' if unreadable). */
 function localDay(iso) {
@@ -1416,16 +1447,43 @@ function planLines(p, tc) {
   return lines;
 }
 
-/** The "Plan a big purchase" form. With an item it edits that plan. */
-function planForm(item) {
+/** "$150" for whole dollars, "$150.50" otherwise. */
+const moneyShort = (n) => (Math.round(n * 100) % 100 === 0 ? money0(n) : money(n));
+
+/** The "How we worked this out" rows for the amount that is possible to put aside. */
+function asideBreakdown(pa) {
+  const rows = [
+    row(
+      pa.checkFrom === 'average' ? 'Typical take-home per paycheck' : 'Projected take-home per paycheck',
+      money(pa.check),
+    ),
+  ];
+  if (pa.other > 0) rows.push(row('Other regular income per paycheck', '+' + money(pa.other)));
+  rows.push(row('Bills per paycheck', '−' + money(pa.bills)));
+  rows.push(row('Spending categories per paycheck', '−' + money(pa.spending)));
+  rows.push(row('Your other goals per paycheck', '−' + money(pa.goals)));
+  pa.goalList.forEach((g) => rows.push(row('   ' + g.name, '−' + money(g.amount), 'hint')));
+  rows.push(row('Room to put aside', money(pa.possible), 'total'));
+  return rows;
+}
+
+/**
+ * The form for a savings goal (kind 'goal') or a big-purchase plan (kind 'plan'). With an item it edits that one.
+ * Name, cost, already saved. Then TipNet shows what is possible to put aside each paycheck, and a slider (linked to a money field) sets
+ * how much to put aside; the number of paychecks and the ready-by date follow it live. A plan can instead be set by a date.
+ */
+function goalForm(item, kind = 'plan') {
   const S = getState(),
     B = S.budget;
   const today = todayISO();
-  const key = (k) => 'ef-plan-' + (item ? item.id : 'new') + '-' + k;
+  const isPlanForm = kind === 'plan';
+  const pre = 'ef-' + kind + '-' + (item ? item.id : 'new');
+  const key = (k) => pre + '-' + k;
+  const noun = isPlanForm ? 'plan' : 'goal';
   const name = el('input', {
     type: 'text',
     autocomplete: 'off',
-    placeholder: 'Car down payment',
+    placeholder: isPlanForm ? 'Car down payment' : 'Emergency fund',
     maxlength: '40',
     value: item ? item.name : '',
     'data-focus-key': key('name'),
@@ -1440,43 +1498,77 @@ function planForm(item) {
     value: item && item.saved ? String(item.saved) : '',
     'data-focus-key': key('saved'),
   });
-  const mode0 = item ? (item.targetDate ? 'date' : 'fixed') : planMode;
-  const pid = 'plan-' + (item ? item.id : 'new') + '-mode';
-  const radio = (v, label) =>
-    el(
-      'label',
-      { class: 'check' },
-      el('input', {
-        type: 'radio',
-        name: pid,
-        value: v,
-        checked: mode0 === v,
-        'data-focus-key': key('mode-' + v),
-      }),
-      label,
-    );
   const byDate = el('input', {
     type: 'date',
     min: addDays(today, 1),
     value: item && item.targetDate ? item.targetDate : '',
     'data-focus-key': key('date'),
   });
+  // What is possible comes from the budget alone, so it is worked out once (the goal being edited is left out of it).
+  const pa = possibleAside(B, S.profile, S.nights, today, { excludeId: item ? item.id : undefined });
+  const possible0 = pa.known ? roundDownStep(pa.possible) : 0;
+  const hasOwn = !!(item && !item.targetDate && Number(item.perPaycheck) > 0);
+  const start = hasOwn ? Number(item.perPaycheck) : possible0;
   const perCheck = moneyInput({
     placeholder: '0.00',
-    value: item && !item.targetDate && item.perPaycheck ? String(item.perPaycheck) : '',
+    value: start > 0 ? String(start) : '',
     'data-focus-key': key('per'),
   });
-  const fName = field('What is it?', name),
-    fCost = field('How much does it cost?', cost),
+  const slider = el('input', {
+    type: 'range',
+    min: '0',
+    max: String(ASIDE_STEP),
+    step: String(ASIDE_STEP),
+    'data-focus-key': key('slider'),
+  });
+  slider.value = String(start);
+  let mode = isPlanForm && item && item.targetDate ? 'date' : 'fixed';
+  let touched = hasOwn; // once an amount is chosen, the slider stops following "what is possible"
+
+  const fName = field(isPlanForm ? 'What is it?' : 'Goal name', name),
+    fCost = field(isPlanForm ? 'How much does it cost?' : 'How much do you need?', cost),
     fSaved = field('Already saved', saved, { optional: true }),
     fDate = field('Date you want it by', byDate),
-    fPer = field('How much can you put aside each paycheck?', perCheck);
-  const preview = el('div', { class: 'stack-sm', id: pid + '-preview' });
-  const mode = () => {
-    const on = Array.from(form.querySelectorAll('input[type=radio]')).find((r) => r.checked);
-    return on ? on.value : 'date';
-  };
-  // A draft goal from what is typed so far (null fields stay empty); the same maths as a saved plan.
+    fSlider = field('How much do you want to put aside each paycheck?', slider),
+    fPer = field('Or type an amount a paycheck', perCheck);
+  const possibleBox = el('div', { class: 'stack-sm', id: pre + '-possible' });
+  const live = el('p', { class: 'num', role: 'status', 'aria-live': 'polite', id: pre + '-live' });
+  const extra = el('div', { class: 'stack-sm', id: pre + '-extra' });
+  const preview = el('div', { class: 'stack-sm', id: pre + '-preview' });
+  // Only a plan can be set by a date; a plain goal is always an amount a paycheck.
+  const toDate = isPlanForm
+    ? el(
+        'button',
+        {
+          type: 'button',
+          class: 'btn-link',
+          'data-focus-key': key('to-date'),
+          onclick: () => {
+            mode = 'date';
+            refresh();
+            byDate.focus();
+          },
+        },
+        'Need it by a certain date?',
+      )
+    : null;
+  const toAmount = isPlanForm
+    ? el(
+        'button',
+        {
+          type: 'button',
+          class: 'btn-link',
+          'data-focus-key': key('to-amount'),
+          onclick: () => {
+            mode = 'fixed';
+            refresh();
+            slider.focus();
+          },
+        },
+        'Choose an amount a paycheck instead',
+      )
+    : null;
+  const tc = typicalCheck(S);
   const draft = () => {
     const d = {
       kind: 'purchase',
@@ -1486,28 +1578,120 @@ function planForm(item) {
       createdAt: today,
     };
     d.startSaved = d.saved;
-    if (mode() === 'date') d.targetDate = byDate.value;
+    if (mode === 'date') d.targetDate = byDate.value;
     else d.perPaycheck = Math.max(0, numOf(perCheck.value));
     return d;
   };
-  const refresh = () => {
-    const m = mode();
-    fDate.hidden = m !== 'date';
-    fPer.hidden = m !== 'fixed';
-    clear(preview);
+  const stepUp = (v) => Math.ceil(Math.round(v * 100) / (ASIDE_STEP * 100)) * ASIDE_STEP;
+  const setSliderTo = (v) => {
     const d = draft();
-    if (!(d.target > 0) || (m === 'date' ? !d.targetDate : !(d.perPaycheck > 0))) return;
-    if (m === 'date' && d.targetDate <= today) return;
-    preview.append(
-      ...planLines(purchasePlan(d, S.profile, today), typicalCheck(S)).map((t, i) =>
-        el('p', i === 0 ? { class: 'num' } : { class: 'hint' }, t),
-      ),
+    const max = Math.max(asideSliderMax(pa.possible, Math.max(0, d.target - d.saved), pa.known), stepUp(v));
+    slider.max = String(max);
+    slider.value = String(Math.min(Math.max(0, v), max));
+    slider.setAttribute('aria-valuetext', moneyShort(Math.max(0, v)) + ' a paycheck');
+  };
+  const refresh = () => {
+    const d = draft();
+    fDate.hidden = mode !== 'date';
+    fSlider.hidden = fPer.hidden = mode !== 'fixed';
+    possibleBox.hidden = live.hidden = extra.hidden = mode !== 'fixed';
+    preview.hidden = mode !== 'date';
+    if (toDate) toDate.hidden = mode !== 'fixed';
+    if (toAmount) toAmount.hidden = mode !== 'date';
+    clear(possibleBox);
+    clear(extra);
+    clear(preview);
+    live.textContent = '';
+    if (mode === 'date') {
+      if (!(d.target > 0) || !d.targetDate || d.targetDate <= today) return;
+      preview.append(
+        ...planLines(purchasePlan(d, S.profile, today), tc).map((t, i) =>
+          el('p', i === 0 ? { class: 'num' } : { class: 'hint' }, t),
+        ),
+      );
+      return;
+    }
+    if (!(d.target > 0)) {
+      possibleBox.append(
+        el('p', { class: 'hint' }, 'Enter what you need and TipNet will show what you could put aside.'),
+      );
+      setSliderTo(Number(slider.value) || 0);
+      return;
+    }
+    // Until the person picks an amount, the slider starts at what is possible.
+    if (!touched) perCheck.value = possible0 > 0 ? String(possible0) : '';
+    const per = Math.max(0, numOf(perCheck.value));
+    setSliderTo(per);
+    possibleBox.append(
+      pa.known
+        ? el(
+            'p',
+            { class: 'num' },
+            'You could put aside up to about ' + moneyShort(pa.possible) + ' a paycheck.',
+          )
+        : el(
+            'p',
+            { class: 'hint' },
+            "TipNet doesn't know what your paycheck is yet, so it can't say what you could put aside. The slider goes from $0 to $" +
+              ASIDE_UNKNOWN_MAX +
+              '. Log a night with the cash you took home, or finish a pay period, and it will work this out.',
+          ),
+      ...(pa.known
+        ? [
+            el(
+              'details',
+              null,
+              el('summary', { class: 'btn-link' }, 'How we worked this out'),
+              el('dl', { class: 'breakdown', style: 'padding-top:var(--s-2)' }, ...asideBreakdown(pa)),
+              el('p', { class: 'hint' }, 'All figures are estimates.'),
+            ),
+          ]
+        : []),
     );
+    const p = purchasePlan({ ...d, perPaycheck: per }, S.profile, today);
+    if (p.ready) live.textContent = 'You already have enough saved for this.';
+    else if (!(per > 0)) live.textContent = 'Move the slider or type an amount to see how long it takes.';
+    else
+      live.textContent =
+        moneyShort(per) +
+        ' a paycheck → about ' +
+        plural(p.paychecksLeft, 'paycheck') +
+        (p.readyBy ? ' → ready by about ' + fmtDate(p.readyBy) : '');
+    if (!p.ready && per > 0) {
+      const sh = planShare(per, tc.base);
+      if (!sh)
+        extra.append(
+          el(
+            'p',
+            { class: 'hint' },
+            "We'll compare it to your paychecks once you have a finished pay period.",
+          ),
+        );
+      else
+        extra.append(
+          el(
+            'p',
+            { class: 'hint' },
+            "That's about " +
+              sh.pct +
+              '% of a typical check' +
+              (tc.other > 0 ? ' plus your regular other income.' : '.'),
+          ),
+        );
+      if (pa.known && per > pa.possible)
+        extra.append(
+          el(
+            'p',
+            { class: 'hint' },
+            "That's more than your budget leaves each paycheck; you may need to cut spending.",
+          ),
+        );
+    }
   };
   const submit = el(
     'button',
-    { type: 'submit', class: 'btn btn-small', 'data-focus-key': item ? key('submit') : 'add-plan' },
-    item ? 'Save plan' : 'Make this plan',
+    { type: 'submit', class: 'btn btn-small', 'data-focus-key': item ? key('submit') : 'add-' + kind },
+    item ? 'Save ' + noun : isPlanForm ? 'Make this plan' : 'Add goal',
   );
   const cancel = item
     ? el(
@@ -1528,32 +1712,41 @@ function planForm(item) {
     {
       class: 'stack-sm',
       novalidate: true,
-      'aria-label': item ? 'Edit plan ' + item.name : 'Plan a big purchase',
+      'aria-label': item
+        ? 'Edit ' + noun + ' ' + item.name
+        : isPlanForm
+          ? 'Plan a big purchase'
+          : 'Add a savings goal',
     },
     fName,
     fCost,
     fSaved,
-    el(
-      'fieldset',
-      { class: 'stack-sm' },
-      el('legend', null, 'How do you want to plan it?'),
-      radio('date', 'I want it by a date'),
-      radio('fixed', 'I can put aside a set amount each paycheck'),
-    ),
-    fDate,
+    possibleBox,
+    fSlider,
     fPer,
+    live,
+    extra,
+    fDate,
     preview,
+    toDate,
+    toAmount,
     el('div', { class: 'cluster' }, submit, cancel),
   );
-  form.addEventListener('input', refresh);
-  form.addEventListener('change', (e) => {
-    if (e.target && e.target.type === 'radio' && !item) planMode = e.target.value;
+  slider.addEventListener('input', () => {
+    touched = true;
+    perCheck.value = slider.value === '0' ? '' : slider.value;
     refresh();
   });
+  perCheck.addEventListener('input', () => {
+    touched = true;
+  });
+  form.addEventListener('input', (e) => {
+    if (e.target !== slider) refresh();
+  });
+  form.addEventListener('change', refresh);
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     const d = draft();
-    const m = mode();
     let bad = false;
     const check = (f, msg) => {
       f.setError(msg);
@@ -1562,8 +1755,8 @@ function planForm(item) {
     check(fName, d.name ? '' : 'Give it a name.');
     check(fCost, d.target > 0 ? '' : 'Enter an amount above zero.');
     check(fSaved, '');
-    check(fDate, m === 'date' && !(d.targetDate > today) ? 'Pick a date after today.' : '');
-    check(fPer, m === 'fixed' && !(d.perPaycheck > 0) ? 'Enter an amount above zero.' : '');
+    check(fDate, mode === 'date' && !(d.targetDate > today) ? 'Pick a date after today.' : '');
+    check(fPer, mode === 'fixed' && !(d.perPaycheck > 0) ? 'Enter an amount above zero.' : '');
     if (bad) {
       const first = form.querySelector('[aria-invalid]');
       if (first) first.focus();
@@ -1571,15 +1764,24 @@ function planForm(item) {
     }
     const p = purchasePlan(d, S.profile, today);
     const fields = {
-      kind: 'purchase',
       name: d.name,
       target: d.target,
       saved: d.saved,
-      startSaved: d.saved,
-      createdAt: today,
-      perPaycheck: m === 'date' ? p.perPaycheck : d.perPaycheck,
+      perPaycheck: mode === 'date' ? p.perPaycheck : d.perPaycheck,
     };
-    if (m === 'date') fields.targetDate = d.targetDate;
+    if (isPlanForm) fields.kind = 'purchase';
+    if (mode === 'date') fields.targetDate = d.targetDate;
+    // The schedule a goal is measured against starts when it is made, or again when its numbers are changed.
+    const changed =
+      !item ||
+      isPlanForm ||
+      ['target', 'saved', 'perPaycheck'].some(
+        (k) => Math.round((Number(item[k]) || 0) * 100) !== Math.round(fields[k] * 100),
+      );
+    if (changed) {
+      fields.createdAt = today;
+      fields.startSaved = d.saved;
+    }
     if (item) {
       delete item.targetDate;
       Object.assign(item, fields);
@@ -1587,7 +1789,7 @@ function planForm(item) {
     editing = null;
     save();
     bus.rerender();
-    toast(item ? 'Saved.' : 'Plan added.');
+    toast(item ? 'Saved.' : isPlanForm ? 'Plan added.' : 'Added.');
   });
   refresh();
   return form;
@@ -1629,7 +1831,7 @@ function trackerBody(S, g, p, tc) {
 function planRow(S, g, tc) {
   const B = S.budget;
   if (isEditing('plan', g.id))
-    return el('li', { class: 'list-row wrap' }, el('div', { class: 'main' }, planForm(g)));
+    return el('li', { class: 'list-row wrap' }, el('div', { class: 'main' }, goalForm(g, 'plan')));
   const p = purchasePlan(g, S.profile, todayISO());
   const head = [
     el('div', { class: 'spread' }, el('span', null, g.name), el('b', { class: 'num' }, p.pct + '%')),
@@ -1726,7 +1928,7 @@ function goalsCard(S) {
     .map((g) => {
       if (isPlan(g)) return planRow(S, g, tc);
       if (isEditing('goal', g.id))
-        return el('li', { class: 'list-row wrap' }, el('div', { class: 'main' }, entityForm('goal', g)));
+        return el('li', { class: 'list-row wrap' }, el('div', { class: 'main' }, goalForm(g, 'goal')));
       const p = purchasePlan(g, S.profile, todayISO());
       return el(
         'li',
@@ -1755,7 +1957,18 @@ function goalsCard(S) {
           { class: 'hint' },
           'No goals yet. A goal is something you are saving toward, like an emergency fund.',
         ),
-    addBox('goal', 'Add a savings goal'),
+    el(
+      'details',
+      {
+        class: 'card',
+        open: !!addOpen.goal,
+        ontoggle: (e) => {
+          addOpen.goal = e.target.open;
+        },
+      },
+      el('summary', null, 'Add a savings goal'),
+      el('div', { style: 'padding-top:var(--s-2)' }, goalForm(null, 'goal')),
+    ),
     el(
       'details',
       {
@@ -1766,7 +1979,7 @@ function goalsCard(S) {
         },
       },
       el('summary', null, 'Plan a big purchase'),
-      el('div', { style: 'padding-top:var(--s-2)' }, planForm(null)),
+      el('div', { style: 'padding-top:var(--s-2)' }, goalForm(null, 'plan')),
     ),
     done.length ? doneList(S, done) : null,
   );

@@ -3,7 +3,9 @@
 //
 // Data shape (lives at state.budget):
 //   bills:      [{id, name, amount, dueDay (1-31), category?}]   a bill that repeats every month
-//   categories: [{id, name, monthly}]                            a monthly spending limit
+//   categories: [{id, name, monthly, freq?, anchor?}]            a spending limit. "monthly" is the amount per period (the name is old).
+//                 freq: 'weekly' (resets Mon-Sun) | 'biweekly' (every 14 days counted from anchor) | absent = monthly (calendar month).
+//                 anchor: the date the category started (ISO), used for biweekly.
 //   goals:      [{id, name, target, saved, perPaycheck}]         something you are saving toward
 //   spends:     [{id, date, amount, categoryId, note?}]          money spent, logged by the user
 //   paidBills:  {"<billId>@<due date>": true}                    bills already paid, keyed by the bill and the day it fell due
@@ -38,6 +40,7 @@ import {
   periodLength,
   computeNight,
   periodFixed,
+  weekdayMon0,
 } from './math.js';
 
 /* ---------- small helpers ---------- */
@@ -234,11 +237,16 @@ export function migrateBudget(x, profile) {
     if (typeof b.category === 'string' && b.category) bill.category = b.category;
     return bill;
   });
-  out.categories = list(x.categories).map((c, i) => ({
-    id: id(c.id, 'c', i),
-    name: text(c.name, 'Category'),
-    monthly: money(c.monthly),
-  }));
+  out.categories = list(x.categories).map((c, i) => {
+    const cat = { id: id(c.id, 'c', i), name: text(c.name, 'Category'), monthly: money(c.monthly) };
+    // Only weekly and every-two-weeks are written down; anything else (or missing) stays monthly.
+    if (c.freq === 'weekly' || c.freq === 'biweekly') {
+      cat.freq = c.freq;
+      if (isDateStr(c.anchor)) cat.anchor = c.anchor;
+      else if (c.freq === 'biweekly') cat.anchor = todayISO();
+    }
+    return cat;
+  });
   out.goals = list(x.goals).map((g, i) => {
     const goal = {
       id: id(g.id, 'g', i),
@@ -467,14 +475,67 @@ function finishedCheckC(profile, nights, k, today, avgCheck, index) {
 }
 
 /* ---------- categories and goals ---------- */
-/** Spending per category for a month ("YYYY-MM"): [{id, name, monthly, spent, remaining, pct}]. pct may pass 100. */
-export function categoryStatus(budget, month) {
+export const CAT_FREQS = ['weekly', 'biweekly', 'monthly'];
+export const CAT_FREQ_LABEL = { weekly: 'per week', biweekly: 'per two weeks', monthly: 'per month' };
+export const CAT_PERIOD_WORDS = { weekly: 'this week', biweekly: 'these two weeks', monthly: 'this month' };
+/** 'weekly' | 'biweekly' | 'monthly' (anything unknown is monthly). */
+export const catFreq = (cat) =>
+  cat && (cat.freq === 'weekly' || cat.freq === 'biweekly') ? cat.freq : 'monthly';
+const BIWEEK_FALLBACK = '1970-01-05'; // a Monday, used only when a biweekly category has no readable anchor
+
+/**
+ * The spending period a date falls in for a category: {start, end (inclusive), len (days)}.
+ * Weekly is Monday to Sunday (the app's week). Every two weeks is 14-day blocks counted from the category's anchor date.
+ * Monthly is the calendar month.
+ */
+export function catPeriod(cat, dateISO) {
+  const f = catFreq(cat);
+  if (f === 'weekly') {
+    const start = addDays(dateISO, -weekdayMon0(dateISO));
+    return { start, end: addDays(start, 6), len: 7 };
+  }
+  if (f === 'biweekly') {
+    const anchor = isDateStr(cat.anchor) ? cat.anchor : BIWEEK_FALLBACK;
+    const start = addDays(anchor, Math.floor(dayDiff(anchor, dateISO) / 14) * 14);
+    return { start, end: addDays(start, 13), len: 14 };
+  }
+  const y = +dateISO.slice(0, 4),
+    m = +dateISO.slice(5, 7),
+    dim = daysInMonth(y, m);
+  return { start: y + '-' + pad(m) + '-01', end: y + '-' + pad(m) + '-' + pad(dim), len: dim };
+}
+/** What one category comes to in a month, in cents: weekly x 52/12, every two weeks x 26/12. */
+export function catMonthlyC(cat) {
+  const c = cents(cat.monthly),
+    f = catFreq(cat);
+  return f === 'weekly' ? Math.round((c * 52) / 12) : f === 'biweekly' ? Math.round((c * 26) / 12) : c;
+}
+/** The monthly equivalent of all spending categories, in dollars. */
+export const spendingMonthly = (budget) => fromCents(sumC(budget.categories || [], catMonthlyC));
+/** What the spending categories come to over one pay period of the profile, in dollars (their per-day allowance x the days in the period). */
+export function spendingPerPaycheck(budget, profile, today = todayISO()) {
+  const len = periodLength(profile, periodIndex(profile, today));
+  const yearC = sumC(budget.categories || [], (c) => {
+    const f = catFreq(c);
+    return cents(c.monthly) * (f === 'weekly' ? 52 : f === 'biweekly' ? 26 : 12);
+  });
+  return fromCents(Math.round((yearC * len) / 365));
+}
+
+/**
+ * Spending per category for the period around a date (or a month "YYYY-MM"): [{id, name, monthly (the amount per period), spent, remaining, pct}].
+ * pct may pass 100. Weekly and every-two-weeks categories also carry freq, periodStart and periodEnd.
+ * Spending counts against the period its date falls in.
+ */
+export function categoryStatus(budget, when) {
+  const day = String(when).length === 7 ? when + '-01' : String(when);
   return (budget.categories || []).map((c) => {
+    const per = catPeriod(c, day);
     const spentC = (budget.spends || [])
-      .filter((s) => s.categoryId === c.id && String(s.date).slice(0, 7) === month)
+      .filter((s) => s.categoryId === c.id && s.date >= per.start && s.date <= per.end)
       .reduce((sum, s) => sum + toCents(num(s.amount)), 0);
     const monthlyC = toCents(num(c.monthly));
-    return {
+    const out = {
       id: c.id,
       name: c.name,
       monthly: fromCents(monthlyC),
@@ -482,6 +543,9 @@ export function categoryStatus(budget, month) {
       remaining: fromCents(monthlyC - spentC),
       pct: monthlyC > 0 ? Math.round((spentC / monthlyC) * 100) : spentC > 0 ? 100 : 0,
     };
+    if (catFreq(c) !== 'monthly')
+      Object.assign(out, { freq: catFreq(c), periodStart: per.start, periodEnd: per.end });
+    return out;
   });
 }
 /** {pct (0-100), remaining, paychecksToGo (null if perPaycheck is 0 and goal not met)}. */
@@ -739,6 +803,61 @@ export function planShare(perPaycheck, typicalCheck) {
   return { pct, big: pct > PLAN_BIG_SHARE };
 }
 
+/* ---------- what is possible to put aside ---------- */
+export const ASIDE_STEP = 5;
+export const ASIDE_UNKNOWN_MAX = 500;
+/** Round a dollar amount down to a whole step (default $5). */
+export const roundDownStep = (v, step = ASIDE_STEP) =>
+  Math.floor((Math.round(num(v) * 100) + 1e-6) / (step * 100)) * step;
+/**
+ * What there is room to put aside each paycheck, from the budget. All estimates, in dollars:
+ * typical take-home per paycheck (the average finished check, else the projected check) + regular other income per paycheck
+ * - bills per paycheck (monthly bills x 12 / paychecks a year) - spending categories per paycheck (their per-day allowance x the days in a pay period)
+ * - what the other active goals already take per paycheck. Never below 0. opts.excludeId leaves one goal out (the one being made or edited).
+ * Returns {known (false when TipNet cannot tell what a check is yet), possible, check, checkFrom ('average'|'projected'|null), other, bills, spending, goals,
+ *  periodDays, goalList:[{id,name,amount}]}. When not known, possible is 0 and the pieces are still worked out.
+ */
+export function possibleAside(budget, profile, nights, today = todayISO(), opts = {}) {
+  const len = periodLength(profile, periodIndex(profile, today));
+  const inc = expectedIncome(profile, nights, today, opts.index);
+  const check = inc.avgCheckPerPeriod != null ? inc.avgCheckPerPeriod : inc.projectedCheck;
+  const checkC = check == null ? 0 : toCents(check);
+  const otherC = toCents(otherIncomePerPaycheck(budget, profile, today));
+  const billsC = Math.round((sumC(budget.bills || [], (b) => cents(b.amount)) * 12 * len) / 365);
+  const spendC = toCents(spendingPerPaycheck(budget, profile, today));
+  const goalList = (budget.goals || [])
+    .filter((g) => !g.boughtAt && g.id !== opts.excludeId)
+    .map((g) => {
+      const remC = Math.max(0, cents(g.target) - cents(g.saved));
+      const per = isPlan(g) ? toCents(purchasePlan(g, profile, today).perPaycheck) : cents(g.perPaycheck);
+      return { id: g.id, name: g.name, amountC: Math.min(per, remC) };
+    })
+    .filter((g) => g.amountC > 0);
+  const goalsC = sumC(goalList, (g) => g.amountC);
+  const known = check != null;
+  return {
+    known,
+    possible: known ? fromCents(Math.max(0, checkC + otherC - billsC - spendC - goalsC)) : 0,
+    check: fromCents(checkC),
+    checkFrom: check == null ? null : inc.avgCheckPerPeriod != null ? 'average' : 'projected',
+    other: fromCents(otherC),
+    bills: fromCents(billsC),
+    spending: fromCents(spendC),
+    goals: fromCents(goalsC),
+    periodDays: len,
+    goalList: goalList.map((g) => ({ id: g.id, name: g.name, amount: fromCents(g.amountC) })),
+  };
+}
+/**
+ * The slider's top end for putting money aside each paycheck: the larger of twice what is possible and what finishing in one paycheck takes,
+ * rounded up to the step. 0 to $500 when income is not known yet.
+ */
+export function asideSliderMax(possible, needed, known = true, step = ASIDE_STEP) {
+  if (!known) return ASIDE_UNKNOWN_MAX;
+  const top = Math.max(2 * num(possible), num(needed));
+  return Math.max(step, Math.ceil(Math.round(top * 100) / (step * 100)) * step);
+}
+
 /* ---------- safe to spend ---------- */
 /**
  * Money to put toward goals this paycheck (never more than a goal still needs), in cents.
@@ -755,12 +874,38 @@ function goalPieces(budget, payday, profile, today) {
 }
 
 /**
+ * Cents to set aside for one category over `days` days starting at fromISO, by the day (amount / days in each period).
+ * The period that today falls in is capped at what is left of it (u.remC, less u.c already reserved); every other period uses its full per-day allowance.
+ */
+function reserveC(cat, today, fromISO, days, u) {
+  const amtC = toCents(num(cat.monthly));
+  const cur = catPeriod(cat, today);
+  let total = 0,
+    cursor = fromISO,
+    left = days;
+  for (let i = 0; left > 0 && i < 800; i++) {
+    const per = catPeriod(cat, cursor);
+    const n = Math.min(left, dayDiff(cursor, per.end) + 1);
+    let c = Math.round((amtC * n) / per.len);
+    if (per.start === cur.start) {
+      c = Math.max(0, Math.min(c, u.remC - u.c));
+      u.c += c;
+    }
+    total += c;
+    cursor = addDays(per.end, 1);
+    left -= n;
+  }
+  return total;
+}
+
+/**
  * How much you can spend before your next payday, with every piece shown so the UI can explain it.
  * Money you have: options.cashOnHand if given, else the saved balance (budget.balance) minus spending logged since it was saved,
  * else the cash tips TipNet adds up from this pay period's nights (minus spending logged this pay period).
  * options.index: an indexNights() result to reuse.
- * Money from the check is NOT counted until payday. Category money is set aside by the day: for each month the days until
- * payday touch, min(what is left of that month's allowance, monthly / days in that month x the days in the window in that month).
+ * Money from the check is NOT counted until payday. Category money is set aside by the day: for each spending period (week, two weeks or month)
+ * the days until payday touch, min(what is left of today's period, amount / days in that period x the days in the window in that period);
+ * periods after today's use the full per-day allowance. The after-payday window uses the same rule.
  * Goals with an amount recorded for the current check (isGoalDone) are not subtracted from the money you have now; the next paycheck still counts them.
  * Paid bills are looked up by paidKey(bill id, due date).
  * Returns {payday, daysAway, income:{source:'entered'|'balance'|'cash', amount, cash, spent (logged since the balance / this period; 0 for 'entered')}, bills:[...], billsTotal,
@@ -809,32 +954,20 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
     (g) => g.amountC,
   ); // what still has to come out of the money you have now
 
-  // Category money to set aside for the days until payday. Each month the window touches: a day-based allowance
-  // (monthly / days in that month x window days in that month), never more than what is left of that month's allowance.
-  // This month's remaining = monthly - spent (never below 0); later months have their full monthly to draw on.
-  const y = +today.slice(0, 4),
-    m = +today.slice(5, 7),
-    d = +today.slice(8, 10);
-  const monthDaysLeft = daysInMonth(y, m) - d + 1;
-  const thisMonthDays = Math.min(daysAway, monthDaysLeft);
-  const later = []; // {n days, dim days in that month} for each later month in the window
-  for (let left = daysAway - thisMonthDays, mm = m, yy = y; left > 0;) {
-    mm++;
-    if (mm > 12) {
-      mm = 1;
-      yy++;
-    }
-    const dim = daysInMonth(yy, mm),
-      n = Math.min(left, dim);
-    later.push({ n, dim });
-    left -= n;
-  }
-  const cats = categoryStatus(budget, today.slice(0, 7)).map((c) => {
-    const remC = Math.max(0, toCents(c.remaining)),
-      monthlyC = toCents(c.monthly);
-    let reservedC = Math.min(remC, Math.round((monthlyC * thisMonthDays) / daysInMonth(y, m)));
-    for (const L of later) reservedC += Math.min(monthlyC, Math.round((monthlyC * L.n) / L.dim));
-    return { id: c.id, name: c.name, remaining: fromCents(remC), reservedC };
+  // Category money to set aside for the days until payday, by the day: a category's amount divided by the days in its period
+  // (7, 14, or the days in the month) for each day, never more than what is left of today's period. Later periods use the full per-day allowance.
+  const used = new Map(); // category id -> cents of today's-period money already reserved (so the window after payday never counts it twice)
+  const status = categoryStatus(budget, today);
+  const cats = (budget.categories || []).map((c, i) => {
+    const st = status[i];
+    const u = { c: 0, remC: Math.max(0, toCents(st.remaining)) };
+    used.set(c.id, u);
+    return {
+      id: c.id,
+      name: c.name,
+      remaining: fromCents(u.remC),
+      reservedC: reserveC(c, today, today, daysAway, u),
+    };
   });
   const catsC = sumC(cats, (c) => c.reservedC);
 
@@ -853,6 +986,10 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
   const nextBillsC = sumC(nextBills, (b) => toCents(num(b.amount)));
   const afterOther = incomeInWindow(budget, afterStart, afterEnd);
   const afterOtherC = sumC(afterOther, (o) => toCents(o.amount));
+  const afterDays = Math.max(0, dayDiff(afterStart, afterEnd) + 1);
+  const afterCatsC = sumC(budget.categories || [], (c) =>
+    reserveC(c, today, afterStart, afterDays, used.get(c.id)),
+  );
   let projC, checkFrom;
   if (np.periodIndex === idx) {
     projC = inc.projectedCheck == null ? null : toCents(inc.projectedCheck);
@@ -903,9 +1040,10 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
       bills: nextBills,
       billsTotal: fromCents(nextBillsC),
       goalsTotal: fromCents(goalsAllC),
+      categoriesTotal: fromCents(afterCatsC),
       otherIncome: afterOther,
       otherIncomeTotal: fromCents(afterOtherC),
-      left: projC == null ? null : fromCents(projC + afterOtherC - nextBillsC - goalsAllC),
+      left: projC == null ? null : fromCents(projC + afterOtherC - nextBillsC - goalsAllC - afterCatsC),
       periodStart: afterStart,
       periodEnd: afterEnd,
     },
