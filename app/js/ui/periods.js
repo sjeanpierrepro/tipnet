@@ -153,15 +153,22 @@ function editor(S, n) {
   const preview = el('p', { class: 'hint', 'aria-live': 'polite' });
   const shiftsFor = (night) => shiftsPerPeriod(p, mine, todayISO(), nightPeriodIndex(p, night)).n;
   // "Counts toward the pay week that started": the period before the night's date's, its own (the default), or the next.
-  // A night in a finished pay period stays there (the select is off); a finished period can't be picked, except the
-  // night's own date's period (the default, the same as dating the night there).
-  const weekFixed = () => !!n.snap || isFinal(p, nightPeriodIndex(p, n), todayISO());
-  let pick = periodRange(p, nightPeriodIndex(p, n)).start; // the picked period's start date
+  // Every choice can be picked, finished or not (the person's own correction); moving into or out of a finished pay
+  // period asks first (see the submit handler), and a night moved into a finished period is locked right away.
+  const pickAtOpen = periodRange(p, nightPeriodIndex(p, n)).start;
+  let pick = pickAtOpen; // the picked period's start date
+  let confirmed = false; // "Move night" was tapped for the pick shown
   /** The night's periodStart as it will be saved: the pick, or none when it is the night's own date's period. */
   const pickedStart = () => {
-    if (weekFixed()) return n.periodStart || null; // kept exactly as it was (even one the schedule no longer has)
     const own = periodRange(p, periodIndex(p, d.date)).start;
     return pick && pick !== own ? pick : null;
+  };
+  /** {from, to}: period indexes when the pick moves the night to another pay period, else null. */
+  const moveOf = (night) => {
+    if (pick === pickAtOpen) return null;
+    const from = nightPeriodIndex(p, n),
+      to = nightPeriodIndex(p, night);
+    return from === to ? null : { from, to };
   };
   /** The night as it will be saved. A locked night keeps its Setup numbers unless "Recalculate with current Setup" is ticked. */
   const build = () => {
@@ -172,13 +179,18 @@ function editor(S, n) {
     const ps = pickedStart();
     if (ps) out.periodStart = ps;
     else delete out.periodStart;
-    if (n.snap && !recalc) {
+    // Moved by the pick: into a finished pay period it is locked (its own snapshot, or one with today's Setup, as
+    // locking would); into one that has not ended it follows the current Setup again (no snapshot).
+    const mv = moveOf(out);
+    const keepSnap = mv ? isFinal(p, mv.to, todayISO()) && !!n.snap : !!n.snap;
+    if (keepSnap && !recalc) {
       // keep amounts for pay types removed from Setup since, so the locked numbers stay whole
       Object.keys(n.pay || {}).forEach((k) => {
         if (!(k in out.pay)) out.pay[k] = n.pay[k];
       });
       out.snap = n.snap;
-    } else if (n.snap && recalc) out.snap = snapshotFor(p, shiftsFor(out));
+    } else if (mv ? isFinal(p, mv.to, todayISO()) : n.snap && recalc)
+      out.snap = snapshotFor(p, shiftsFor(out));
     // Tips and hours untouched and no recalculation: the stored total (and typed tips) stay exactly as they were.
     const untouched = !recalc && JSON.stringify([d.total, d.pay]) === typedAtOpen;
     if (untouched && (tipsMode(p) || hasTips(n))) {
@@ -190,6 +202,8 @@ function editor(S, n) {
       out.tips = round2(numOf(d.total));
       out.total = totalFromTips(out.tips, out, p);
     }
+    // just locked by the move: like locking, the stored total becomes the typed tips + pay at the rates it is locked with
+    if (out.snap && out.snap !== n.snap && hasTips(out)) out.total = totalFromTips(out.tips, out, p);
     return out;
   };
   const upd = () => {
@@ -207,47 +221,102 @@ function editor(S, n) {
   const weekField = field('Counts toward the pay week that started:', weekSel, { hint: ' ' });
   const weekHint = weekField.querySelector('p.hint');
   weekSel.setAttribute('aria-describedby', weekHint.id);
+  weekHint.textContent =
+    'Pick the pay week your paycheck counted this night in, if it isn’t the one for its date.';
   let shownFor = null;
   const syncWeek = () => {
-    const today = todayISO();
     const cs = nightPeriodChoices(p, d.date);
     if (!cs.length) return; // a half-typed date: keep the options shown
-    const fixed = weekFixed();
-    const off = (c) => !c.own && isFinal(p, c.idx, today);
-    if (fixed) pick = periodRange(p, nightPeriodIndex(p, n)).start;
-    else if (!cs.some((c) => c.start === pick && !off(c))) pick = cs.find((c) => c.own).start;
-    const sig = d.date + '|' + pick + '|' + fixed;
-    if (sig !== shownFor) {
-      shownFor = sig;
-      const opts = cs.map((c) =>
-        el(
-          'option',
-          { value: c.start, disabled: off(c) && c.start !== pick },
-          fmtDate(c.start) +
-            ' · ' +
-            periodLabel(p, c.idx) +
-            (c.own ? ' (this night’s date)' : '') +
-            (off(c) ? ' (finished)' : ''),
-        ),
-      );
-      // a locked night counted in a pay week that isn't next to its date: show that one
-      if (!cs.some((c) => c.start === pick)) {
-        const k = nightPeriodIndex(p, n);
-        opts.push(el('option', { value: pick }, fmtDate(pick) + ' · ' + periodLabel(p, k)));
-      }
-      weekSel.replaceChildren(...opts);
+    // a new date: a pick that is no longer offered goes back to the night's own date's period
+    if (!cs.some((c) => c.start === pick) && pick !== pickAtOpen) pick = cs.find((c) => c.own).start;
+    const sig = d.date + '|' + pick;
+    if (sig === shownFor) return;
+    shownFor = sig;
+    const today = todayISO();
+    const opts = cs.map((c) =>
+      el(
+        'option',
+        { value: c.start },
+        fmtDate(c.start) +
+          ' · ' +
+          periodLabel(p, c.idx) +
+          (c.own ? ' (this night’s date)' : '') +
+          (isFinal(p, c.idx, today) ? ' (finished)' : ''),
+      ),
+    );
+    // counted in a pay week that isn't next to its (edited) date: that one stays offered, as it is now
+    if (!cs.some((c) => c.start === pick)) {
+      const k = nightPeriodIndex(p, n);
+      opts.push(el('option', { value: pick }, fmtDate(pick) + ' · ' + periodLabel(p, k)));
     }
+    weekSel.replaceChildren(...opts);
     weekSel.value = pick;
-    weekSel.disabled = fixed;
-    weekHint.textContent = fixed
-      ? 'This pay period is finished, so this night stays in it.'
-      : 'Pick the pay week your paycheck counted this night in, if it isn’t the one for its date.';
+  };
+  // Moving into or out of a finished pay period asks first, in the editor (Save does nothing until "Move night").
+  const ask = el('div', { class: 'note stack-sm', role: 'group', 'aria-label': 'Move to another pay week?' });
+  ask.hidden = true;
+  const hideAsk = () => {
+    ask.hidden = true;
+    ask.replaceChildren();
+    confirmed = false;
   };
   weekSel.addEventListener('change', () => {
     pick = weekSel.value;
+    hideAsk();
     syncWeek();
     upd();
   });
+  /** The finished pay periods a move changes, or [] (no move, or neither period has ended). */
+  const finishedTouched = (night) => {
+    const mv = moveOf(night);
+    if (!mv) return [];
+    const today = todayISO();
+    return [...new Set([mv.from, mv.to])].sort((a, b) => a - b).filter((k) => isFinal(p, k, today));
+  };
+  const compared = (k) => {
+    const rg = periodRange(p, k);
+    return (w.calib || []).some((c) =>
+      c.start && c.end ? c.start === rg.start && c.end === rg.end : c.idx === k,
+    );
+  };
+  function showAsk(ks) {
+    const moveBtn = el(
+      'button',
+      { type: 'button', class: 'btn btn-small', 'data-focus-key': 'edit-' + n.id + '-move' },
+      'Move night',
+    );
+    const keepBtn = el(
+      'button',
+      { type: 'button', class: 'btn btn-secondary btn-small', 'data-focus-key': 'edit-' + n.id + '-keep' },
+      'Keep where it is',
+    );
+    moveBtn.addEventListener('click', () => {
+      confirmed = true;
+      saveBtn.click();
+    });
+    keepBtn.addEventListener('click', () => {
+      pick = pickAtOpen;
+      hideAsk();
+      shownFor = null;
+      syncWeek();
+      upd();
+      weekSel.focus();
+    });
+    const what = ks.map((k) => periodLabel(p, k)).join(' and ');
+    ask.replaceChildren(
+      el(
+        'p',
+        null,
+        'This changes a finished pay period’s totals (' + what + '). Move it?',
+        ks.some(compared)
+          ? ' You already compared this pay period’s paycheck; the comparison won’t change automatically.'
+          : '',
+      ),
+      el('div', { class: 'cluster' }, moveBtn, keepBtn),
+    );
+    ask.hidden = false;
+    moveBtn.focus();
+  }
   const f = nightFields(p, d, {
     key: 'edit-' + n.id,
     rateOf,
@@ -324,6 +393,7 @@ function editor(S, n) {
     weekField,
     lockNote,
     preview,
+    ask,
     el('div', { class: 'cluster' }, saveBtn, cancel),
   );
   form.addEventListener('submit', (e) => {
@@ -335,6 +405,11 @@ function editor(S, n) {
     if (prob) return showEntryProblem(f, prob);
     // Looked up by id now: the night may have been locked or merged from another window since the editor opened.
     const i = S.nights.findIndex((x) => x.id === n.id);
+    if (i >= 0 && !confirmed) {
+      n = S.nights[i];
+      const ks = finishedTouched(build());
+      if (ks.length) return showAsk(ks);
+    }
     editingId = null;
     if (i < 0) {
       bus.rerender();
