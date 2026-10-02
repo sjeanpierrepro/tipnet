@@ -218,7 +218,7 @@ export const SHIFT_SOURCE_TEXT = {
 /*
  * A night can carry `snap`: the Setup numbers it was worked out with, so a later raise or a new deduction
  * never rewrites a finished pay period. Nights without one are "unlocked" and follow the current Setup.
- *   snap = {v:1, r, rf, fixed, n, pay:[{id, rate, unit, usual?, supp?, diff?}], tipout:{on, mode, value, basis, from}}
+ *   snap = {v:1, r, rf, fixed, nontax?, n, pay:[{id, rate, unit, usual?, supp?, diff?, nontax?}], tipout:{on, mode, value, basis, from}}
  *   r: tax rate used (paystub rate or the calibrated one), rf: federal share, fixed: fixed deductions per period,
  *   n: shifts the fixed deductions were spread over, pay: pay types (usual only matters for the first), tipout: settings.
  */

@@ -30,10 +30,11 @@ Grab your latest paystub. The first time, TipNet opens in **Setup**. (Moving fro
 **Step 2: Deductions**
 - Add each line that comes out: federal tax, Social Security, Medicare, state tax, health insurance, and so on.
 - Choose **Changes with my pay** for taxes and **Same every check** for things like insurance.
+- **Non-taxable earnings on this paystub** (optional): money your stub lists as non-taxable, like an expense or mileage reimbursement, a uniform or tool allowance, or a meal allowance. Tap **+ Add non-taxable earnings**, pick the kind, type the amount, and say whether it **Comes every check** or was **Just this once**. TipNet leaves it out of your tax rate and adds the every-check ones to your check without tax.
 
 **Step 3: Your jobs and pay**
 - **Jobs:** add every job you do where you work and what it pays: for example **Bartender** $12 per hour, **Prep** $10 per hour, **Supervisor / shift lead** $15 per hour, **Training**, or a **Private event / banquet** paid per shift. The first job is your main job. Tap **+ Add a job** for each extra one. Not in the list? Pick **Other job** and type its name.
-- **Other pay** (only if you get it): **Overtime** (filled in at 1.5 times your main job's rate), **Holiday pay**, a **shift lead / supervisor differential** (the extra per hour on top), **Paid time off / sick pay**, **Bonus**, **Commission**, or a **Service charge / auto-gratuity** (that one is wages, not tips).
+- **Other pay** (only if you get it): **Overtime** (filled in at 1.5 times your main job's rate), **Holiday pay**, a **shift lead / supervisor differential** (the extra per hour on top), **Paid time off / sick pay**, **Bonus**, **Commission**, or a **Service charge / auto-gratuity** (that one is wages, not tips). The **Non-taxable** kinds (like a mileage reimbursement for one night) are added to that night's take-home without tax.
 - **The number I type each night is:** leave **Just my tips (cash + card)** picked, and TipNet adds your hourly pay. Pick **Everything** if you'd rather type tips plus hourly pay. Switching later doesn't change nights you already saved.
 - **Barback tip-out:** check **My bar has barback tip-outs** if you tip out, then pick a % of tips or $ per shift, and whether it comes from your cash or payroll.
 
@@ -50,9 +51,9 @@ Gross pay:   $2,000              Health ins.:      $60
 
 Enter: start Sep 1, end Sep 14, shifts 10, every two weeks, gross $2,000, the four deductions, and your job (Bartender) at $12 per hour.
 
-Something changed (raise, new insurance)? Update it in **Setup**.
+Something changed (raise, new insurance)? Update it in **Setup**. Once you are set up, Setup shows each restaurant as one line (for example "Bartender $12/h · every two weeks · payday Fri"). Tap it to open everything for that restaurant, make your changes, then tap **Save** (or **Cancel** to throw them away). Nothing changes until you save; if you leave with changes not saved, TipNet asks **Save changes?** first. The shared settings below (Late nights, Appearance, Import nights, Install TipNet, Backups) are one line each too; tap to open them. Those apply right away.
 
-**Work at a second restaurant?** In **Setup**, tap **+ Set up another restaurant**, type its name, and do the same three steps with a paystub from there. Its pay schedule, jobs and tip-out are kept apart from the first one. Rename or remove a restaurant at the top of Setup (removing one also removes its nights; **Undo** brings them back).
+**Work at a second restaurant?** In **Setup**, tap **+ Set up another restaurant**, type its name, and do the same three steps with a paystub from there. Its pay schedule, jobs and tip-out are kept apart from the first one. To rename or remove a restaurant, open its line in Setup (removing one also removes its nights; **Undo** brings them back).
 
 ## 4. Every night
 
@@ -83,3 +84,5 @@ The estimate usually gets closer after a check or two. Changing gross pay or a d
 
 ## 6. Budget (optional, paid)
 The Budget tab shows how much you can spend before your next payday, after bills and savings. With two restaurants it counts both paychecks and shows whose check comes next; each goal asks **Save from which paycheck?** Add your bills (name, amount, day of the month), spending categories (like groceries) and goals. A new bill counts from the day you add it; if its due day already passed this month, TipNet asks **Already paid this month?** (ticked unless you untick it). Tick "Paid" when a bill is paid, and use "Log spending" when you buy something. Everything is an estimate. Budget is not part of the free app.
+
+**Where to find it:** at the very bottom of **Tonight**, **Pay periods** and **Setup** there is a **TipNet Budget** card ($1.99 a month or $20 a year). Tap **See what's inside** for a preview, or buy it there. Already have a key? Tap **I have a license key**. Until payments are switched on, the card says **Coming soon**. Once Budget is unlocked on your phone, the card goes away.
