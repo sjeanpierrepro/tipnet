@@ -1,7 +1,7 @@
 # TipNet decisions
 
 ## How TipNet works now (read this first)
-This file is a log: later entries supersede earlier ones where they disagree. In short, as of tipnet-v36:
+This file is a log: later entries supersede earlier ones where they disagree. This summary is current and supersedes any older line below that says otherwise. In short, as of tipnet-v36:
 - A static PWA in `app/` (GitHub Pages, no server, no accounts). All data stays in the browser (IndexedDB plus a localStorage copy; two open copies merge). A strict CSP allows only the site itself and api.lemonsqueezy.com.
 - The service worker is cache-first; `js/billing-config.js` is served from the cache and refreshed in the background. Updates install all-or-nothing and are offered with a Refresh bar. Bump `VERSION` in `app/sw.js` for every app change (`tools/check-version.mjs` enforces it).
 - Setup: a first-run three-step guided setup per restaurant (pay period and gross, deductions and non-taxable earnings, jobs/pay and tip-out). After that, Setup shows one row per restaurant; opening a row edits a draft that Save applies all at once (Cancel discards; leaving with unsaved changes asks). Shared settings are rows that apply right away.

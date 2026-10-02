@@ -156,6 +156,32 @@ textarea {
 .tabbar button:hover {
   color: var(--text);
 }
+/* Tab labels stay on one line. On narrow phones "Pay periods" shows as "Periods" (screen readers still hear the full name). */
+.tabbar button {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tab-short {
+  display: none;
+}
+@media (max-width: 360px) {
+  .tabbar button {
+    font-size: 13px;
+  }
+  .tab-full {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .tab-short {
+    display: inline;
+  }
+}
 @media (min-width: 900px) {
   .app-shell {
     --tabbar-h: 0px;

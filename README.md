@@ -1,6 +1,6 @@
 # TipNet
 
-TipNet is a free app that helps bartenders see their estimated take-home pay at the end of a shift. You enter one number—your tips for the night (TipNet adds your hourly pay)—and it shows how much cash you're taking home and how much will appear on your paycheck after taxes and deductions.
+TipNet is a free app that helps bartenders see their estimated take-home pay at the end of a shift. You enter your tips for the night and the hours you worked (TipNet adds your hourly pay), and it shows how much cash you're taking home and how much will appear on your paycheck after taxes and deductions.
 
 All the numbers stay on your phone or computer. Your bar cannot see them. No accounts to create. Your pay and budget data never leave your device; the only thing TipNet ever sends is a license key check to Lemon Squeezy, and only if you use the paid Budget add-on.
 
@@ -85,7 +85,7 @@ TipNet is built for current versions of Safari (iPhone and Mac), Chrome (Android
 
 **What was and was not tested**: The money math is covered by automated tests (`npm test`). The screens were checked in a desktop Chromium browser at phone and desktop sizes, in both themes. The service worker was verified in desktop Chrome on Windows 11: it registers, the app works offline after the local server is stopped, the install prompt fires, and the update bar appears after a `VERSION` bump.
 
-**Not tested**: a Lighthouse audit, actually installing the app, iPhone Safari, Android Chrome, Edge, macOS, and a real GitHub Pages deploy. Before the pilot, install it on one iPhone and one Android phone, turn on airplane mode, and reopen it to confirm it works offline.
+**Not tested**: a Lighthouse audit, actually installing the app, iPhone Safari, Android Chrome, Edge, and macOS. TipNet is deployed on GitHub Pages, but the live site has not been checked on real phones yet. Before the pilot, install it on one iPhone and one Android phone, turn on airplane mode, and reopen it to confirm it works offline.
 
 ## Releasing an update
 
