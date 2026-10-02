@@ -231,21 +231,23 @@ test('Setup: switching the entry mode changes the labels and never the saved nig
   const page = await boot({ seed: tipsState((S) => (S.nights = nights)) });
   try {
     const before = JSON.stringify(page.state().nights);
-    page.tab('setup');
+    page.openSetup();
     assert.match(page.text(), /The number I type each night is:/);
     assert.match(page.text(), /Nights you already saved stay the same\./);
     assert.equal(page.$('#em-tips').checked, true);
     const all = page.$('#em-total');
     all.checked = true;
     page.change(all);
+    await page.saveSetup();
     assert.equal(page.state().workplaces[0].profile.entryMode, 'total');
     assert.equal(JSON.stringify(page.state().nights), before, 'nights untouched');
     page.tab('tonight');
     assert.match(page.text(), /What you made tonight/);
-    page.tab('setup');
+    page.openSetup();
     const tipsOnly = page.$('#em-tips');
     tipsOnly.checked = true;
     page.change(tipsOnly);
+    await page.saveSetup();
     assert.equal(page.state().workplaces[0].profile.entryMode, 'tips');
     assert.equal(JSON.stringify(page.state().nights), before, 'nights untouched');
     page.tab('tonight');

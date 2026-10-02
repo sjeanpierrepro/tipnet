@@ -145,25 +145,36 @@ test('guided setup: Skip swaps the example paystub for a blank one, and Tonight 
     assert.equal(S.workplaces[0].setupDone, undefined, 'skipping is not finishing');
     assert.match(page.text(), /Tonight shows your take-home once they are in/);
     assert.match(page.text(), /Still needed: your pay period start date, your gross pay/);
-    const [start] = dateInputs(page);
-    page.type(start, '2026-01-01');
-    assert.equal(page.state().workplaces[0].profile.periodEnd, '');
+    assert.equal(page.$('#wp-row-w1').getAttribute('aria-expanded'), 'true', 'the editor is open');
 
-    page.tab('tonight');
+    page.tab('tonight'); // nothing typed: no question
     assert.match(page.text(), /Finish setup to see your take-home/);
     assert.equal(page.$('form button[type=submit]', page.app), null, 'no Save before the basics');
 
     page.tab('setup');
+    assert.equal(page.$('#wp-row-w1').getAttribute('aria-expanded'), 'true', 'open again');
+    const [start] = dateInputs(page);
+    page.type(start, '2026-01-01');
     page.type(page.must(page.$('#pr-p1'), 'main rate'), '12');
-    page.type(page.byText('.field', 'Gross pay', page.app).querySelector('input'), '1800');
-    page.tab('tonight');
-    assert.match(page.text(), /Finish setup/, 'still locked: no deduction yet');
-    page.tab('setup');
+    const gross = page.byText('.field', 'Gross pay', page.app).querySelector('input');
+    page.type(gross, '1800');
+    page.change(gross);
+    assert.equal(page.$('#draft-save').disabled, true, 'no deduction yet');
+    assert.match(page.$('#draft-reasons').textContent, /at least one deduction amount/);
     const cb = page.must(page.$('#no-ded'), 'no deductions box on the full page');
     cb.checked = true;
     page.change(cb);
-    assert.equal(page.state().workplaces[0].noDeductions, true);
+    assert.equal(page.$('#draft-save').disabled, false);
+    assert.equal(page.state().workplaces[0].noDeductions, undefined, 'a draft until Save');
+    // leaving with unsaved changes asks first; Save there saves and carries on to Tonight
     page.tab('tonight');
+    assert.match(page.text(), /Save changes to My restaurant\?/);
+    assert.equal(page.doc.activeElement, page.$('#draft-ask-save'));
+    page.click(page.$('#draft-ask-save'));
+    await page.settle();
+    assert.equal(page.state().workplaces[0].noDeductions, true);
+    assert.equal(page.state().workplaces[0].profile.periodEnd, '');
+    assert.equal(page.$('#tabs [aria-selected=true]').dataset.tab, 'tonight');
     assert.ok(page.$('form button[type=submit]', page.app), 'Tonight unlocked');
     assert.match(page.text(), /Tips you made tonight/);
   } finally {
@@ -184,7 +195,12 @@ test('Skip: without a pay period start date TipNet is not set up, Setup asks for
     cb.checked = true;
     page.change(cb);
     assert.match(page.text(), /Still needed: your pay period start date\. Tonight shows/);
+    assert.equal(page.$('#draft-save').disabled, true);
+    assert.match(page.$('#draft-reasons').textContent, /Pick the day your pay period started\./);
     page.tab('tonight');
+    assert.match(page.text(), /Save changes to My restaurant\?/, 'unsaved changes: it asks');
+    assert.equal(page.$('#draft-ask-save').disabled, true, 'they cannot be saved yet');
+    page.click(page.$('#draft-ask-discard'));
     assert.match(page.text(), /Finish setup/, 'locked: no start date');
     assert.doesNotMatch(page.text(), /Invalid Date/);
     page.tab('periods');
@@ -203,7 +219,11 @@ test('Skip: without a pay period start date TipNet is not set up, Setup asks for
     );
     assert.match(page.text(), /Still needed: your pay period start date/, 'lands on Setup');
     page.type(dateInputs(page)[0], '2026-09-01');
+    page.type(page.must(page.$('#pr-p1'), 'main rate'), '12');
+    page.type(page.byText('.field', 'Gross pay', page.app).querySelector('input'), '1800');
+    page.click(page.$('#no-ded'));
     assert.equal(page.$('#not-ready-text').closest('[role=status]').hidden, true);
+    await page.saveSetup();
     page.tab('tonight');
     assert.ok(page.$('form button[type=submit]', page.app), 'Tonight unlocked');
   } finally {
@@ -240,7 +260,7 @@ test('toast: Undo stays past 5 s while hovered, and Escape dismisses', async () 
   S.workplaces[0].setupDone = true;
   const page = await boot({ seed: S });
   try {
-    page.tab('setup');
+    page.openSetup();
     page.click(page.byLabel('Remove Training'));
     const t = page.must(page.$('#toast .toast'), 'toast');
     assert.match(t.textContent, /Undo/);
@@ -259,11 +279,13 @@ test('pay types: Remove has an Undo that puts the row back', async () => {
   S.workplaces[0].setupDone = true;
   const page = await boot({ seed: S });
   try {
-    page.tab('setup');
+    page.openSetup();
     const n = page.state().workplaces[0].profile.payTypes.length;
     page.click(page.byLabel('Remove Training'));
-    assert.equal(page.state().workplaces[0].profile.payTypes.length, n - 1);
+    assert.equal(page.$$('button[aria-label="Remove Training"]').length, 0);
     page.click(page.button('Undo', page.$('#toast')));
+    assert.equal(page.$$('button[aria-label="Remove Training"]').length, 1);
+    await page.saveSetup();
     assert.equal(page.state().workplaces[0].profile.payTypes.length, n);
     assert.equal(page.state().workplaces[0].profile.payTypes[1].name, 'Training');
   } finally {

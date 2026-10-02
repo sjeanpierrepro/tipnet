@@ -948,3 +948,100 @@ fieldset.field > legend {
 .upsell h2 {
   margin: 0;
 }
+
+/* ---------- Setup: one row per restaurant and per shared section, opened in place ---------- */
+h4 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+.fold {
+  padding: 0;
+}
+.fold-h {
+  margin: 0;
+  font: inherit;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.fold-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  width: 100%;
+  min-height: 56px;
+  padding: var(--s-3);
+  background: none;
+  border: 0;
+  border-radius: var(--r-lg);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.fold-head:hover {
+  background: var(--sunk);
+}
+.fold-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.fold-title {
+  font: 800 18px/1.15 var(--font-display);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+.fold-sum {
+  font-size: 14px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.chev {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  margin: 0 6px 4px 0;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg);
+  transition: transform var(--t-fast) var(--ease);
+}
+.fold-head[aria-expanded='true'] .chev {
+  margin-bottom: -4px;
+  transform: rotate(-135deg);
+}
+.fold-body {
+  padding: 0 var(--s-3) var(--s-3);
+}
+.fold-saved {
+  padding: 0 var(--s-3) var(--s-3);
+}
+/* cards inside an open row are sections of it, not cards of their own */
+.fold-body .card {
+  padding: var(--s-3) 0 0;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+}
+.fold-group {
+  margin: var(--s-3) 0 0;
+}
+/* Save / Cancel stay at the bottom of the screen while a restaurant is open */
+.save-bar {
+  position: sticky;
+  bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + var(--s-2));
+  z-index: 5;
+  padding: var(--s-3);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  box-shadow: 0 -4px 16px rgb(0 0 0 / 0.18);
+}
+.save-bar p {
+  margin: 0;
+}

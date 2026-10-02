@@ -104,7 +104,7 @@ test('focus: removing a deduction moves focus to the next Remove button', async 
   });
   const page = await boot({ seed: S });
   try {
-    page.tab('setup');
+    page.openSetup();
     const rm = page.byLabel('Remove ' + getState().workplaces[0].profile.deductions[0].name);
     rm.focus();
     rm.click();

@@ -101,7 +101,7 @@ test('full Setup page: jobs and other pay sections with every preset; an old "Ho
     }),
   });
   try {
-    page.tab('setup');
+    page.openSetup();
     const t = page.text();
     assert.match(t, /Your jobs and pay/);
     assert.doesNotMatch(t, /Usual per night|Default per night/);
@@ -288,8 +288,9 @@ test('changing a job rate later keeps the tips typed in tips mode (the period is
     submit(page);
     page.tab('periods');
     assert.match(page.text(), /Bartender 8 h · made \$496\.00 · tips \$400\.00/);
-    page.tab('setup');
+    page.openSetup();
     page.type(page.$('#pr-bar'), '15');
+    await page.saveSetup();
     page.tab('periods');
     assert.match(page.text(), /Bartender 8 h · made \$520\.00 · tips \$400\.00/);
   } finally {

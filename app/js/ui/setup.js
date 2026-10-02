@@ -21,7 +21,11 @@ import {
   applyDeductionPreset,
   fillFica,
   stubWarnings,
+  weekdayMon0,
+  todayISO,
 } from '../math.js';
+import { budgetVisible, isUnlocked } from '../billing.js';
+import { subscriptionLine } from './budget.js';
 import {
   el,
   clear,
@@ -42,6 +46,7 @@ import {
   workplaceSwitcher,
   exampleShown,
   debounce,
+  fmtShort,
 } from './common.js';
 import { cutoffFromSettings } from '../inputs.js';
 import {
@@ -54,6 +59,7 @@ import {
   newWorkplaceId,
   MAX_WORKPLACES,
   lockFinished,
+  flush,
 } from '../storage.js';
 import { renderImporter } from './importer.js';
 import { renderBackup, renderInstall } from './backup.js';
@@ -68,7 +74,21 @@ let guidedFor = null;
 let gProfile = null;
 let noDeductions = false; // "My paystub has no deductions" ticked (on the blank copy)
 let adding = null; // "+ Set up another restaurant" is open: {name, error}
+/**
+ * The full Setup page shows each restaurant as one row. The open one is edited as a draft (a copy), applied by Save:
+ * open = {wid, base, draft}, where base and draft are {name, noDeductions, profile} (base: as it was when opened).
+ */
+let open = null;
+let asking = null; // "Save changes to <name>?" is showing: {next} runs after Save or Discard
+let lastSaved = null; // {wid, text}: the line under a row that was just saved
+const foldOpen = new Set(); // shared sections (Late nights, Appearance...) that are open
+const userClosed = new Set(); // restaurants the person closed themselves (a not-set-up one otherwise opens by itself)
 export function reset() {
+  open = null;
+  asking = null;
+  lastSaved = null;
+  foldOpen.clear();
+  userClosed.clear();
   pendingEdits.forEach((f) => f.cancel());
   pendingEdits.clear();
   guidedStep = 0;
@@ -193,7 +213,9 @@ function onPause(ctx, input, apply) {
   }, EDIT_PAUSE_MS);
   input.addEventListener('input', () => {
     pendingEdits.add(run);
-    ctx.saved.textContent = 'Saving…';
+    if (ctx.draft)
+      ctx.changed(); // the full page: a draft until Save
+    else ctx.saved.textContent = 'Saving…';
     run();
   });
   const now = () => {
@@ -217,23 +239,32 @@ const rateSig = (p) =>
 const rateCleared = new Map();
 export const RATE_NOTE =
   'Your paystub rates changed, so TipNet’s accuracy adjustment was cleared. Check a paycheck again after payday.';
+const RATE_NOTE_DRAFT =
+  'Your paystub rates changed, so saving clears TipNet’s accuracy adjustment. Putting the rates back keeps it.';
 /** w: the restaurant being set up. blank: the guided steps fill in gProfile (the first restaurant, still the example). */
-function makeCtx(w, blank = false, guidedNow = blank) {
+/** draft: the full page's open restaurant ({name, noDeductions, profile}); edits go there and Save applies them. */
+function makeCtx(w, blank = false, guidedNow = blank, draft = null) {
   const S = getState();
   if (blank && !gProfile) gProfile = blankProfile();
   const live = [];
   const saved = el('p', { class: 'hint', role: 'status', 'aria-live': 'polite' });
   const rateNote = el('p', { class: 'hint', role: 'status', 'aria-live': 'polite' });
   const showRateNote = () => {
-    const on = !blank && !!w && rateCleared.has(w.id);
-    const text = on ? RATE_NOTE : '';
+    // A draft says beforehand what Save will do to the accuracy adjustment.
+    const on = draft
+      ? w.profile.rateOverride != null && rateSig(draft.profile) !== rateSig(w.profile)
+      : !blank && !!w && rateCleared.has(w.id);
+    const text = on ? (draft ? RATE_NOTE_DRAFT : RATE_NOTE) : '';
     if (rateNote.textContent !== text) rateNote.textContent = text;
     rateNote.hidden = !on;
   };
   const ctx = {
     S,
     w,
-    p: blank ? gProfile : w.profile,
+    p: blank ? gProfile : draft ? draft.profile : w.profile,
+    draft,
+    /** A draft changed (set by the editor: refreshes Save and its reasons). */
+    changed() {},
     blank,
     guided: guidedNow,
     ph: blank || guidedNow ? exampleProfile() : null, // example numbers as placeholders while setting up
@@ -252,6 +283,13 @@ function makeCtx(w, blank = false, guidedNow = blank) {
      * rates back (Undo) brings the adjustment back. The argument is kept for older calls and is not used.
      */
     touch() {
+      if (draft) {
+        // nothing is saved until Save
+        showRateNote();
+        live.forEach((f) => f());
+        ctx.changed();
+        return;
+      }
       if (blank) {
         live.forEach((f) => f());
         keepGuided(S); // guided on the example: only the draft is saved until Finish
@@ -711,12 +749,16 @@ function dedCard(ctx) {
   });
   // Guided setup on the example: the user must type an amount, or say the stub has none.
   const noDed = el('input', { type: 'checkbox', id: 'no-ded' });
-  noDed.checked = ctx.blank ? noDeductions : !!w.noDeductions;
+  const owner = ctx.draft || w; // where "no deductions" is kept: the draft on the full page
+  noDed.checked = ctx.blank ? noDeductions : !!owner.noDeductions;
   const dedErr = el('p', { class: 'field-error', hidden: true, role: 'alert' });
   noDed.addEventListener('change', () => {
     if (ctx.blank) {
       noDeductions = noDed.checked;
       keepGuided(S);
+    } else if (ctx.draft) {
+      ctx.draft.noDeductions = noDed.checked;
+      ctx.touch(false);
     } else {
       if (noDed.checked) w.noDeductions = true;
       else delete w.noDeductions;
@@ -725,7 +767,7 @@ function dedCard(ctx) {
     if (noDed.checked) dedErr.hidden = true;
   });
   // The full page offers it too while no deduction has an amount (the "Skip guided setup" path needs it to finish).
-  const showNoDed = ctx.blank || !!w.noDeductions || !p.deductions.some((d) => num(d.amount) > 0);
+  const showNoDed = ctx.blank || !!owner.noDeductions || !p.deductions.some((d) => num(d.amount) > 0);
   const card = el(
     'section',
     { class: 'card stack' },
@@ -1248,6 +1290,13 @@ function pickWorkplace(S, id) {
   bus.rerender();
 }
 const sameName = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
+/** What is wrong with a name for restaurant w ('' when it is fine). */
+function nameProblem(S, w, n) {
+  if (!n) return 'Give the restaurant a name.';
+  if (S.workplaces.some((x) => x !== w && sameName(x.name, n)))
+    return 'You already have a restaurant called ' + n + '.';
+  return '';
+}
 /** A new restaurant with a blank paystub; its guided setup starts right away (setupDone false until Finish or Skip). */
 function startNewWorkplace(S, name) {
   const w = { id: newWorkplaceId(S), name, profile: blankProfile(), calib: [], setupDone: false };
@@ -1270,18 +1319,21 @@ function startNewWorkplace(S, name) {
 function addWorkplaceCard(S) {
   if (S.workplaces.length >= MAX_WORKPLACES) return null;
   if (!adding) {
-    const open = el(
+    const addBtn = el(
       'button',
       { type: 'button', class: 'btn btn-secondary btn-small', id: 'wp-add' },
       '+ Set up another restaurant',
     );
-    open.addEventListener('click', () => {
+    const start = () => {
       adding = { name: '', error: '' };
       bus.rerender();
       const i = document.getElementById('wp-new-name');
       if (i) i.focus();
+    };
+    addBtn.addEventListener('click', () => {
+      if (!confirmLeave(start)) start(); // an open restaurant with unsaved changes asks first
     });
-    return el('div', null, open);
+    return el('div', null, addBtn);
   }
   const name = el('input', {
     type: 'text',
@@ -1360,6 +1412,10 @@ function removeWorkplace(S, w) {
     guidedStep = 0;
   }
   dropDraft(w.id);
+  if (open && open.wid === w.id) {
+    open = null; // its unsaved changes go with it
+    asking = null;
+  }
   save();
   bus.rerender();
   const h = document.querySelector('#app h1');
@@ -1423,8 +1479,16 @@ function workplaceCard(ctx) {
         ? 'Shown on Tonight, Pay periods and Budget.'
         : 'Shown if you add another restaurant.',
   });
+  if (ctx.draft) name.value = ctx.draft.name;
   name.addEventListener('input', () => {
     const n = name.value.trim().slice(0, 40);
+    if (ctx.draft) {
+      // the draft keeps what is typed; Save says what is wrong with it
+      ctx.draft.name = n;
+      f.setError(nameProblem(S, w, n));
+      ctx.touch(false);
+      return;
+    }
     if (!n) return f.setError('Give the restaurant a name.');
     if (S.workplaces.some((x) => x !== w && sameName(x.name, n)))
       return f.setError('You already have a restaurant called ' + n + '.');
@@ -1434,7 +1498,7 @@ function workplaceCard(ctx) {
     ctx.touch(false);
   });
   name.addEventListener('blur', () => {
-    if (name.value.trim() !== w.name) {
+    if (!ctx.draft && name.value.trim() !== w.name) {
       name.value = w.name; // a blank or repeated name goes back to the saved one
       f.setError('');
     }
@@ -1683,13 +1747,14 @@ function guided(root, ctx) {
 }
 
 /** What Tonight still needs before it can estimate at this restaurant, in the order of the page ([] once set up). */
-export function stillNeeded(S, w) {
+/** draft: a full-page draft ({profile, noDeductions}) to check instead of what is saved. */
+export function stillNeeded(S, w, draft = null) {
   if (isWorkplaceSetUp(S, w)) return [];
-  const p = w.profile;
+  const p = draft ? draft.profile : w.profile;
   const out = [];
   if (!Number.isFinite(parseISO(p.periodStart))) out.push('your pay period start date');
   if (!(num(p.gross) > 0)) out.push('your gross pay');
-  if (!(p.deductions || []).some((d) => num(d.amount) > 0) && !w.noDeductions)
+  if (!(p.deductions || []).some((d) => num(d.amount) > 0) && !(draft ? draft.noDeductions : w.noDeductions))
     out.push('at least one deduction (or tick “My paystub has no deductions”)');
   if (!(num(((p.payTypes || [])[0] || {}).rate) > 0)) out.push('your main rate');
   return out;
@@ -1701,10 +1766,10 @@ function notReadyNote(ctx) {
   const text = el('p', { id: 'not-ready-text' });
   const box = el('div', { class: 'banner', role: 'status' }, text);
   const sync = () => {
-    const need = stillNeeded(S, w);
+    const need = stillNeeded(S, w, ctx.draft);
     box.hidden = !need.length;
     const t = need.length
-      ? 'Still needed: ' + listText(need) + '. Tonight shows your take-home once they are in.'
+      ? 'Still needed: ' + listText(need) + '. Tonight shows your take-home once they are in and saved.'
       : '';
     if (text.textContent !== t) text.textContent = t;
   };
@@ -1744,18 +1809,424 @@ export function render(root) {
     return;
   }
   gProfile = null;
-  const many = S0.workplaces.length > 1;
+  fullPage(root, S0, w);
+}
+
+/* ============ full page: one row per restaurant (edited as a draft, applied by Save) ============ */
+const copyOf = (x) => JSON.parse(JSON.stringify(x));
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const snapOf = (w) => ({ name: w.name, noDeductions: !!w.noDeductions, profile: copyOf(w.profile) });
+const focusId = (id) => {
+  const n = document.getElementById(id);
+  if (!n) return;
+  try {
+    n.scrollIntoView({ block: 'nearest' });
+  } catch (e) {
+    /* not available */
+  }
+  n.focus();
+};
+
+/** The open restaurant has changes that Save has not applied yet. */
+export function hasUnsaved() {
+  return !!open && (pendingEdits.size > 0 || !same(open.draft, open.base));
+}
+
+/**
+ * Leaving the open restaurant (another tab, another restaurant, closing it). With unsaved changes this asks
+ * "Save changes to <name>?" (Save / Discard / Keep editing) in the Save bar and returns true; next runs after Save or
+ * Discard. With nothing unsaved the restaurant just closes and it returns false (the caller carries on).
+ */
+export function confirmLeave(next) {
+  flushEdits();
+  if (!hasUnsaved()) {
+    open = null;
+    asking = null;
+    return false;
+  }
+  asking = { next };
+  bus.rerender();
+  focusId('draft-ask-save');
+  return true;
+}
+
+/** Plain reasons Save can't apply the draft yet ([] when it can). */
+function draftProblems(S, w, d) {
+  const out = [];
+  const p = d.profile;
+  const np = nameProblem(S, w, d.name);
+  if (np) out.push(np);
+  if (!Number.isFinite(parseISO(p.periodStart))) out.push('Pick the day your pay period started.');
+  else if (p.periodEnd && Number.isFinite(parseISO(p.periodEnd)) && !calendarMode(p)) {
+    const len = dayDiff(p.periodStart, p.periodEnd) + 1;
+    if (!(len >= 1)) out.push('The end date has to be on or after the start date.');
+    else if (len > 62) out.push('Pay periods are 62 days or shorter. Check the end date.');
+  }
+  if (!(num(p.gross) > 0)) out.push('Enter your gross pay.');
+  if ((p.deductions || []).some((x) => num(x.amount) < 0))
+    out.push('Deduction amounts are positive numbers.');
+  else if (!d.noDeductions && !(p.deductions || []).some((x) => num(x.amount) > 0))
+    out.push('Type at least one deduction amount, or tick “My paystub has no deductions.”');
+  const main = (p.payTypes || [])[0];
+  if (!main || (main.unit !== 'amt' && !(num(main.rate) > 0))) out.push('Enter your main job’s rate.');
+  if (p.tipout && p.tipout.on && !(num(p.tipout.value) > 0))
+    out.push('Enter the tip-out amount, or turn tip-outs off.');
+  return out;
+}
+
+/**
+ * Apply the open draft to its restaurant, all at once. Only what the draft changed is written (a change another window
+ * made to another field meanwhile is kept). The accuracy adjustment is cleared only when gross pay or the % deductions
+ * changed, and comes back if a later Save puts them back. Returns false (nothing applied) when the draft isn't valid.
+ */
+function saveOpen() {
+  flushEdits();
+  const S = getState();
+  const w = open && findWorkplace(S, open.wid);
+  if (!w) {
+    open = null;
+    asking = null;
+    return false;
+  }
+  if (draftProblems(S, w, open.draft).length) return false;
+  lockFinished(); // a pay period that ended meanwhile locks before the new numbers reach it
+  const { base, draft } = open;
+  const live = w.profile;
+  const sigBefore = rateSig(live);
+  new Set([...Object.keys(base.profile), ...Object.keys(draft.profile)]).forEach((k) => {
+    if (k === 'rateOverride' || same(draft.profile[k], base.profile[k])) return;
+    if (draft.profile[k] === undefined) delete live[k];
+    else live[k] = copyOf(draft.profile[k]);
+  });
+  if (draft.name !== base.name) w.name = draft.name;
+  if (draft.noDeductions !== base.noDeductions) {
+    if (draft.noDeductions) w.noDeductions = true;
+    else delete w.noDeductions;
+  }
+  const sig = rateSig(live);
+  const was = rateCleared.get(w.id);
+  let note = '';
+  if (was && was.sig === sig && live.rateOverride == null) {
+    live.rateOverride = was.value; // back to the rates it was learned with
+    rateCleared.delete(w.id);
+  } else if (live.rateOverride != null && sig !== sigBefore) {
+    rateCleared.set(w.id, { sig: sigBefore, value: live.rateOverride });
+    live.rateOverride = null;
+    note = ' ' + RATE_NOTE;
+  }
+  S.profileExample = false;
+  open = null;
+  asking = null;
+  const mine = { wid: w.id, text: 'Saving…' + note };
+  lastSaved = mine;
+  const n = ++saveSeq;
+  // Written right away (an explicit Save); "Saved." only once the write really worked.
+  save();
+  flush().then((ok) => {
+    if (n !== saveSeq || lastSaved !== mine) return;
+    mine.text = ok
+      ? 'Saved.' + note
+      : 'Couldn’t save on this device. Your changes are kept while TipNet is open.';
+    const line = document.getElementById('wp-saved-' + w.id);
+    if (line) line.textContent = mine.text;
+  });
+  return true;
+}
+/** The person closed the row (Cancel, Discard or its heading). */
+function closeRow(wid) {
+  userClosed.add(wid);
+  open = null;
+  asking = null;
+  bus.rerender();
+  focusId('wp-row-' + wid);
+}
+
+/** Open a restaurant's row (asking first if another one has unsaved changes). */
+function openRow(S, wid) {
+  if (open && open.wid === wid) return;
+  const go = () => {
+    const w = findWorkplace(S, wid);
+    if (!w) return;
+    lastSaved = null;
+    const g = S.settings.guidedDraft;
+    if (
+      !isWorkplaceSetUp(S, w) &&
+      !w.guideSkipped &&
+      (w.setupDone === false || (g && g.workplaceId === wid))
+    ) {
+      // still in its guided setup: carry on there
+      open = null;
+      pickWorkplace(S, wid);
+      const h = document.querySelector('#app h1');
+      if (h) h.focus();
+      return;
+    }
+    open = { wid, base: snapOf(w), draft: snapOf(w) };
+    userClosed.delete(wid);
+    // Tonight and Setup share the picked restaurant
+    if (S.settings.activeWorkplaceId !== wid) {
+      S.settings.activeWorkplaceId = wid;
+      save();
+    }
+    bus.rerender();
+    focusId('wp-row-' + wid);
+  };
+  if (!confirmLeave(go)) go();
+}
+
+const FREQ_SHORT = {
+  7: 'every week',
+  14: 'every two weeks',
+  semimonthly: 'twice a month',
+  15: 'every 15 days',
+  monthly: 'once a month',
+  30: 'every 30 days',
+};
+const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const rateShort = (r) => (Math.round(r * 100) % 100 === 0 ? '$' + Math.round(r) : money(r));
+/** One line under the restaurant's name, e.g. "Bartender $12/h · every two weeks · payday Fri". */
+function rowSummary(S, w) {
+  if (!isWorkplaceSetUp(S, w)) {
+    const g = S.settings.guidedDraft;
+    if (!w.guideSkipped && (w.setupDone === false || (g && g.workplaceId === w.id)))
+      return 'Setup isn’t finished. Open it to carry on.';
+    const need = stillNeeded(S, w);
+    return need.length ? 'Not set up yet. Still needed: ' + listText(need) + '.' : 'Not set up yet.';
+  }
+  const p = w.profile;
+  const parts = [];
+  const main = (p.payTypes || [])[0];
+  if (main) {
+    const pr = findPayPreset(main.k);
+    const nm = main.name || (pr && pr.name) || 'Main job';
+    parts.push(
+      num(main.rate) > 0
+        ? nm + ' ' + rateShort(num(main.rate)) + (main.unit === 'shift' ? '/shift' : '/h')
+        : nm,
+    );
+  }
+  parts.push(FREQ_SHORT[p.freq] || 'every ' + num(p.freq) + ' days');
+  // the payday's weekday, when it is the same every pay period
+  if (p.payDelay != null && Number.isFinite(parseISO(p.periodStart))) {
+    const d0 = addDays(periodRange(p, 0).end, p.payDelay);
+    const d1 = addDays(periodRange(p, 1).end, p.payDelay);
+    if (weekdayMon0(d0) === weekdayMon0(d1)) parts.push('payday ' + DAY_SHORT[weekdayMon0(d0)]);
+  }
+  return parts.join(' · ');
+}
+
+/** Cards made for the guided steps (h2, with h3 inside) sit one level down inside a row (h3, h4). */
+function demote(root) {
+  ['h3', 'h2'].forEach((tag) =>
+    root.querySelectorAll(tag).forEach((h) => {
+      const n = document.createElement(tag === 'h2' ? 'h3' : 'h4');
+      Array.from(h.attributes).forEach((a) => n.setAttribute(a.name, a.value));
+      while (h.firstChild) n.append(h.firstChild);
+      h.replaceWith(n);
+    }),
+  );
+}
+/** A row's heading: a button with the name, a one-line summary and a chevron; it opens and closes the row. */
+function rowHead(id, title, summaryText, isOpen, controls) {
+  const sum = el('span', { class: 'fold-sum' }, summaryText);
+  const b = el(
+    'button',
+    {
+      type: 'button',
+      class: 'fold-head',
+      id,
+      'aria-expanded': String(isOpen),
+      'aria-controls': controls,
+    },
+    el('span', { class: 'fold-text' }, el('span', { class: 'fold-title' }, title), sum),
+    el('span', { class: 'chev', 'aria-hidden': 'true' }),
+  );
+  b.sum = sum;
+  return b;
+}
+
+/** Save / Cancel for the open restaurant, or the "Save changes to <name>?" question. Kept at the bottom of the screen. */
+function saveBar(S, w, ctx) {
+  const reasons = el('p', { class: 'hint', id: 'draft-reasons' });
+  const stateLine = el('p', { class: 'hint', id: 'draft-state', role: 'status' });
+  const bar = el('div', { class: 'save-bar stack-sm', id: 'draft-bar' });
+  const doSave = (then) => {
+    const next = asking && asking.next;
+    if (!saveOpen()) return sync();
+    if (then && next) next();
+    else {
+      bus.rerender();
+      focusId('wp-row-' + w.id);
+    }
+  };
+  let saveB;
+  if (asking) {
+    const name = open.draft.name || w.name;
+    saveB = el(
+      'button',
+      { type: 'button', class: 'btn', id: 'draft-ask-save', 'aria-describedby': 'draft-reasons' },
+      'Save',
+    );
+    saveB.addEventListener('click', () => doSave(true));
+    const discard = el(
+      'button',
+      { type: 'button', class: 'btn btn-secondary', id: 'draft-ask-discard' },
+      'Discard',
+    );
+    discard.addEventListener('click', () => {
+      const next = asking.next;
+      open = null;
+      asking = null;
+      if (next) next();
+      else closeRow(w.id);
+    });
+    const keep = el(
+      'button',
+      { type: 'button', class: 'btn btn-secondary', id: 'draft-ask-keep' },
+      'Keep editing',
+    );
+    keep.addEventListener('click', () => {
+      asking = null;
+      bus.rerender();
+      focusId('draft-save');
+    });
+    bar.setAttribute('role', 'group');
+    bar.setAttribute('aria-labelledby', 'draft-ask-q');
+    bar.append(
+      el('p', { id: 'draft-ask-q' }, el('strong', null, 'Save changes to ' + name + '?')),
+      el('div', { class: 'cluster' }, saveB, discard, keep),
+      reasons,
+    );
+  } else {
+    saveB = el(
+      'button',
+      { type: 'button', class: 'btn', id: 'draft-save', 'aria-describedby': 'draft-reasons' },
+      'Save',
+    );
+    saveB.addEventListener('click', () => doSave(false));
+    const cancel = el('button', { type: 'button', class: 'btn btn-secondary', id: 'draft-cancel' }, 'Cancel');
+    cancel.addEventListener('click', () => closeRow(w.id));
+    bar.append(stateLine, el('div', { class: 'cluster' }, saveB, cancel), reasons);
+  }
+  const sync = () => {
+    if (!open) return;
+    // A number still waiting for its typing pause is applied by the click on Save, so Save stays usable meanwhile.
+    const probs = pendingEdits.size ? [] : draftProblems(S, w, open.draft);
+    saveB.disabled = probs.length > 0;
+    const t = probs.length ? 'To save: ' + probs.join(' ') : '';
+    if (reasons.textContent !== t) reasons.textContent = t;
+    reasons.hidden = !probs.length;
+    const st = hasUnsaved() ? 'You have changes that aren’t saved yet.' : 'No changes yet.';
+    if (stateLine.textContent !== st) stateLine.textContent = st;
+  };
+  ctx.changed = sync;
+  sync();
+  return bar;
+}
+
+/** One restaurant: a row, and when open, its editable cards and the Save bar. */
+function restaurantRow(S, w) {
+  const isOpen = !!open && open.wid === w.id;
+  const head = rowHead('wp-row-' + w.id, w.name, rowSummary(S, w), isOpen, isOpen ? 'wp-body-' + w.id : null);
+  head.addEventListener('click', () => {
+    if (!isOpen) openRow(S, w.id);
+    else if (!confirmLeave(() => closeRow(w.id))) closeRow(w.id);
+  });
+  let body = null;
+  if (isOpen) {
+    const ctx = makeCtx(w, false, false, open.draft);
+    body = el(
+      'div',
+      { class: 'stack fold-body', id: 'wp-body-' + w.id },
+      el('p', { class: 'hint' }, 'Change anything below, then tap Save. Nothing changes until you save.'),
+      isWorkplaceSetUp(S, w) ? null : notReadyNote(ctx),
+      ctx.rateNote,
+      workplaceCard(ctx),
+      periodCard(ctx, { title: 'Pay period and gross pay' }),
+      dedCard(ctx),
+      payCard(ctx),
+      tipoutCard(ctx),
+      saveBar(S, w, ctx),
+    );
+    demote(body);
+  }
+  const done =
+    !isOpen && lastSaved && lastSaved.wid === w.id
+      ? el('p', { class: 'hint fold-saved', role: 'status', id: 'wp-saved-' + w.id }, lastSaved.text)
+      : null;
+  return el(
+    'section',
+    { class: 'card fold' + (isOpen ? ' fold-open' : ''), 'data-row': w.id },
+    el('h2', { class: 'fold-h' }, head),
+    done,
+    body,
+  );
+}
+
+/** The shared sections (Late nights, Appearance, Backups...): one row each that opens in place. They apply right away. */
+function foldRow(key, title, summaryFn, content) {
+  const isOpen = foldOpen.has(key);
+  const head = rowHead('fold-' + key, title, summaryFn(), isOpen, 'fold-body-' + key);
+  const body = el('div', { class: 'stack fold-body', id: 'fold-body-' + key, hidden: !isOpen }, content);
+  const sec = el(
+    'section',
+    { class: 'card fold' + (isOpen ? ' fold-open' : '') },
+    el('h2', { class: 'fold-h' }, head),
+    body,
+  );
+  head.addEventListener('click', () => {
+    const now = !foldOpen.has(key);
+    if (now) foldOpen.add(key);
+    else foldOpen.delete(key);
+    head.setAttribute('aria-expanded', String(now));
+    body.hidden = !now;
+    sec.classList.toggle('fold-open', now);
+  });
+  // the summary follows what was just changed inside
+  const refresh = () => {
+    const t = summaryFn();
+    if (head.sum.textContent !== t) head.sum.textContent = t;
+  };
+  body.addEventListener('change', refresh);
+  body.addEventListener('click', refresh);
+  return sec;
+}
+/** A card's contents without its own heading (the row's heading replaces it). */
+function inner(section) {
+  if (!section) return [];
+  const h = Array.from(section.children).find((c) => c.tagName === 'H2');
+  if (h) h.remove();
+  return Array.from(section.childNodes);
+}
+
+function fullPage(root, S, active) {
+  if (open && !findWorkplace(S, open.wid)) {
+    open = null; // removed (here or in another window)
+    asking = null;
+  }
+  // "Skip guided setup" and the basics are still missing: that restaurant's editor opens by itself (unless closed).
+  if (!open && !isWorkplaceSetUp(S, active) && !userClosed.has(active.id)) {
+    open = { wid: active.id, base: snapOf(active), draft: snapOf(active) };
+  }
+  // Nothing typed yet: show what is saved now (another window may have changed it).
+  if (open && !hasUnsaved()) {
+    const w = findWorkplace(S, open.wid);
+    open.base = snapOf(w);
+    open.draft = snapOf(w);
+  }
+  if (restoreRequest.open) foldOpen.add('backup');
+  const many = S.workplaces.length > 1;
   const importHost = el('div'),
     installHost = el('div'),
     backupHost = el('div');
   // Imported nights would count as "set up" and be worked out with whatever paystub is here, so the importer waits for the basics.
-  if (isSetUp(S0)) renderImporter(importHost);
+  if (isSetUp(S)) renderImporter(importHost);
   else
     importHost.append(
       el(
         'section',
-        { class: 'card stack' },
-        el('h2', null, 'Import nights from a file'),
+        null,
+        el('h2', null, 'Import'),
         el(
           'p',
           { class: 'hint' },
@@ -1765,40 +2236,71 @@ export function render(root) {
     );
   renderInstall(installHost);
   renderBackup(backupHost);
+  const ctx = { S }; // the shared cards only use the state
+  const sub = budgetVisible(S.settings.entitlement) ? subscriptionLine() : null; // hidden while payments are off
+  const lastBackup = () => {
+    const at = getState().settings.lastBackupAt;
+    return 'Last backup: ' + (at ? fmtShort(todayISO(new Date(at))) : 'never');
+  };
+  const cutoffText = () => {
+    const h = cutoffFromSettings(getState().settings);
+    return h
+      ? 'Before ' + h + ' a.m. counts as the night before'
+      : 'Off: nights are dated the day you enter them';
+  };
+  const themeText = () =>
+    ({ auto: 'Same as your phone', light: 'Light', dark: 'Dark' })[getState().settings.theme || 'auto'] ||
+    'Same as your phone';
   root.append(
     el(
       'div',
       { class: 'stack' },
-      workplaceSwitcher(S0, w.id, (id) => pickWorkplace(S0, id), {
-        key: 'setup-wp',
-        label: 'Restaurant to set up',
-      }),
       exampleBanner(),
-      el('h1', { id: 'setup-h1' }, many ? 'Setup: ' + w.name : 'Setup'),
-      many
-        ? el(
-            'p',
-            { class: 'hint', id: 'setup-wp-hint' },
-            'The paystub, jobs and tip-out below are for ' +
-              w.name +
-              '. Late nights, appearance and backups are shared by all your restaurants.',
+      el('h1', { id: 'setup-h1' }, 'Setup'),
+      el(
+        'p',
+        { class: 'hint', id: 'setup-wp-hint' },
+        (many ? 'Open a restaurant' : 'Open your restaurant') +
+          ' to change its paystub, pay schedule, jobs or tip-out, then tap Save.',
+      ),
+      S.workplaces.map((w) => restaurantRow(S, w)),
+      addWorkplaceCard(S),
+      el(
+        'p',
+        { class: 'label fold-group' },
+        many
+          ? 'For all your restaurants. Changes apply right away.'
+          : 'More settings. Changes apply right away.',
+      ),
+      foldRow('cutoff', 'Late nights', cutoffText, inner(cutoffCard(ctx))),
+      foldRow('theme', 'Appearance', themeText, inner(themeCard(ctx))),
+      foldRow(
+        'import',
+        'Import nights',
+        () => 'From a spreadsheet (.csv) file',
+        inner(importHost.firstElementChild),
+      ),
+      foldRow('install', 'Install TipNet', () => 'Open it like an app', inner(installHost.firstElementChild)),
+      foldRow('backup', 'Backups', lastBackup, inner(backupHost.firstElementChild)),
+      sub
+        ? foldRow(
+            'subscription',
+            'Budget subscription',
+            () => (isUnlocked(getState().settings.entitlement) ? 'Active' : 'Not active'),
+            sub,
           )
         : null,
-      notReadyNote(ctx),
-      ctx.saved,
-      ctx.rateNote,
-      addWorkplaceCard(S0),
-      workplaceCard(ctx),
-      periodCard(ctx, { title: 'From your paystub' }),
-      dedCard(ctx),
-      payCard(ctx),
-      tipoutCard(ctx),
-      cutoffCard(ctx),
-      themeCard(ctx),
-      importHost,
-      installHost,
-      backupHost,
-      finePrint(),
+      foldRow('privacy', 'Privacy and terms', () => 'Your numbers stay on this device', [
+        el(
+          'p',
+          { class: 'note' },
+          'TipNet keeps your numbers in this browser only. ',
+          el('a', { href: 'privacy.html' }, 'Privacy'),
+          ' · ',
+          el('a', { href: 'terms.html' }, 'Terms'),
+        ),
+        finePrint(),
+      ]),
     ),
   );
   if (restoreRequest.open) {

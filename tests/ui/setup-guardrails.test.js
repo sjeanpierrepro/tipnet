@@ -32,7 +32,7 @@ const taxPer100 = (page) => {
 test('typing "2100" into gross never passes through $2: nothing applies until a pause', async () => {
   const page = await boot({ seed: seed() });
   try {
-    page.tab('setup');
+    page.openSetup();
     const gross = grossInput(page);
     const seen = [];
     for (const v of ['2', '21', '210', '2100']) {
@@ -41,24 +41,27 @@ test('typing "2100" into gross never passes through $2: nothing applies until a 
       assert.ok(taxPer100(page) <= 100, 'never a rate above 100%');
       assert.doesNotMatch(page.text(), /small gross pay/);
     }
-    assert.deepEqual(seen, [2000, 2000, 2000, 2000], 'still the old gross while typing');
-    assert.match(page.text(), /Saving…/);
-    assert.doesNotMatch(page.text(), /All changes saved/);
-    await wait(750); // the typing pause
+    assert.deepEqual(seen, [2000, 2000, 2000, 2000], 'the saved gross is untouched while typing');
+    assert.match(page.$('#draft-state').textContent, /changes that aren’t saved yet/);
+    assert.equal(page.$('#draft-save').disabled, false, 'Save works while a number waits for its pause');
+    await wait(750); // the typing pause: the draft takes the number, nothing is saved
+    assert.equal(page.state().workplaces[0].profile.gross, 2000);
+    assert.doesNotMatch(page.text(), /small gross pay/);
+    await page.saveSetup();
     assert.equal(page.state().workplaces[0].profile.gross, 2100);
-    for (let i = 0; i < 40 && !/All changes saved/.test(page.text()); i++) await wait(50);
-    assert.match(page.text(), /All changes saved on this device\./);
+    for (let i = 0; i < 40 && !/Saved\./.test(page.text()); i++) await wait(50);
+    assert.match(page.$('#wp-saved-w1').textContent, /^Saved\./);
   } finally {
     await page.close();
   }
 });
 
-test('a click elsewhere applies the waiting number at once', async () => {
+test('Save right after typing (no pause) applies the waiting number', async () => {
   const page = await boot({ seed: seed() });
   try {
-    page.tab('setup');
+    page.openSetup();
     page.type(grossInput(page), '2400');
-    page.click(page.$('h1') || page.app);
+    await page.saveSetup();
     assert.equal(page.state().workplaces[0].profile.gross, 2400);
   } finally {
     await page.close();
@@ -68,18 +71,21 @@ test('a click elsewhere applies the waiting number at once', async () => {
 test('a tiny gross gets a calm note, and a rate above 100% is capped with a note (never blocked)', async () => {
   const page = await boot({ seed: seed() });
   try {
-    page.tab('setup');
-    const gross = grossInput(page);
+    page.openSetup();
+    let gross = grossInput(page);
     page.type(gross, '2');
     page.change(gross);
-    const p = page.state().workplaces[0].profile;
-    assert.equal(p.gross, 2, 'saved: a note, not a block');
     assert.match(page.text(), /That’s a small gross pay for one paycheck/);
     assert.equal(taxPer100(page), 100, 'capped at 100%');
     assert.match(page.text(), /add up to more than your gross pay, so TipNet uses 100% for now/);
     assert.match(page.text(), /More than your gross pay: check this amount/);
+    await page.saveSetup();
+    const p = page.state().workplaces[0].profile;
+    assert.equal(p.gross, 2, 'saved: a note, not a block');
     assert.ok(M.rate(p) <= 1);
     // back to a normal gross: the notes go away
+    page.openSetup();
+    gross = page.byText('.field', 'Gross pay', page.app).querySelector('input');
     page.type(gross, '2000');
     page.change(gross);
     assert.doesNotMatch(page.text(), /small gross pay|so TipNet uses 100%|unusually high/);
@@ -91,7 +97,7 @@ test('a tiny gross gets a calm note, and a rate above 100% is capped with a note
 test('% deductions at 60% or more of gross get an "unusually high" note', async () => {
   const page = await boot({ seed: seed() });
   try {
-    page.tab('setup');
+    page.openSetup();
     const gross = grossInput(page);
     page.type(gross, '500'); // example % deductions: 180 + 124 + 29 = 333 = 66.6%
     page.change(gross);

@@ -140,6 +140,28 @@ function makePage(win, doc, app) {
     tab(name) {
       page.click(page.must(doc.querySelector('#tabs [data-tab="' + name + '"]'), 'tab ' + name));
     },
+    /**
+     * Full Setup page: go to Setup and open a restaurant's row (by name; default the first) so its cards are editable.
+     * Edits there are a draft until page.saveSetup().
+     */
+    openSetup(name) {
+      const sel = doc.querySelector('#tabs [aria-selected="true"]');
+      if (!sel || sel.dataset.tab !== 'setup') page.tab('setup');
+      const rows = page.$$('button.fold-head[id^="wp-row-"]');
+      const row = page.must(
+        name ? rows.find((b) => b.querySelector('.fold-title').textContent === name) : rows[0],
+        'restaurant row ' + (name || '(first)'),
+      );
+      if (row.getAttribute('aria-expanded') !== 'true') page.click(row);
+      return page.$('#' + row.id);
+    },
+    /** Save the open restaurant on the full Setup page (throws, with the reasons, if Save is disabled). */
+    async saveSetup() {
+      const b = page.must(page.$('#draft-save'), 'Save button');
+      if (b.disabled) throw new Error('Save is disabled: ' + page.text(page.$('#draft-reasons')));
+      page.click(b);
+      await page.settle();
+    },
     tabHidden(name) {
       return doc.querySelector('#tabs [data-tab="' + name + '"]').hidden;
     },

@@ -130,7 +130,10 @@ function render() {
   window.scrollTo(0, y);
 }
 
-function go(tab, { focus = false, preview: asPreview = false } = {}) {
+function go(tab, opts = {}) {
+  const { focus = false, preview: asPreview = false } = opts;
+  // Leaving Setup with unsaved restaurant changes: it asks "Save changes to <name>?" first, then comes back here.
+  if (current === 'setup' && tab !== 'setup' && setup.confirmLeave(() => go(tab, opts))) return;
   if (tab !== 'budget') preview = false;
   else if (asPreview) preview = true;
   if (!SCREENS[tab] || (tab === 'budget' && !budgetOpen())) tab = 'tonight';
@@ -276,6 +279,12 @@ async function boot() {
   });
   window.addEventListener('appinstalled', () => setInstallPrompt(null));
   // flush writes the quick localStorage copy first (synchronously), then IndexedDB, so a closing page keeps its entry.
+  // Closing or reloading with a restaurant's Setup changes not saved: the browser asks first (only then).
+  window.addEventListener('beforeunload', (e) => {
+    if (!setup.hasUnsaved()) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
   window.addEventListener('pagehide', () => {
     setup.flushEdits();
     storage.flush();

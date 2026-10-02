@@ -24,10 +24,11 @@ function dedAmount(page, id) {
 test('setup: a fixed deduction change or a new empty deduction keeps the accuracy adjustment', async () => {
   const page = await boot({ seed: seed() });
   try {
-    page.tab('setup');
+    page.openSetup();
     page.type(dedAmount(page, 'd4'), '75'); // health insurance, same every check
-    assert.equal(override(page), 0.2);
     page.click(page.button('+ Add deduction')); // a new deduction with no amount yet
+    assert.doesNotMatch(page.text(), /saving clears/);
+    await page.saveSetup();
     assert.equal(override(page), 0.2);
     assert.doesNotMatch(page.text(), /accuracy adjustment was cleared/);
   } finally {
@@ -38,21 +39,30 @@ test('setup: a fixed deduction change or a new empty deduction keeps the accurac
 test('setup: a percentage deduction or gross pay change clears it and says so; putting it back restores it', async () => {
   const page = await boot({ seed: seed() });
   try {
-    page.tab('setup');
+    page.openSetup();
     const fed = dedAmount(page, 'd1');
     page.type(fed, '200');
     page.change(fed); // numbers that change the rate apply on leaving the field (or after a pause)
+    assert.equal(override(page), 0.2, 'nothing changes before Save');
+    assert.match(page.text(), /so saving clears TipNet’s accuracy adjustment/, 'it says so beforehand');
+    page.type(fed, '180'); // back again before saving: nothing to clear
+    page.change(fed);
+    assert.doesNotMatch(page.text(), /saving clears/);
+    page.type(fed, '200');
+    page.change(fed);
+    await page.saveSetup();
     assert.equal(override(page), null);
     assert.ok(page.text().includes(RATE_NOTE), 'the note shows');
-    const fed2 = dedAmount(page, 'd1');
-    page.type(fed2, '180'); // back to what it was learned with
-    page.change(fed2);
+    page.openSetup();
+    page.type(dedAmount(page, 'd1'), '180'); // back to what it was learned with
+    await page.saveSetup();
     assert.equal(override(page), 0.2, 'restored');
     assert.ok(!page.text().includes(RATE_NOTE));
     // gross pay
+    page.openSetup();
     const gross = page.$$('input').find((i) => i.value === '2000');
     page.type(gross, '2100');
-    page.change(gross);
+    await page.saveSetup();
     assert.equal(override(page), null);
     assert.ok(page.text().includes(RATE_NOTE));
   } finally {
@@ -72,10 +82,9 @@ test('setup: the adjustment is per restaurant; another restaurant’s edit leave
     }),
   });
   try {
-    page.tab('setup');
-    const fed = dedAmount(page, 'd1');
-    page.type(fed, '210');
-    page.change(fed);
+    page.openSetup('Second Spot');
+    page.type(dedAmount(page, 'd1'), '210');
+    await page.saveSetup();
     const [a, b] = page.state().workplaces;
     assert.equal(b.profile.rateOverride, null, 'Second Spot cleared');
     assert.equal(a.profile.rateOverride, 0.2, 'the first restaurant keeps its own');

@@ -53,13 +53,15 @@ test('tonight: the restaurant default pre-ticks the box; Setup saves the default
   try {
     fill(page, '585', '8', '210');
     assert.equal(key(page, 'night-cashoff').checked, true);
-    page.tab('setup');
+    page.openSetup();
     const box = page.must(page.$('#cash-off-payroll'), 'setup box');
     assert.equal(box.checked, true);
     assert.match(page.text(), /Cash tips here usually aren’t run through payroll/);
     box.checked = false;
     page.change(box);
     await page.settle();
+    assert.equal(page.state().workplaces[0].profile.cashOffPayroll, true, 'a draft until Save');
+    await page.saveSetup();
     assert.equal(page.state().workplaces[0].profile.cashOffPayroll, false);
     page.tab('tonight');
     fill(page, '585', '8', '210');

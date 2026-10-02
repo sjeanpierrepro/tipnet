@@ -132,16 +132,19 @@ test('setup: rename and remove (two taps, says how many nights go, Undo brings b
   });
   const page = await boot({ seed });
   try {
-    page.tab('setup');
-    assert.match(page.text(), /Setup: Second Spot/);
+    page.openSetup('Second Spot');
     page.type(page.$('#wp-name'), 'Spot 2');
-    assert.equal(page.state().workplaces[1].name, 'Spot 2');
+    assert.equal(page.state().workplaces[1].name, 'Second Spot', 'a draft until Save');
     page.type(page.$('#wp-name'), 'Voodoo Bayou');
     assert.match(page.text(), /You already have a restaurant called Voodoo Bayou/);
-    assert.equal(page.state().workplaces[1].name, 'Spot 2', 'a repeated name is not saved');
-    page.type(page.$('#wp-name'), 'Second Spot');
+    assert.equal(page.$('#draft-save').disabled, true, 'a repeated name cannot be saved');
+    assert.match(page.$('#draft-reasons').textContent, /You already have a restaurant called Voodoo Bayou/);
+    page.type(page.$('#wp-name'), 'Spot 2');
+    await page.saveSetup();
+    assert.equal(page.state().workplaces[1].name, 'Spot 2');
+    page.openSetup('Spot 2');
     const rm = page.$('#wp-remove');
-    assert.equal(rm.textContent, 'Remove Second Spot');
+    assert.equal(rm.textContent, 'Remove Spot 2');
     page.click(rm);
     assert.equal(rm.textContent, 'Tap again: this also removes its 2 nights');
     assert.equal(page.state().workplaces.length, 2, 'one tap removes nothing');
@@ -150,6 +153,7 @@ test('setup: rename and remove (two taps, says how many nights go, Undo brings b
     assert.equal(S.workplaces.length, 1);
     assert.equal(S.nights.length, 1);
     assert.equal(S.settings.activeWorkplaceId, 'w1');
+    page.openSetup();
     assert.equal(page.$('#wp-remove'), null, 'the last restaurant cannot be removed');
     page.click(page.button('Undo', page.doc.getElementById('toast')));
     S = page.state();
@@ -165,13 +169,16 @@ test('setup: shared settings (late nights, theme, backup) stay global; the impor
   const page = await boot({ seed: twoState() });
   try {
     page.tab('setup');
-    assert.match(page.text(), /Late nights, appearance and backups are shared by all your restaurants/);
+    assert.match(page.text(), /For all your restaurants\. Changes apply right away\./);
+    page.click(page.$('#fold-cutoff'));
     const sel = page.$('#day-cutoff');
     sel.value = '4';
     page.change(sel);
-    page.click(radios(page, 'Restaurant to set up')[1]);
+    assert.equal(page.state().settings.dayCutoffHour, 4, 'applies right away, no Save');
+    assert.match(page.$('#fold-cutoff').textContent, /Before 4 a\.m\. counts as the night before/);
+    page.openSetup('Second Spot');
     assert.equal(page.$('#day-cutoff').value, '4', 'the same Late nights setting for both');
-    assert.equal(page.state().settings.dayCutoffHour, 4);
+    assert.equal(page.$('#fold-body-cutoff').hidden, false, 'still open after a redraw');
     // The hint describes the setting that is actually chosen, including "off".
     const hint = () => page.$('#day-cutoff').closest('.field').querySelector('.hint').textContent;
     assert.match(hint(), /before 4 a\.m\./);
@@ -445,16 +452,17 @@ test('budget: a goal asks which paycheck it is saved from, uses that restaurant,
   }
 });
 
-test('setup: renaming a restaurant updates the switcher button, heading and Remove label at once', async () => {
+test('setup: a renamed restaurant shows its new name on its row, its Remove button and Tonight once saved', async () => {
   const page = await boot({ seed: twoState((S) => (S.settings.activeWorkplaceId = 'w2')) });
   try {
-    page.tab('setup');
-    const btn = () => page.$('[data-workplace="w2"]');
-    assert.equal(btn().textContent, 'Second Spot');
+    page.openSetup('Second Spot');
     page.type(page.$('#wp-name'), 'Spot 2');
-    assert.equal(btn().textContent, 'Spot 2');
-    assert.match(page.$('#setup-h1').textContent, /Setup: Spot 2/);
+    await page.saveSetup();
+    assert.match(page.$('#wp-row-w2').textContent, /Spot 2/);
+    page.openSetup('Spot 2');
     assert.match(page.$('#wp-remove').textContent, /Remove Spot 2/);
+    page.tab('tonight');
+    assert.equal(page.$('[data-workplace="w2"]').textContent, 'Spot 2');
   } finally {
     await page.close();
   }

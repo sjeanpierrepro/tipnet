@@ -10,8 +10,6 @@ import {
   flush,
 } from '../storage.js';
 import { todayISO } from '../math.js';
-import { subscriptionLine } from './budget.js';
-import { budgetVisible } from '../billing.js';
 import { el, toast, arm, bus, getState, applyTheme, install, save, fmtShort } from './common.js';
 
 const DAY = 24 * 3600 * 1000;
@@ -375,7 +373,6 @@ export function renderBackup(host, { restoreOnly = false } = {}) {
       el('div', { class: 'cluster' }, copy, restore),
       el('div', { class: 'field' }, el('label', { for: 'bk-code' }, 'Backup code'), box),
       msg,
-      budgetVisible(S.settings.entitlement) ? subscriptionLine() : null, // hidden while payments are off
       el('div', null, erase),
     ),
   );

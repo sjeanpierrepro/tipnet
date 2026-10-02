@@ -86,18 +86,18 @@ for (const withData of [false, true]) {
   test('two copies: Setup edit in A after B saved' + when, async () => {
     const page = await boot({ seed: seed() });
     try {
-      page.tab('setup');
+      page.openSetup();
       await page.settle();
       await otherWindowSaves(page, withData);
       const gross = page.$$('input').find((i) => i.value === '2000');
       page.type(gross, '2500');
       page.change(gross);
-      await page.settle();
+      await page.saveSetup();
       await storage.flush();
       await page.settle();
       assert.equal(storage.getState().workplaces[0].profile.gross, 2500, 'in the state');
       assert.equal(disk(page).workplaces[0].profile.gross, 2500, 'on disk');
-      assert.match(page.text(), /All changes saved on this device/);
+      assert.match(page.text(), /Saved\./);
       await bothKept(page, withData);
     } finally {
       await page.close();

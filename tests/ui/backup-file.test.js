@@ -179,7 +179,7 @@ test('a failed save shows the banner and Setup says it could not save; a good on
   const page = await boot({ seed: withNights(1) });
   const good = globalThis.localStorage;
   try {
-    page.tab('setup');
+    page.openSetup();
     globalThis.localStorage = {
       getItem: (k) => good.getItem(k),
       setItem: () => {
@@ -187,21 +187,21 @@ test('a failed save shows the banner and Setup says it could not save; a good on
       },
       removeItem: () => {},
     };
-    const gross = page.byText('.field', 'Gross pay', page.app).querySelector('input');
-    page.type(gross, '1900');
-    assert.match(page.text(), /Saving…/);
-    page.change(gross); // leaving the field applies the number (typing alone waits for a pause)
+    const gross = () => page.byText('.field', 'Gross pay', page.app).querySelector('input');
+    page.type(gross(), '1900');
+    await page.saveSetup();
     await wait(500);
     assert.equal(page.doc.getElementById('save-error').hidden, false, 'banner shown');
     assert.match(page.doc.getElementById('save-error').textContent, /Couldn't save on this device/);
     assert.match(page.text(), /Couldn’t save on this device/);
-    assert.doesNotMatch(page.text(), /All changes saved/);
+    assert.doesNotMatch(page.text(), /Saved\./);
     globalThis.localStorage = good;
-    page.type(gross, '1950');
-    page.change(gross);
+    page.openSetup();
+    page.type(gross(), '1950');
+    await page.saveSetup();
     await wait(500);
     assert.equal(page.doc.getElementById('save-error').hidden, true, 'banner gone');
-    assert.match(page.text(), /All changes saved on this device\./);
+    assert.match(page.text(), /Saved\./);
     assert.equal(JSON.parse(good.getItem('tipnet.v2')).workplaces[0].profile.gross, 1950);
   } finally {
     globalThis.localStorage = good;
