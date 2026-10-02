@@ -32,13 +32,30 @@ test('tips + hours x rate = total, and the night stores tips', () => {
   assert.deepEqual(nights[0].pay, { p1: 7 });
 });
 
-test('cash + card still adds up; no tips field stored', () => {
+test('cash + card (no Total) adds up and stores tips = cash + card, like a Tips column', () => {
   const { nights } = buildNights(
-    [['9/5/2026', '100', '50', '2']],
+    [
+      ['9/5/2026', '100', '50', '2'],
+      ['9/6/2026', '40', '', '3'],
+      ['9/6/2026', '', '25.5', '1'],
+    ],
     { date: 0, cash: 1, card: 2, hours: 3 },
     { rate: 10 },
   );
   assert.equal(nights[0].total, 170);
+  assert.equal(nights[0].tips, 150, 'a later pay-rate fix moves only the pay part, never these tips');
+  assert.equal(nights[0].cash, 100);
+  assert.equal(nights[1].total, 105.5, 'same-date rows are summed');
+  assert.equal(nights[1].tips, 65.5);
+});
+
+test('cash + card with a Total column: Total wins and no tips are stored', () => {
+  const { nights } = buildNights(
+    [['9/5/2026', '100', '50', '2', '400']],
+    { date: 0, cash: 1, card: 2, hours: 3, total: 4 },
+    { rate: 10 },
+  );
+  assert.equal(nights[0].total, 400);
   assert.equal(nights[0].tips, undefined);
 });
 

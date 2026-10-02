@@ -201,8 +201,8 @@ export function listEmployees(rows, mapping) {
  *  rows: DATA rows (no header) as arrays. mapping: column indexes {date,total,tips,cash,card,hours,employee}.
  *  opts: {today (ISO; dates after tomorrow are skipped as 'date'), employee, refYear, rate (hourly $ for hours*rate), payId (id of the first HOURLY pay type; hours are stored there;
  *         null = no hourly pay type, so hours are ignored), barback (default true)}
- *  total = total column, else tips (or cash + card) + hours * rate. When the Tips column is mapped the night also stores
- *  `tips`. Several rows on the same date are summed.
+ *  total = total column, else tips (or cash + card) + hours * rate. Without a Total column the night also stores `tips`
+ *  (the Tips column, or cash + card). Several rows on the same date are summed.
  *  Night: {id, date, total, cash|null, [tips], pay:{[payId]:hours}, barback}. skipped: [{row, reason}] (row = 1-based data row;
  *  reason is 'date', 'amount', 'hours' (unreadable, ambiguous or over 24), or 'negative' for a negative money or hours value).
  */
@@ -241,8 +241,9 @@ export function buildNights(rows, mapping, opts = {}) {
       skipped.push({ row: rowNo, reason: 'hours' });
       return;
     }
+    let tipsAmt = null;
     if (total == null) {
-      const tipsAmt = tips != null ? tips : cash != null || card != null ? (cash || 0) + (card || 0) : null;
+      tipsAmt = tips != null ? tips : cash != null || card != null ? (cash || 0) + (card || 0) : null;
       if (tipsAmt == null && !(hours && rate)) {
         skipped.push({ row: rowNo, reason: 'amount' });
         return;
@@ -253,8 +254,10 @@ export function buildNights(rows, mapping, opts = {}) {
     cur.totalC += toCents(total);
     if (cash != null) cur.cashC = (cur.cashC || 0) + toCents(cash);
     // A Total column wins: that row's total is stored as is, and no tips are stored beside it (tips + current pay could differ).
+    // Without a Total column the tips (the Tips column, or Cash + Card) are stored too, so a later pay-rate fix in Setup
+    // changes the pay part of the night, never its tips.
     if (hadTotal) cur.noTips = true;
-    else if (tips != null) cur.tipsC = (cur.tipsC || 0) + toCents(tips);
+    else if (tipsAmt != null) cur.tipsC = (cur.tipsC || 0) + toCents(tipsAmt);
     cur.hours += hours;
     byDate.set(date, cur);
   });
