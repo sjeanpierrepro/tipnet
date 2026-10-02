@@ -1041,7 +1041,7 @@ export function render(root) {
   const announce = debounce(() => {
     liveSummary.textContent = lastSummary;
   }, 800);
-  const savedMsg = el('p', { class: 'hint', role: 'status' });
+  const savedMsg = el('p', { class: 'hint', role: 'status', id: 'night-saved' });
   const dupHost = el('div');
   // On a phone the full card is far below Save: a short line right under the tips box follows the typing. Not a live
   // region (the debounced summary above already speaks it).
@@ -1129,10 +1129,10 @@ export function render(root) {
     lockFinished({ force: true });
     save();
     drafts.set(w.id, blankDraft(S, p));
-    render(clear(root));
+    bus.rerender(); // the whole tab, so the backup reminder and the TipNet Budget card stay
     const tot = root.querySelector('[data-focus-key="night-total"]');
     if (tot) tot.focus();
-    const m = root.querySelector('[role=status].hint');
+    const m = root.querySelector('#night-saved');
     if (m)
       m.textContent =
         (many ? 'Saved to ' + w.name + ': ' : 'Saved. ') +

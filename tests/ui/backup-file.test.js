@@ -244,3 +244,25 @@ test('another window saved: the screen shows its data; unsaved changes here are 
     await page.close();
   }
 });
+
+test('Saving a night on Tonight keeps the backup reminder and the TipNet Budget card, with focus back on the total', async () => {
+  const page = await boot({ seed: withNights(5, (S) => (S.workplaces[0].setupDone = true)) });
+  try {
+    page.tab('tonight');
+    assert.ok(page.$('#backup-nudge'), 'reminder before');
+    assert.ok(page.$('#budget-teaser'), 'Budget card before');
+    const before = page.state().nights.length;
+    page.type(page.$('[data-focus-key="night-total"]'), '150');
+    page.type(page.$('[data-focus-key="night-pay-p1"]'), '6');
+    page.click(page.button('Save night'));
+    await page.settle();
+    assert.equal(page.state().nights.length, before + 1, 'night saved');
+    assert.ok(page.$('#backup-nudge'), 'reminder still there');
+    assert.ok(page.$('#budget-teaser'), 'Budget card still there');
+    assert.equal(page.app.lastElementChild, page.$('#budget-teaser'), 'card still last');
+    assert.equal(page.doc.activeElement.getAttribute('data-focus-key'), 'night-total');
+    assert.match(page.$('#night-saved').textContent, /^Saved\. .* take-home for /);
+  } finally {
+    await page.close();
+  }
+});
