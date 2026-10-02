@@ -170,14 +170,46 @@ export function periodRange(p, idx) {
 /** A period is final once its end date is before today. */
 export const isFinal = (p, idx, today = todayISO()) => periodRange(p, idx).end < today;
 const byDate = (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+
+/* ---------- the pay period a night counts toward ---------- */
+/*
+ * night.periodStart (optional, owner request): the first day of the pay period ("pay week") the night counts toward,
+ * picked in the Pay periods editor. A DATE, not an index, so a Setup schedule change can't silently renumber it.
+ * It only counts while it is still the first day of a period in this restaurant's schedule (any of the six modes;
+ * payday/payDelay never moves period boundaries). Otherwise the night counts by its own date, and nightPeriodStale says so.
+ */
+function assignedIndex(p, night) {
+  const s = night && night.periodStart;
+  if (typeof s !== 'string' || !Number.isFinite(parseISO(s))) return null;
+  const k = periodIndex(p, s);
+  if (!Number.isFinite(k) || periodRange(p, k).start !== s) return null;
+  return k;
+}
+/** The pay period index a night counts toward: its picked pay week (night.periodStart) when valid, else its date's. */
+export function nightPeriodIndex(p, night) {
+  const k = assignedIndex(p, night);
+  return k == null ? periodIndex(p, night.date) : k;
+}
+/** True when a night has a picked pay week that no longer matches the schedule (so it is counted by its date). */
+export const nightPeriodStale = (p, night) =>
+  !!night && night.periodStart != null && night.periodStart !== '' && assignedIndex(p, night) == null;
+/** True when a night counts toward a pay period other than the one its date falls in. */
+export const nightPeriodMoved = (p, night) => nightPeriodIndex(p, night) !== periodIndex(p, night.date);
+/** The pay periods the editor offers: [{idx, start, end, own}] for the one before the night's date's, its own, the next. */
+export function nightPeriodChoices(p, dateISO) {
+  const own = periodIndex(p, dateISO);
+  if (!Number.isFinite(own)) return [];
+  return [own - 1, own, own + 1].map((idx) => ({ idx, ...periodRange(p, idx), own: idx === own }));
+}
+
 /**
- * One pass over the nights: Map of period index -> that period's nights, oldest first.
- * Build it once per screen and pass it down, so nothing rescans every night for every period.
+ * One pass over the nights: Map of period index -> that period's nights, oldest first (by the period each night
+ * counts toward, see nightPeriodIndex). Build it once per screen and pass it down, so nothing rescans every night.
  */
 export function indexNights(p, nights) {
   const map = new Map();
   nights.forEach((n) => {
-    const i = periodIndex(p, n.date);
+    const i = nightPeriodIndex(p, n);
     const list = map.get(i);
     if (list) list.push(n);
     else map.set(i, [n]);
@@ -187,7 +219,7 @@ export function indexNights(p, nights) {
 }
 /** Nights in period idx, oldest first. Pass a prebuilt `index` (from indexNights) to skip the full scan. */
 export const nightsInPeriod = (p, nights, idx, index) =>
-  index ? (index.get(idx) || []).slice() : nights.filter((n) => periodIndex(p, n.date) === idx).sort(byDate);
+  index ? (index.get(idx) || []).slice() : nights.filter((n) => nightPeriodIndex(p, n) === idx).sort(byDate);
 
 /* ---------- shifts per period (6.2) ---------- */
 /**
@@ -275,7 +307,7 @@ export function lockFinishedNights(profile, nights, today = todayISO()) {
   let stamped = 0;
   const out = nights.map((n) => {
     if (n.snap) return n;
-    const s = snaps.get(periodIndex(profile, n.date));
+    const s = snaps.get(nightPeriodIndex(profile, n)); // a night locks when the period it counts toward ends
     if (!s) return n;
     stamped++;
     const locked = { ...n, snap: JSON.parse(JSON.stringify(s)) };
@@ -532,7 +564,7 @@ export function calibrate(p, nights, idx, actual, today = todayISO(), shifts, ra
   // A paycheck only exists for a finished pay period; comparing a half-worked one would drag the tax rate down.
   if (!isFinal(p, idx, today)) return { ok: false, reason: 'notFinal', missingCash: 0 };
   // The expected count must not include the period being checked: a missed night would pull its own average down.
-  const others = nights.filter((n) => periodIndex(p, n.date) !== idx);
+  const others = nights.filter((n) => nightPeriodIndex(p, n) !== idx);
   const sp = shifts > 0 ? { n: shifts, source: 'entered' } : shiftsPerPeriod(p, others, today, idx);
   const n = sp.n;
   // same test computeNight uses, so junk like "abc" counts as missing instead of silently being $0
@@ -591,7 +623,10 @@ export function calibrate(p, nights, idx, actual, today = todayISO(), shifts, ra
 }
 
 /* ---------- weekly hours for the overtime nudge (7.1) ---------- */
-/** Hours logged Monday-Sunday for the week containing dateISO. */
+/**
+ * Hours logged Monday-Sunday for the week containing dateISO. By the dates worked, never by the pay period a night
+ * counts toward (night.periodStart): overtime is counted by the calendar week the hours were worked.
+ */
 export function weeklyHours(p, nights, dateISO, threshold = 40) {
   const start = addDays(dateISO, -weekdayMon0(dateISO));
   const end = addDays(start, 6);
