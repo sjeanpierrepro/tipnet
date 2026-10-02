@@ -307,6 +307,8 @@ function cleanNights(list) {
       if (typeof n.tips === 'number' && Number.isFinite(n.tips) && n.tips >= 0)
         o.tips = Math.round(n.tips * 100) / 100;
       if (typeof n.note === 'string' && n.note) o.note = n.note.slice(0, 500);
+      // the first day of the pay week the night was moved to (Pay periods editor): a real YYYY-MM-DD date or nothing
+      if (validDate(n.periodStart)) o.periodStart = n.periodStart;
       const snap = cleanSnap(n.snap);
       if (snap) o.snap = snap;
       return o;
