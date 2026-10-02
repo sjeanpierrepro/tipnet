@@ -8,6 +8,7 @@ import {
   setState,
   erasedState,
   flush,
+  isSetUp,
 } from '../storage.js';
 import { todayISO } from '../math.js';
 import { el, toast, arm, bus, getState, applyTheme, install, save, fmtShort } from './common.js';
@@ -109,8 +110,43 @@ const deviceEntitlement = () => {
   return (st && st.settings && st.settings.entitlement) || null;
 };
 
+/**
+ * Is there anything here a restore would throw away? A finished restaurant setup, real nights, or budget items.
+ * Then Restore takes two taps.
+ */
+export function worthKeeping(S) {
+  if (!S) return false;
+  if (isSetUp(S)) return true;
+  if (!S.nightsExample && Array.isArray(S.nights) && S.nights.length > 0) return true;
+  const b = S.budget || {};
+  if (['bills', 'categories', 'goals', 'spends', 'income'].some((k) => Array.isArray(b[k]) && b[k].length))
+    return true;
+  return !!(b.balance && !b.balance.example);
+}
+
+/** What was here before the last restore, while its Undo is offered (memory only, never saved). */
+let beforeRestore = null;
+/** Put back what was here before the last restore. Returns false when there is nothing to put back. */
+export function undoRestore() {
+  if (!beforeRestore) return false;
+  const prev = beforeRestore;
+  beforeRestore = null;
+  const ent = deviceEntitlement(); // the license stays as it is now on this device
+  delete prev.settings.entitlement;
+  if (ent) prev.settings.entitlement = ent;
+  setState(prev);
+  applyTheme(getState().settings.theme);
+  flush();
+  return true;
+}
+
 /** Replace everything with a decoded backup. The license belongs to this device: keep its own (or none). */
 function restoreState(next) {
+  try {
+    beforeRestore = JSON.parse(JSON.stringify(getState()));
+  } catch (e) {
+    beforeRestore = null;
+  }
   const ent = deviceEntitlement();
   delete next.settings.entitlement;
   if (ent) next.settings.entitlement = ent;
@@ -208,6 +244,13 @@ export function backupReminder() {
   );
 }
 
+/** The restore toast's Undo: back to what was here, and show it. */
+export function undoRestoreAndShow() {
+  if (!undoRestore()) return;
+  toast('Restore undone. Your earlier data is back.');
+  bus.stateReplaced();
+}
+
 export function renderBackup(host, { restoreOnly = false } = {}) {
   const S = getState();
   const box = el('textarea', {
@@ -247,9 +290,9 @@ export function renderBackup(host, { restoreOnly = false } = {}) {
     }
   });
 
-  const hasReal = !S.nightsExample && S.nights.length > 0;
+  const hasReal = worthKeeping(S); // anything to lose: Restore asks twice
   const restored = (count) => {
-    toast('Restored ' + count + ' night' + (count === 1 ? '' : 's') + '.');
+    toast('Restored ' + count + ' night' + (count === 1 ? '' : 's') + '.', { undo: undoRestoreAndShow });
     bus.stateReplaced(restoreOnly ? { to: 'tonight' } : undefined); // from the first-launch Setup: straight to Tonight
   };
   const restore = el('button', { type: 'button', class: 'btn btn-secondary btn-small' });

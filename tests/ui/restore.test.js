@@ -116,3 +116,56 @@ test('error screen: shows, restores from a code, and erases with two taps', asyn
     await page.close();
   }
 });
+
+test('restore: two taps whenever something is worth keeping (setup, budget items, nights), and Undo brings it back', async () => {
+  const backup = realState((S) => {
+    S.workplaces[0].setupDone = true;
+    S.workplaces[0].name = 'From The Backup';
+  });
+  // finished setup, no nights and no budget yet: still two taps
+  const page = await boot({
+    seed: realState((S) => {
+      S.workplaces[0].setupDone = true;
+      S.workplaces[0].name = 'Mine Here';
+    }),
+  });
+  try {
+    page.tab('setup');
+    page.type(page.$('#bk-code'), encodeBackup(backup));
+    const btn = page.button('Restore from code');
+    page.click(btn);
+    assert.equal(page.state().workplaces[0].name, 'Mine Here', 'one tap only arms');
+    assert.match(btn.textContent, /Tap again to replace what is here/);
+    page.click(btn);
+    assert.equal(page.state().workplaces[0].name, 'From The Backup', 'second tap restores');
+    const undo = [...page.doc.querySelectorAll('#toast button')].find((b) => /undo/i.test(b.textContent));
+    assert.ok(undo, 'Undo offered after a restore');
+    page.click(undo);
+    assert.equal(page.state().workplaces[0].name, 'Mine Here', 'Undo puts the earlier data back');
+    assert.match(page.doc.getElementById('toast').textContent, /Restore undone/);
+  } finally {
+    await page.close();
+  }
+});
+
+test('restore: budget items alone also need two taps; a fresh device restores with one', async () => {
+  const { worthKeeping } = await import('../../app/js/ui/backup.js');
+  const fresh = seedState();
+  assert.equal(worthKeeping(fresh), false, 'first launch: nothing to lose');
+  const withBill = seedState();
+  withBill.budget.bills.push({ id: 'b1', name: 'Rent', amount: 1000, dueDay: 1 });
+  assert.equal(worthKeeping(withBill), true);
+  const withBalance = seedState();
+  withBalance.budget.balance = { amount: 50, asOf: '2026-10-01T12:00:00' };
+  assert.equal(worthKeeping(withBalance), true);
+  const page = await boot();
+  try {
+    page.tab('setup');
+    page.click(page.byLabel('Moving from another phone? Restore a backup code'));
+    page.type(page.$('#bk-code'), encodeBackup(realState((S) => (S.workplaces[0].setupDone = true))));
+    page.click(page.button('Restore from code'));
+    assert.equal(page.$('#tabs [aria-selected=true]').dataset.tab, 'tonight', 'one tap on a fresh device');
+  } finally {
+    await page.close();
+  }
+});

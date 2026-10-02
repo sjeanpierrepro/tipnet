@@ -77,6 +77,7 @@ test('ids: a restored backup with hostile ids renders and works on every tab', a
     page.tab('setup');
     page.type(page.must(page.$('#bk-code'), '#bk-code'), toCode(hostile()));
     page.click(page.button('Restore from code'));
+    page.click(page.button('Tap again to replace what is here')); // set up here: two taps
     await page.settle();
     const S = page.state();
     assert.equal(S.workplaces.length, 2);
