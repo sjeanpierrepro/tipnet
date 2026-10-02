@@ -1095,3 +1095,16 @@ h4 {
   white-space: nowrap;
   border: 0;
 }
+/* Budget: the big number with its Example badge (only while the example's made-up balance is used). */
+.hero-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+}
+.pill-example {
+  font-size: 14px;
+  color: var(--text);
+  background: var(--sunk);
+  border-color: var(--border-strong);
+}

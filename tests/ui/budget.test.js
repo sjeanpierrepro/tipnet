@@ -73,6 +73,10 @@ test('budget: the balance saves with an as-of time', async () => {
     // The example budget's made-up balance is labelled as an example until the person types their own.
     assert.match(page.text(), /Example balance \(made up\) as of/);
     assert.doesNotMatch(page.text(), /Your balance as of/);
+    const badge = page.must(page.$('#budget-example-badge'), 'Example badge');
+    assert.equal(badge.hidden, false, 'the big number says Example right beside it');
+    assert.equal(badge.textContent, 'Example');
+    assert.match(page.$('.hero-label', page.app).textContent, /^Example: Safe to spend/);
     const hero = page.must(page.$('.result .hero[aria-live]'), 'live hero number');
     const before = Date.now();
     const input = page.$('#budget-balance');
@@ -84,6 +88,8 @@ test('budget: the balance saves with an as-of time', async () => {
     assert.ok(Math.abs(new Date(bal.asOf).getTime() - before) < 5000);
     assert.match(page.text(), /Your balance as of/);
     assert.doesNotMatch(page.text(), /Example balance/);
+    assert.equal(page.$('#budget-example-badge').hidden, true, 'their own balance: no badge');
+    assert.match(page.$('.hero-label', page.app).textContent, /^Safe to spend/);
     // One persistent live region: the same node, with the new number in it, so screen readers hear the change.
     assert.equal(page.$('.result .hero[aria-live]'), hero);
     assert.equal(hero.textContent, page.$('.result .hero').textContent);

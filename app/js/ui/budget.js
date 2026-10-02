@@ -708,8 +708,15 @@ function heroCard(S, r0, src) {
   // One persistent live region for the number: a region created on every redraw is never announced.
   const heroLabel = el('div', { class: 'hero-label' });
   const heroNum = el('div', { class: 'hero num', 'aria-live': 'polite', 'aria-atomic': 'true' });
+  // Until the person types their own balance, the big number is worked out from the example's made-up one: a clear
+  // Example badge sits right next to it.
+  const heroBadge = el(
+    'span',
+    { class: 'pill pill-example', id: 'budget-example-badge', hidden: true },
+    'Example',
+  );
   const rest = el('div', { class: 'stack' });
-  host.append(heroLabel, heroNum, rest);
+  host.append(heroLabel, el('div', { class: 'hero-row' }, heroNum, heroBadge), rest);
   const draw = (r) => {
     const neg = r.safe < 0;
     const bal = S.budget.balance;
@@ -718,6 +725,9 @@ function heroCard(S, r0, src) {
       : 'Safe to spend until payday (' + fmtDate(r.payday) + ')';
     const amount = money(r.safe);
     if (heroNum.textContent !== amount) heroNum.textContent = amount;
+    const example = !!(bal && bal.example && r.income.source === 'balance');
+    heroBadge.hidden = !example;
+    heroLabel.textContent = (example ? 'Example: ' : '') + heroLabel.textContent;
     clear(rest).append(
       ...[
         el(
