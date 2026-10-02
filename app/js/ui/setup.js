@@ -114,7 +114,7 @@ function keepGuided(S) {
   if (noDeductions) g.noDeductions = true;
   if (gProfile) g.profile = gProfile;
   S.settings.guidedDraft = g;
-  save();
+  return save();
 }
 /** After a reload: pick the guided flow up where it was. */
 function resumeGuided(S) {
@@ -297,7 +297,19 @@ function makeCtx(w, blank = false, guidedNow = blank, draft = null) {
       }
       if (blank) {
         live.forEach((f) => f());
-        keepGuided(S); // guided on the example: only the draft is saved until Finish
+        // Guided on the example: only the draft is saved until Finish. The line says so once that write really worked.
+        const done = keepGuided(S);
+        const n = ++saveSeq;
+        if (!done) {
+          saved.textContent = '';
+          return;
+        }
+        done.then((ok) => {
+          if (n === saveSeq)
+            saved.textContent = ok
+              ? 'All changes saved on this device.'
+              : 'Couldn’t save on this device. Your changes are kept while TipNet is open.';
+        });
         return;
       }
       S.profileExample = false;

@@ -9,6 +9,15 @@ const selectedTab = (page) => page.$('#tabs [aria-selected=true]').dataset.tab;
 const dateInputs = (page) => page.$$('input[type=date]', page.app);
 const byPh = (page, ph) => page.must(page.$('input[placeholder="' + ph + '"]', page.app), ph);
 const next = (page) => page.click(page.button('Next'));
+// The harness unrefs timers, so hold the event loop open while waiting.
+const wait = (ms) =>
+  new Promise((r) => {
+    const keep = setInterval(() => {}, 20);
+    setTimeout(() => {
+      clearInterval(keep);
+      r();
+    }, ms);
+  });
 
 /** Guided setup with the example paystub's numbers typed by hand (tip-out left off). */
 function finishSetup(page) {
@@ -213,6 +222,22 @@ test('existing users (real nights, no entry mode saved) open on their last tab a
     assert.equal(page.state().workplaces[0].profile.entryMode, 'total');
     page.tab('tonight');
     assert.match(page.text(), /What you made tonight/);
+  } finally {
+    await page.close();
+  }
+});
+
+test('first-run setup: the status line says "All changes saved" once the draft is really written, never "Saving…" forever', async () => {
+  const page = await boot();
+  try {
+    page.tab('setup');
+    page.type(byPh(page, 'e.g. 2,000'), '2000');
+    assert.match(page.text(), /Saving…/, 'while the typing pause runs');
+    await wait(1300); // typing pause + save delay
+    await page.settle();
+    assert.doesNotMatch(page.text(), /Saving…/);
+    assert.match(page.text(), /All changes saved on this device\./);
+    assert.equal(page.state().settings.guidedDraft.profile.gross, 2000);
   } finally {
     await page.close();
   }
