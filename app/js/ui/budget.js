@@ -268,7 +268,7 @@ export function upgradeTeaser() {
     { class: 'card stack upsell', id: 'budget-teaser', 'aria-labelledby': 'budget-teaser-h' },
     el('h2', { id: 'budget-teaser-h' }, 'TipNet Budget'),
     el('p', null, 'Plan your bills, spending and savings around your take-home.'),
-    el('p', { class: 'note' }, p.monthly + ' a month or ' + p.yearly + ' a year'),
+    el('p', null, el('strong', null, p.monthly + ' a month or ' + p.yearly + ' a year')),
     on
       ? el(
           'div',
