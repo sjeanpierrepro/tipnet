@@ -37,6 +37,7 @@ import {
   periodRange,
   isFinal,
   periodTotals,
+  periodNontax,
   shiftsPerPeriod,
   todayISO,
   indexNights,
@@ -499,9 +500,16 @@ function finishedCheckC(profile, nights, k, today, avgCheck, index) {
   if (t.allCash) return { c: toCents(t.chk), from: 'finished' };
   const withCash = t.ns.map((night) => computeNight(night, profile, n)).filter((c) => c.onCheck != null);
   if (withCash.length) {
-    const sumC = withCash.reduce((s, c) => s + toCents(c.onCheck) + toCents(c.fixedPerShift), 0);
+    // per-night shares of fixed deductions and recurring non-taxable money are swapped for the exact amounts
+    const sumC = withCash.reduce(
+      (s, c) => s + toCents(c.onCheck) + toCents(c.fixedPerShift) - toCents(c.nontaxPerShift),
+      0,
+    );
     return {
-      c: Math.round((sumC * t.ns.length) / withCash.length) - toCents(periodFixed(profile, t.ns)),
+      c:
+        Math.round((sumC * t.ns.length) / withCash.length) -
+        toCents(periodFixed(profile, t.ns)) +
+        toCents(periodNontax(profile, t.ns)),
       from: 'finished',
     };
   }

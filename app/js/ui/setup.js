@@ -23,6 +23,10 @@ import {
   stubWarnings,
   weekdayMon0,
   todayISO,
+  NONTAX_PRESETS,
+  findNontaxPreset,
+  nontaxOnStub,
+  taxableGross,
 } from '../math.js';
 import { budgetVisible, isUnlocked } from '../billing.js';
 import { subscriptionLine } from './budget.js';
@@ -234,6 +238,7 @@ const rateSig = (p) =>
     Math.round(
       (p.deductions || []).filter((d) => d.mode === 'pct').reduce((s, d) => s + num(d.amount), 0) * 100,
     ),
+    Math.round(nontaxOnStub(p) * 100), // non-taxable earnings change the taxable gross
   ]);
 /** Restaurant id -> {sig, value}: its accuracy adjustment was cleared by a paystub change this session. */
 const rateCleared = new Map();
@@ -539,7 +544,7 @@ function dedCard(ctx) {
   const lineText = (d) => {
     if (d.mode === 'pct') {
       if (!(p.gross > 0)) return 'Enter gross pay to see the rate';
-      const share = num(d.amount) / p.gross;
+      const share = num(d.amount) / taxableGross(p); // non-taxable earnings are not part of what is taxed
       return share > 1
         ? 'More than your gross pay: check this amount'
         : (share * 100).toFixed(2) + '% of every dollar you make';
@@ -585,7 +590,28 @@ function dedCard(ctx) {
         : '',
     );
     // Calm checks on the stub numbers (never a block). TipNet never uses a rate above 100%.
+    if (s.nontaxOnStub > 0 && !stubWarnings(p).nontaxIgnored)
+      summaryBox.append(
+        el(
+          'p',
+          { class: 'hint', id: 'nontax-summary' },
+          'Non-taxable earnings of ' +
+            money(s.nontaxOnStub) +
+            ' are left out, so your rate comes from ' +
+            money(s.taxableGross) +
+            '.' +
+            (s.nontax > 0 ? ' ' + money(s.nontax) + ' of it is added to every check without tax.' : ''),
+        ),
+      );
     const wn = stubWarnings(p);
+    if (wn.nontaxIgnored)
+      summaryBox.append(
+        el(
+          'p',
+          { class: 'hint', id: 'nontax-check' },
+          'Your non-taxable earnings add up to your gross pay or more, so TipNet doesn’t take them out of the gross for now. Check them against your paystub.',
+        ),
+      );
     if (wn.capped)
       summaryBox.append(
         el(
@@ -780,6 +806,7 @@ function dedCard(ctx) {
     rowsHost,
     el('div', { class: 'cluster' }, add, fica),
     ficaErr,
+    nontaxSection(ctx, drawSummary),
     showNoDed
       ? el(
           'label',
@@ -803,6 +830,134 @@ function dedCard(ctx) {
   card.firstInvalid = () => (dedErr.hidden ? null : rowsHost.querySelector('input[id^="da-"]') || noDed);
   return card;
 }
+
+/* ============ non-taxable earnings (in the deductions card) ============ */
+/**
+ * "Non-taxable earnings on this paystub": rows like deductions (kind, name for "other", amount, every check or just this
+ * once). They come off the gross the rate is worked out from; the recurring ones are added to every check untaxed.
+ */
+function nontaxSection(ctx, redrawSummary) {
+  const { p } = ctx;
+  const host = el('div', { class: 'stack' });
+  const list = () => p.nontaxable || [];
+  const changed = () => {
+    if (p.nontaxable && !p.nontaxable.length) delete p.nontaxable; // none: nothing stored
+    ctx.touch(true);
+    redrawSummary();
+  };
+  const draw = () => {
+    clear(host);
+    list().forEach((x) => {
+      const sel = el('select', { id: 'nk-' + x.id });
+      NONTAX_PRESETS.forEach((pr) => sel.append(el('option', { value: pr.k }, pr.name)));
+      sel.value = x.k;
+      if (sel.value !== x.k) sel.value = 'other';
+      const kids = [field('Non-taxable earnings', sel)];
+      if (sel.value === 'other') {
+        const nm = el('input', {
+          type: 'text',
+          id: 'nn-' + x.id,
+          value: x.name === 'Other non-taxable' ? '' : x.name,
+          placeholder: 'What your stub calls it',
+          autocomplete: 'off',
+        });
+        nm.addEventListener('input', () => {
+          x.name = nm.value || 'Other non-taxable';
+          ctx.touch(false);
+        });
+        kids.push(field('Name on stub', nm));
+      }
+      const amt = moneyInput({
+        value: x.amount ? String(x.amount) : '',
+        placeholder: '0.00',
+        id: 'na-' + x.id,
+      });
+      const every = select(
+        [
+          ['yes', 'Comes every check'],
+          ['no', 'Just this once'],
+        ],
+        x.recurring === false ? 'no' : 'yes',
+        { id: 'nr-' + x.id },
+      );
+      kids.push(
+        el('div', { class: 'grid-2' }, field('Amount this check ($)', amt), field('How often', every)),
+      );
+      const rm = el(
+        'button',
+        { type: 'button', class: 'btn btn-secondary btn-small', 'aria-label': 'Remove ' + x.name },
+        'Remove',
+      );
+      kids.push(el('div', null, rm));
+      sel.addEventListener('change', () => {
+        const pr = findNontaxPreset(sel.value);
+        x.k = pr.k;
+        x.name = pr.name;
+        changed();
+        draw();
+        const f = document.getElementById('nk-' + x.id);
+        if (f) f.focus();
+      });
+      onPause(ctx, amt, () => {
+        x.amount = Math.max(0, numOr0Input(amt.value));
+        changed();
+      });
+      every.addEventListener('change', () => {
+        x.recurring = every.value === 'yes';
+        changed();
+      });
+      rm.addEventListener('click', () => {
+        const at = list().indexOf(x);
+        p.nontaxable = list().filter((y) => y !== x);
+        changed();
+        draw();
+        focusNear(host, at, 'nt-add');
+        toast('Removed ' + x.name + '.', {
+          undo: () => {
+            if (list().includes(x)) return;
+            p.nontaxable = list().slice();
+            p.nontaxable.splice(Math.min(at, p.nontaxable.length), 0, x);
+            changed();
+            draw();
+            focusNear(host, at, 'nt-add');
+          },
+        });
+      });
+      host.append(el('div', { class: 'repeat-row', style: 'grid-template-columns:minmax(0,1fr)' }, kids));
+    });
+  };
+  draw();
+  const add = el(
+    'button',
+    { type: 'button', class: 'btn btn-secondary btn-small', id: 'nt-add' },
+    '+ Add non-taxable earnings',
+  );
+  add.addEventListener('click', () => {
+    const id = 'x' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    const pr = NONTAX_PRESETS[0];
+    p.nontaxable = list().concat([{ id, k: pr.k, name: pr.name, amount: 0, recurring: true }]);
+    changed();
+    draw();
+    const f = document.getElementById('nk-' + id);
+    if (f) f.focus();
+  });
+  return el(
+    'div',
+    { class: 'stack-sm', id: 'nontax-section' },
+    el('h3', null, 'Non-taxable earnings on this paystub'),
+    el(
+      'p',
+      { class: 'hint' },
+      'Money your stub lists as non-taxable, like reimbursements. TipNet adds it to your check without tax and leaves it out of your tax rate. Optional.',
+    ),
+    host,
+    el('div', null, add),
+  );
+}
+const numOr0Input = (v) => {
+  const n = numOf(v);
+  return Number.isFinite(n) ? n : 0;
+};
 
 /* ============ 3. pay types ============ */
 /**
@@ -980,7 +1135,8 @@ function payCard(ctx) {
     const preset = findPayPreset(t.k);
     const sel = presetSelect(OTHER_PAY_PRESETS, t.k, 'pk-' + t.id, 'other');
     const kids = [el('div', { style: 'grid-column:1/-1' }, field('Other pay', sel))];
-    if (sel.value === 'other' || !preset) kids.push(nameField(t, 'Name', 'What your stub calls it'));
+    if (sel.value === 'other' || sel.value === 'ntother' || !preset)
+      kids.push(nameField(t, 'Name', 'What your stub calls it'));
     if (t.unit !== 'amt')
       kids.push(
         el(
@@ -1581,6 +1737,8 @@ function guided(root, ctx) {
     }
     const tidy = (p) => {
       p.deductions = p.deductions.filter((d) => num(d.amount) > 0);
+      if (p.nontaxable) p.nontaxable = p.nontaxable.filter((x) => num(x.amount) > 0);
+      if (p.nontaxable && !p.nontaxable.length) delete p.nontaxable;
       p.payTypes = p.payTypes.filter((t, i) => i === 0 || t.unit === 'amt' || num(t.rate) > 0);
       p.rateOverride = null;
     };

@@ -627,7 +627,7 @@ export function nightFields(
       const name = payName(t, p.payTypes.indexOf(t));
       const label =
         t.unit === 'amt'
-          ? [name + ' $ ', el('span', { class: 'hint' }, '(on top)')]
+          ? [name + ' $ ', el('span', { class: 'hint' }, t.nontax ? '(no tax)' : '(on top)')]
           : name + (t.unit === 'hr' ? ' hours' : ' shifts');
       const inp = bind(
         moneyInput({ placeholder: '0', 'data-focus-key': key + '-pay-' + t.id }),
@@ -791,9 +791,12 @@ export function resultCard(c, w, note, hoursMissing = false) {
     bullet('  of which tips', money(c.tips)),
   ];
   if (c.extra) rows.push(bullet('Extra pay (bonus etc.)', '+' + money(c.extra)));
+  if (c.nontax) rows.push(bullet('Non-taxable tonight (no tax)', '+' + money(c.nontax)));
   if (c.tipout) rows.push(bullet('Barback tip-out', minus(c.tipout)));
   rows.push(bullet('Taxes and % deductions (' + pct(c.r) + ')', minus(c.tax)));
   if (c.fixedPerShift) rows.push(bullet('Share of fixed deductions', minus(c.fixedPerShift)));
+  if (c.nontaxPerShift)
+    rows.push(bullet('Share of non-taxable earnings (no tax)', '+' + money(c.nontaxPerShift)));
   rows.push(bullet('Estimated take-home', money(c.net), 'total'));
 
   const kids = [
