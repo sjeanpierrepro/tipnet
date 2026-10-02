@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { boot, realState } from './harness.js';
 import { exampleBudget } from '../../app/js/budget.js';
+import { BILLING } from '../../app/js/billing.js';
 
 const DEV = 'http://localhost/?unlock=dev';
 
@@ -58,6 +59,54 @@ test('budget: an unlocked user who has not finished setup can still manage the s
     assert.ok(page.button('Remove from this device'), 'remove button reachable');
     assert.doesNotMatch(t, /ABCD-1234-EFGH-5678/, 'key is masked');
   } finally {
+    await page.close();
+  }
+});
+
+test('budget: "Remove from this device" while offline keeps the key, says so, and offers Remove anyway', async () => {
+  const was = globalThis.fetch;
+  const ids = BILLING.productIds;
+  BILLING.productIds = [1]; // payments really on, so the app asks the service
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    throw new TypeError('Failed to fetch');
+  };
+  const page = await boot({
+    url: 'http://localhost/',
+    payments: true,
+    seed: realState((S) => {
+      S.workplaces[0].setupDone = true;
+      S.settings.entitlement = {
+        status: 'active',
+        instanceId: 'inst-1',
+        validatedAt: new Date().toISOString(),
+        plan: 'monthly',
+        key: 'ABCD-1234-EFGH-5678',
+      };
+    }),
+  });
+  try {
+    page.tab('budget');
+    const remove = page.$('#sub-remove');
+    page.click(remove);
+    page.click(remove);
+    await page.settle();
+    assert.ok(calls >= 1, 'the service was asked');
+    assert.ok(page.state().settings.entitlement, 'key kept');
+    assert.match(
+      page.$('#sub-remove-msg').textContent,
+      /^You’re offline\. Connect to remove this device from your subscription\..*device slots/,
+    );
+    assert.doesNotMatch(page.text(), /Removed\. Your budget/);
+    assert.equal(remove.disabled, false, 'can try again');
+    const anyway = page.$('#sub-remove-anyway');
+    assert.equal(anyway.hidden, false);
+    page.click(anyway);
+    assert.equal(page.state().settings.entitlement, undefined, 'removed on request');
+  } finally {
+    globalThis.fetch = was;
+    BILLING.productIds = ids;
     await page.close();
   }
 });

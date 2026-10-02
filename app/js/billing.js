@@ -198,6 +198,7 @@ export function lemonSqueezyProvider(deps = {}) {
         ok: false,
         status: 'network',
         error: 'Could not reach the payment service. Check your connection.',
+        unreachable: true, // no reply at all (offline or blocked), not a busy service
       };
     }
     // A server error or rate limit is not an answer about the key: treat it like being offline.
@@ -305,14 +306,41 @@ export async function revalidate(
   };
 }
 
-/** Frees this device's seat; the caller then deletes settings.entitlement. Best effort, never throws. */
-export async function deactivate(ent, { provider = getProvider() } = {}) {
+/**
+ * Frees this device's seat. Never throws. Returns {ok: true} when the caller may delete settings.entitlement (the
+ * service answered, or there is no seat to free: dev unlock, no instance, payments off). {ok: false, offline, error}
+ * when the service could not be reached (offline, network error, server busy): the seat is still used, so the caller
+ * keeps the key unless the person chooses to remove it anyway.
+ */
+export async function deactivate(
+  ent,
+  {
+    provider = getProvider(),
+    online = typeof navigator === 'undefined' ? true : navigator.onLine !== false,
+  } = {},
+) {
+  if (!(provider && provider.deactivate && ent && ent.key && ent.instanceId)) return { ok: true };
+  const offline = {
+    ok: false,
+    offline: true,
+    error: 'You’re offline. Connect to remove this device from your subscription.',
+  };
+  if (!online) return offline;
+  let r;
   try {
-    if (provider && provider.deactivate && ent && ent.key && ent.instanceId)
-      await provider.deactivate(ent.key, ent.instanceId);
+    r = await provider.deactivate(ent.key, ent.instanceId);
   } catch (e) {
-    /* ignore */
+    return offline;
   }
+  if (r && r.status === 'network' && r.unreachable) return offline;
+  if (r && r.status === 'network')
+    return {
+      ok: false,
+      offline: false,
+      error:
+        'The payment service didn’t answer. Try again in a few minutes to remove this device from your subscription.',
+    };
+  return { ok: true };
 }
 
 /** For UI display: entitlement with the key masked. Does not change what is stored. */

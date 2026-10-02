@@ -13,6 +13,7 @@ import {
   isDevHost,
   getProvider,
   GRACE_MS,
+  deactivate,
 } from '../app/js/billing.js';
 
 const NOW = Date.parse('2026-10-01T12:00:00Z');
@@ -296,4 +297,38 @@ test('reloadConfig: a changed billing-config.js updates BILLING in place; a fail
     Object.keys(BILLING).forEach((k) => delete BILLING[k]);
     Object.assign(BILLING, was);
   }
+});
+
+test('deactivate: only a real answer frees the key; offline, a network error or a busy service keep it', async () => {
+  const e = { key: 'KEY', instanceId: 'inst-1', plan: 'monthly' };
+  const replying = (status, body) =>
+    lemonSqueezyProvider({ fetch: async () => ({ status, json: async () => body }) });
+  const throwing = lemonSqueezyProvider({
+    fetch: async () => {
+      throw new TypeError('Failed to fetch');
+    },
+  });
+  const ok = await deactivate(e, { provider: replying(200, { deactivated: true, meta: {} }), online: true });
+  assert.equal(ok.ok, true);
+  const off = await deactivate(e, { provider: throwing, online: true });
+  assert.equal(off.ok, false);
+  assert.equal(off.offline, true);
+  assert.match(off.error, /You’re offline\. Connect to remove this device from your subscription\./);
+  let called = false;
+  const spy = lemonSqueezyProvider({
+    fetch: async () => {
+      called = true;
+      return { status: 200, json: async () => ({ deactivated: true }) };
+    },
+  });
+  const noNet = await deactivate(e, { provider: spy, online: false });
+  assert.equal(noNet.ok, false);
+  assert.equal(noNet.offline, true);
+  assert.equal(called, false, 'no call while the device says it is offline');
+  const busy = await deactivate(e, { provider: replying(503, {}), online: true });
+  assert.equal(busy.ok, false);
+  assert.match(busy.error, /didn’t answer/);
+  // nothing to free: dev unlock, no instance, payments off
+  assert.equal((await deactivate({ plan: 'dev', key: '' }, { provider: throwing })).ok, true);
+  assert.equal((await deactivate(e, { provider: null })).ok, true);
 });

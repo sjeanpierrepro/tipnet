@@ -2605,17 +2605,35 @@ export function subscriptionCard() {
           ? 'Monthly, ' + BILLING.prices.monthly + ' a month'
           : 'Budget subscription';
   const status = unlocked() ? (d.status === 'on_trial' ? 'Trial' : 'Active') : 'Not active';
-  const remove = el('button', { type: 'button', class: 'btn btn-danger btn-small' });
+  const remove = el('button', { type: 'button', class: 'btn btn-danger btn-small', id: 'sub-remove' });
+  const removeMsg = el('p', { class: 'hint', role: 'status', id: 'sub-remove-msg' });
+  // Only offered when the payment service could not be reached: removes the key here; its device slot stays used.
+  const anyway = el(
+    'button',
+    { type: 'button', class: 'btn btn-secondary btn-small', id: 'sub-remove-anyway', hidden: true },
+    'Remove anyway',
+  );
+  const dropKey = () => {
+    delete S.settings.entitlement;
+    save();
+    toast('Removed. Your budget is still saved here.');
+    bus.rerender();
+  };
+  anyway.addEventListener('click', dropKey);
   arm(remove, {
     label: 'Remove from this device',
     armedLabel: 'Tap again to remove',
     onConfirm: async () => {
       remove.disabled = true;
-      await deactivate(S.settings.entitlement);
-      delete S.settings.entitlement;
-      save();
-      toast('Removed. Your budget is still saved here.');
-      bus.rerender();
+      removeMsg.textContent = '';
+      const r = await deactivate(S.settings.entitlement);
+      if (r.ok) return dropKey();
+      // Not reached: say so, keep the key (the subscription still counts this device).
+      remove.disabled = false;
+      removeMsg.textContent =
+        r.error +
+        ' Or remove it anyway: the key leaves this device now, but it keeps using one of your subscription’s device slots until you remove the device in Lemon Squeezy (Manage subscription).';
+      anyway.hidden = false;
     },
   });
   return el(
@@ -2649,7 +2667,9 @@ export function subscriptionCard() {
         'Manage subscription',
       ),
       remove,
+      anyway,
     ),
+    removeMsg,
   );
 }
 
