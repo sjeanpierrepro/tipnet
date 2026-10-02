@@ -2,7 +2,11 @@
 import {
   computeNight,
   periodTotals,
+  periodIndex,
   nightPeriodIndex,
+  nightPeriodChoices,
+  nightPeriodMoved,
+  nightPeriodStale,
   shiftsPerPeriod,
   calibrate,
   todayISO,
@@ -27,6 +31,7 @@ import {
   money0,
   pct,
   fmtDate,
+  fmtShort,
   periodLabel,
   exampleBanner,
   setupFirstCard,
@@ -147,12 +152,26 @@ function editor(S, n) {
   let recalc = false;
   const preview = el('p', { class: 'hint', 'aria-live': 'polite' });
   const shiftsFor = (night) => shiftsPerPeriod(p, mine, todayISO(), nightPeriodIndex(p, night)).n;
+  // "Counts toward the pay week that started": the period before the night's date's, its own (the default), or the next.
+  // A night in a finished pay period stays there (the select is off); a finished period can't be picked, except the
+  // night's own date's period (the default, the same as dating the night there).
+  const weekFixed = () => !!n.snap || isFinal(p, nightPeriodIndex(p, n), todayISO());
+  let pick = periodRange(p, nightPeriodIndex(p, n)).start; // the picked period's start date
+  /** The night's periodStart as it will be saved: the pick, or none when it is the night's own date's period. */
+  const pickedStart = () => {
+    if (weekFixed()) return n.periodStart || null; // kept exactly as it was (even one the schedule no longer has)
+    const own = periodRange(p, periodIndex(p, d.date)).start;
+    return pick && pick !== own ? pick : null;
+  };
   /** The night as it will be saved. A locked night keeps its Setup numbers unless "Recalculate with current Setup" is ticked. */
   const build = () => {
     const out = storedNight(d, p, n.id);
     const note = d.note.trim().slice(0, 500);
     if (note) out.note = note;
     else delete out.note;
+    const ps = pickedStart();
+    if (ps) out.periodStart = ps;
+    else delete out.periodStart;
     if (n.snap && !recalc) {
       // keep amounts for pay types removed from Setup since, so the locked numbers stay whole
       Object.keys(n.pay || {}).forEach((k) => {
@@ -184,11 +203,57 @@ function editor(S, n) {
     const s = (n.snap.pay || []).find((x) => String(x.id) === String(t.id));
     return s ? num(s.rate) : num(t.rate);
   };
+  const weekSel = el('select', { id: 'edit-' + n.id + '-week', 'data-focus-key': 'edit-' + n.id + '-week' });
+  const weekField = field('Counts toward the pay week that started:', weekSel, { hint: ' ' });
+  const weekHint = weekField.querySelector('p.hint');
+  weekSel.setAttribute('aria-describedby', weekHint.id);
+  let shownFor = null;
+  const syncWeek = () => {
+    const today = todayISO();
+    const cs = nightPeriodChoices(p, d.date);
+    if (!cs.length) return; // a half-typed date: keep the options shown
+    const fixed = weekFixed();
+    const off = (c) => !c.own && isFinal(p, c.idx, today);
+    if (fixed) pick = periodRange(p, nightPeriodIndex(p, n)).start;
+    else if (!cs.some((c) => c.start === pick && !off(c))) pick = cs.find((c) => c.own).start;
+    const sig = d.date + '|' + pick + '|' + fixed;
+    if (sig !== shownFor) {
+      shownFor = sig;
+      const opts = cs.map((c) =>
+        el(
+          'option',
+          { value: c.start, disabled: off(c) && c.start !== pick },
+          fmtDate(c.start) +
+            ' · ' +
+            periodLabel(p, c.idx) +
+            (c.own ? ' (this night’s date)' : '') +
+            (off(c) ? ' (finished)' : ''),
+        ),
+      );
+      // a locked night counted in a pay week that isn't next to its date: show that one
+      if (!cs.some((c) => c.start === pick)) {
+        const k = nightPeriodIndex(p, n);
+        opts.push(el('option', { value: pick }, fmtDate(pick) + ' · ' + periodLabel(p, k)));
+      }
+      weekSel.replaceChildren(...opts);
+    }
+    weekSel.value = pick;
+    weekSel.disabled = fixed;
+    weekHint.textContent = fixed
+      ? 'This pay period is finished, so this night stays in it.'
+      : 'Pick the pay week your paycheck counted this night in, if it isn’t the one for its date.';
+  };
+  weekSel.addEventListener('change', () => {
+    pick = weekSel.value;
+    syncWeek();
+    upd();
+  });
   const f = nightFields(p, d, {
     key: 'edit-' + n.id,
     rateOf,
     onInput: () => {
       f.setTotalError('');
+      syncWeek(); // a new date offers the pay weeks around it
       upd();
     },
   });
@@ -256,6 +321,7 @@ function editor(S, n) {
     el('div', { class: 'card-title' }, 'Edit night'),
     f.root,
     noteField,
+    weekField,
     lockNote,
     preview,
     el('div', { class: 'cluster' }, saveBtn, cancel),
@@ -276,13 +342,28 @@ function editor(S, n) {
       return;
     }
     n = S.nights[i]; // build() reads the current night (its lock, its stored total)
-    S.nights[i] = { ...build(), workplaceId: w.id };
+    const out = { ...build(), workplaceId: w.id };
+    S.nights[i] = out;
     save();
     bus.rerender();
-    toast('Night updated.');
+    toast(
+      nightPeriodMoved(p, out)
+        ? 'Night updated. It counts in the pay week that started ' + fmtDate(out.periodStart) + '.'
+        : 'Night updated.',
+    );
   });
+  syncWeek();
   upd();
   return form;
+}
+
+/** A row's line about its pay week: counted in another one, or a picked one the schedule no longer has. Else null. */
+function weekNote(n, p) {
+  if (nightPeriodStale(p, n))
+    return el('div', { class: 'hint' }, 'pay week no longer matches your schedule, counted by its date');
+  if (nightPeriodMoved(p, n))
+    return el('div', { class: 'hint' }, 'counted in pay week of ' + fmtShort(n.periodStart));
+  return null;
 }
 
 const ARM_MS = 4000;
@@ -332,6 +413,7 @@ function nightRow(S, w, n, shifts) {
       { class: 'main' },
       el('div', null, fmtDate(n.date)),
       el('div', { class: 'hint' }, nightSub(n, c, p)),
+      weekNote(n, p),
       n.note
         ? el(
             'div',
