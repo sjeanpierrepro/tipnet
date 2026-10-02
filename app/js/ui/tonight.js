@@ -875,6 +875,13 @@ export function resultCard(c, w, note, hoursMissing = false) {
       ' of tonight’s tax is federal income tax on tips, some of which may come back at tax time (federal “No Tax on Tips” deduction, 2025–2028). Social Security and Medicare still apply.',
     );
   kids.push(el('p', { class: 'note' }, tip));
+  kids.push(
+    el(
+      'p',
+      { class: 'hint', id: 'result-one-rate' },
+      'Estimates use one tax rate from your paystub; very big or small weeks can be withheld differently. “Check my accuracy” after payday keeps it close.',
+    ),
+  );
   if (note) kids.push(note);
   return el('div', { class: 'result' }, kids);
 }

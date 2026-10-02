@@ -313,3 +313,18 @@ test('tonight: hints are linked to their fields (aria-describedby), together wit
     await page.close();
   }
 });
+
+test('tonight: the result card says estimates use one tax rate, and Check my accuracy keeps it close', async () => {
+  const page = await boot({ seed: seed() });
+  try {
+    page.type(totalInput(page), '200');
+    page.type(hoursInput(page), '6');
+    const line = page.must(page.$('#result-one-rate'), 'one-rate line');
+    assert.equal(
+      line.textContent,
+      'Estimates use one tax rate from your paystub; very big or small weeks can be withheld differently. “Check my accuracy” after payday keeps it close.',
+    );
+  } finally {
+    await page.close();
+  }
+});
