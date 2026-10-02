@@ -6,7 +6,7 @@
   --surface: #1a1d21;
   --sunk: #16191c;
   --border: #2a2e34;
-  --border-strong: #3a3f47;
+  --border-strong: #666c75; /* input borders: 3.2:1 on cards, 3.3:1 on fields (WCAG 1.4.11) */
   --text: #eceae4;
   --muted: #a3a7ae;
   --accent: #c9a45c;
