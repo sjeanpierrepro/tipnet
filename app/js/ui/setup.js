@@ -2208,7 +2208,14 @@ function rowHead(id, title, summaryText, isOpen, controls) {
       'aria-expanded': String(isOpen),
       'aria-controls': controls,
     },
-    el('span', { class: 'fold-text' }, el('span', { class: 'fold-title' }, title), sum),
+    // The title and summary are separate lines; the hidden comma makes screen readers pause between them too.
+    el(
+      'span',
+      { class: 'fold-text' },
+      el('span', { class: 'fold-title' }, title),
+      el('span', { class: 'sr-only' }, ', '),
+      sum,
+    ),
     el('span', { class: 'chev', 'aria-hidden': 'true' }),
   );
   b.sum = sum;
@@ -2297,7 +2304,7 @@ function saveBar(S, w, ctx) {
 /** One restaurant: a row, and when open, its editable cards and the Save bar. */
 function restaurantRow(S, w) {
   const isOpen = !!open && open.wid === w.id;
-  const head = rowHead('wp-row-' + w.id, w.name, rowSummary(S, w), isOpen, isOpen ? 'wp-body-' + w.id : null);
+  const head = rowHead('wp-row-' + w.id, w.name, rowSummary(S, w), isOpen, 'wp-body-' + w.id);
   head.addEventListener('click', () => {
     if (!isOpen) openRow(S, w.id);
     else if (!confirmLeave(() => closeRow(w.id))) closeRow(w.id);
@@ -2320,6 +2327,8 @@ function restaurantRow(S, w) {
     );
     demote(body);
   }
+  // Closed: an empty, hidden body keeps the button's aria-controls pointing at something, like the other rows.
+  if (!body) body = el('div', { class: 'stack fold-body', id: 'wp-body-' + w.id, hidden: true });
   const done =
     !isOpen && lastSaved && lastSaved.wid === w.id
       ? el('p', { class: 'hint fold-saved', role: 'status', id: 'wp-saved-' + w.id }, lastSaved.text)

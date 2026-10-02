@@ -281,3 +281,25 @@ test('setup rows: closing or reloading asks only while something is unsaved', as
     await page.close();
   }
 });
+
+test('setup rows: the title and summary are read apart ("Late nights, …") and every row button controls its body', async () => {
+  const page = await boot({ seed: one() });
+  try {
+    page.tab('setup');
+    const late = page.must(page.$('#fold-cutoff'), 'Late nights row');
+    assert.match(late.textContent, /^Late nights, \S/);
+    assert.ok(page.$('.sr-only', late), 'separator is for screen readers only');
+    const r = row(page, 'w1');
+    assert.match(r.textContent, /, /);
+    assert.equal(r.getAttribute('aria-controls'), 'wp-body-w1');
+    const body = page.must(page.$('#wp-body-w1'), 'closed body');
+    assert.equal(body.hidden, true);
+    page
+      .$$('button.fold-head')
+      .forEach((b) =>
+        assert.ok(page.doc.getElementById(b.getAttribute('aria-controls')), b.id + ' controls an element'),
+      );
+  } finally {
+    await page.close();
+  }
+});
