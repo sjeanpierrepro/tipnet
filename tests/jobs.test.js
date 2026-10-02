@@ -59,7 +59,21 @@ test('presets: every job and every other-pay kind is offered; all the older pres
   ])
     assert.ok(jobs.includes(n), n);
   const other = M.OTHER_PAY_PRESETS.map((x) => x.k);
-  assert.deepEqual(other, ['ot', 'holiday', 'diff', 'pto', 'bonus', 'commission', 'autograt', 'other']);
+  assert.deepEqual(other, [
+    'ot',
+    'holiday',
+    'diff',
+    'pto',
+    'bonus',
+    'commission',
+    'autograt',
+    'other',
+    'ntexpense',
+    'ntmileage',
+    'ntuniform',
+    'ntmeal',
+    'ntother',
+  ]);
   for (const k of [
     'hourly',
     'training',

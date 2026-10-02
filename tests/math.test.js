@@ -306,7 +306,7 @@ test('summary numbers for the Setup box', () => {
 
 test('presets: groups, defaults, flags', () => {
   const groups = [...new Set(M.PRESETS.pay.map((x) => x.g))];
-  assert.deepEqual(groups, ['Jobs', 'General pay', 'Extra hours', 'On top']);
+  assert.deepEqual(groups, ['Jobs', 'General pay', 'Extra hours', 'On top', 'Non-taxable']);
   assert.deepEqual(
     [...new Set(M.PRESETS.deductions.map((x) => x.g))],
     ['Taxes', 'Benefits', 'Retirement', 'Other'],
@@ -654,7 +654,7 @@ test('rates are never above 100%, and the Setup checks flag a tiny gross and ver
   assert.equal(M.rate({ ...p, rateOverride: -0.2 }), 0);
   assert.deepEqual(
     { ...M.stubWarnings(p), share: undefined },
-    { lowGross: true, highRate: true, capped: true, share: undefined },
+    { lowGross: true, highRate: true, capped: true, nontaxIgnored: false, share: undefined },
   );
   const ok = M.stubWarnings(M.exampleProfile('2026-09-28'));
   assert.deepEqual([ok.lowGross, ok.highRate, ok.capped], [false, false, false]);

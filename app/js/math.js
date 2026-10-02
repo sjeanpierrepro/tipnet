@@ -45,12 +45,35 @@ const sumDed = (p, f) => (p.deductions || []).filter(f).reduce((s, d) => s + num
 /** A rate never goes above 100% (or below 0): a mistyped gross like $2 must not give a 16,650% tax. */
 export const MAX_RATE = 1;
 const clampRate = (x) => (Number.isFinite(x) ? Math.min(MAX_RATE, Math.max(0, x)) : 0);
-/** The paystub's % deductions / gross, NOT clamped (for the Setup warnings). */
-export const rawRate = (p) => (num(p.gross) > 0 ? sumDed(p, (d) => d.mode === 'pct') / num(p.gross) : 0);
+/*
+ * Non-taxable earnings on the stub (profile.nontaxable = [{id, k, name, amount, recurring}]): money like reimbursements
+ * that the stub pays without tax. They are left out of the gross the tax rate is worked out from; the recurring ones are
+ * also added to every check, untaxed (see computeNight). "Just this once" items only matter for the rate.
+ */
+const sumNontax = (p, f = () => true) =>
+  (Array.isArray(p.nontaxable) ? p.nontaxable : [])
+    .filter(f)
+    .reduce((s, x) => s + Math.max(0, num(x.amount)), 0);
+/** Non-taxable money on that paystub (all of it). */
+export const nontaxOnStub = (p) => sumNontax(p);
+/** Non-taxable money that comes with every check (one pay period). */
+export const nontaxRecurring = (p) => sumNontax(p, (x) => x.recurring !== false);
+/**
+ * The gross the tax rate is worked out from: gross minus the non-taxable earnings on that stub. If that would leave
+ * nothing (a typo, or the non-taxable amounts are more than the gross), the subtraction is ignored and Setup says so.
+ */
+export function taxableGross(p) {
+  const g = num(p.gross);
+  const t = g - nontaxOnStub(p);
+  return t > 0 ? t : g;
+}
+/** The paystub's % deductions / taxable gross, NOT clamped (for the Setup warnings). */
+export const rawRate = (p) =>
+  taxableGross(p) > 0 ? sumDed(p, (d) => d.mode === 'pct') / taxableGross(p) : 0;
 export const baseRate = (p) => clampRate(rawRate(p));
 export const rate = (p) => (p.rateOverride != null ? clampRate(Number(p.rateOverride)) : baseRate(p));
 export const fedRate = (p) =>
-  num(p.gross) > 0 ? clampRate(sumDed(p, (d) => d.mode === 'pct' && d.k === 'fed') / num(p.gross)) : 0;
+  taxableGross(p) > 0 ? clampRate(sumDed(p, (d) => d.mode === 'pct' && d.k === 'fed') / taxableGross(p)) : 0;
 /** Gross below this for one paycheck gets a calm "check this" note in Setup. */
 export const LOW_GROSS = 50;
 /** % deductions at or above this share of gross get a calm "check this" note in Setup. */
@@ -67,6 +90,8 @@ export function stubWarnings(p) {
     highRate: g > 0 && share >= HIGH_RATE,
     capped: share > MAX_RATE,
     share,
+    // the non-taxable amounts are as big as the gross (or bigger): they are not taken out of it
+    nontaxIgnored: nontaxOnStub(p) > 0 && g > 0 && g - nontaxOnStub(p) <= 0,
   };
 }
 export const fixedTotal = (p) => sumDed(p, (d) => d.mode === 'fixed');
@@ -203,7 +228,7 @@ export const SHIFT_SOURCE_TEXT = {
  */
 export function snapshotFor(p, shifts) {
   const to = p.tipout || {};
-  return {
+  const s = {
     v: 1,
     r: rate(p),
     rf: fedRate(p),
@@ -213,6 +238,7 @@ export function snapshotFor(p, shifts) {
       const o = { id: t.id, rate: num(t.rate), unit: t.unit };
       if (i === 0) o.usual = num(t.usual);
       if (t.supp) o.supp = 1;
+      if (t.nontax) o.nontax = 1;
       if (t.k === 'diff' || t.diff) o.diff = 1;
       return o;
     }),
@@ -224,6 +250,10 @@ export function snapshotFor(p, shifts) {
       from: to.from || 'cash',
     },
   };
+  // recurring non-taxable money per check (only written when there is some, so older snapshots look the same)
+  const nt = round2(nontaxRecurring(p));
+  if (nt > 0) s.nontax = nt;
+  return s;
 }
 export const isLocked = (night) => !!(night && night.snap);
 /**
@@ -263,6 +293,7 @@ function termsOf(night, p, shifts) {
       r: s.r,
       rf: s.rf,
       fixed: s.fixed,
+      nontax: num(s.nontax), // older snapshots have none
       n: s.n,
       payTypes: s.pay || [],
       tipout: s.tipout || { on: false },
@@ -271,6 +302,7 @@ function termsOf(night, p, shifts) {
     r: rate(p),
     rf: fedRate(p),
     fixed: fixedTotal(p),
+    nontax: nontaxRecurring(p),
     payTypes: p.payTypes || [],
     tipout: p.tipout || { on: false },
     n: shifts > 0 ? shifts : shiftsPerPeriod(p, [], todayISO()).n,
@@ -280,6 +312,11 @@ function termsOf(night, p, shifts) {
 export function periodFixed(p, ns) {
   for (let i = ns.length - 1; i >= 0; i--) if (ns[i].snap) return ns[i].snap.fixed;
   return fixedTotal(p);
+}
+/** Recurring non-taxable money a period's check carries: from the newest locked night in it, else the current Setup. */
+export function periodNontax(p, ns) {
+  for (let i = ns.length - 1; i >= 0; i--) if (ns[i].snap) return num(ns[i].snap.nontax);
+  return nontaxRecurring(p);
 }
 
 /* ---------- one night (6.4) ---------- */
@@ -322,12 +359,15 @@ function basePayWith(night, T) {
   let pay = 0,
     hours = 0,
     extra = 0,
-    extraTax = 0;
+    extraTax = 0,
+    nontax = 0;
   const r = T.r,
     rs = Math.max(0, T.r - T.rf) + 0.22; // supplemental rate (6.5)
   T.payTypes.forEach((t, i) => {
     const a = payAmount(night, t, i);
-    if (t.unit === 'amt') {
+    // a non-taxable amount (a reimbursement for that night): no withholding, not tips, not wages
+    if (t.unit === 'amt' && t.nontax) nontax += Math.max(0, a);
+    else if (t.unit === 'amt') {
       extra += a;
       extraTax += a * (t.supp ? rs : r);
     } else {
@@ -335,7 +375,7 @@ function basePayWith(night, T) {
       if (t.unit === 'hr' && t.k !== 'diff' && !t.diff) hours += a;
     }
   });
-  return { pay, hours, extra, extraTax };
+  return { pay, hours, extra, extraTax, nontax };
 }
 /**
  * computeNight(night, profile, shifts)
@@ -380,7 +420,10 @@ export function computeNight(night, p, shifts) {
   }
   const taxC = toCents(((keptC - cashKeptC) / 100) * r) + extraTaxC;
   const fixedC = toCents(T.fixed / n);
-  const netC = keptC + extraC - taxC - fixedC;
+  // non-taxable money: the night's own amounts, plus its share of what comes with every check (spread like fixed deductions)
+  const nontaxC = toCents(bp.nontax);
+  const nontaxShareC = toCents(num(T.nontax) / n);
+  const netC = keptC + extraC + nontaxC + nontaxShareC - taxC - fixedC;
   // federal tax on tips that was actually withheld (none on cash that skipped payroll)
   const fedOnTipsC = toCents((Math.max(0, tipsC - tipoutC - cashKeptC) / 100) * T.rf);
   const onCheckC = hasCash ? netC - cashInHandC : null;
@@ -396,6 +439,8 @@ export function computeNight(night, p, shifts) {
     kept: d(keptC),
     tax: d(taxC),
     fixedPerShift: d(fixedC),
+    nontax: d(nontaxC),
+    nontaxPerShift: d(nontaxShareC),
     net: d(netC),
     fromCash: d(fromCashC),
     cashInHand: cashInHandC == null ? null : d(cashInHandC),
@@ -427,6 +472,7 @@ export function periodTotals(p, nights, idx, today = todayISO(), shifts, index) 
     cash = 0,
     setAside = 0,
     fixedShares = 0,
+    nontaxShares = 0,
     allCash = ns.length > 0;
   ns.forEach((night) => {
     const c = computeNight(night, p, n);
@@ -434,6 +480,7 @@ export function periodTotals(p, nights, idx, today = todayISO(), shifts, index) 
     hrs += c.hours;
     kept += toCents(c.kept);
     fixedShares += toCents(c.fixedPerShift);
+    nontaxShares += toCents(c.nontaxPerShift);
     setAside += toCents(c.taxOnCashToSetAside);
     if (c.onCheck == null) allCash = false;
     else {
@@ -443,7 +490,8 @@ export function periodTotals(p, nights, idx, today = todayISO(), shifts, index) 
   });
   const exact = ns.length > 0 && isFinal(p, idx, today);
   if (exact) {
-    const adj = fixedShares - toCents(periodFixed(p, ns));
+    // and the per-shift shares of recurring non-taxable money by the exact amount on that check
+    const adj = fixedShares - toCents(periodFixed(p, ns)) + toCents(periodNontax(p, ns)) - nontaxShares;
     net += adj;
     chk += adj;
   }
@@ -494,21 +542,28 @@ export function calibrate(p, nights, idx, actual, today = todayISO(), shifts, ra
   let T = 0,
     Tt = 0,
     C = 0,
+    N = 0,
     predC = 0;
   cs.forEach((c) => {
-    T += toCents(c.kept) + toCents(c.extra);
+    T += toCents(c.kept) + toCents(c.extra); // non-taxable money is not in here: it is never taxed
     Tt += toCents(c.kept) + toCents(c.extra) - toCents(c.cashTipsKept); // the part payroll really taxed
     C += toCents(c.cashInHand);
-    predC += toCents(c.onCheck) + toCents(c.fixedPerShift);
+    N += toCents(c.nontax); // the nights' own non-taxable amounts
+    predC += toCents(c.onCheck) + toCents(c.fixedPerShift) - toCents(c.nontaxPerShift);
   });
   const F = toCents(periodFixed(p, ns));
-  predC -= F;
+  const NR = toCents(periodNontax(p, ns)); // recurring non-taxable money on that check, exactly
+  predC += NR - F;
+  N += NR;
   const pred = fromCents(predC);
   const err = (pred - A) / A;
   const rOld = typeof rateBase === 'number' && Number.isFinite(rateBase) ? rateBase : rate(p); // rateBase: the rate in effect before this period was first adjusted (Replace)
   const rNew =
     Tt > 0
-      ? Math.min(0.45, Math.max(0.02, (fromCents(T) - (A + fromCents(F) + fromCents(C))) / fromCents(Tt)))
+      ? Math.min(
+          0.45,
+          Math.max(0.02, (fromCents(T) - (A + fromCents(F) + fromCents(C) - fromCents(N))) / fromCents(Tt)),
+        )
       : rOld;
   const uncapped = (rOld + rNew) / 2; // blend to avoid overreacting to one check
   const rateOverride = Math.min(rOld + MAX_RATE_STEP, Math.max(rOld - MAX_RATE_STEP, uncapped));
@@ -558,6 +613,9 @@ export function summary(p, nights = [], today = todayISO()) {
     keepPer100: round2(100 * (1 - r)),
     fixed,
     fixedPerShift: round2(fixed / si.n),
+    nontax: round2(nontaxRecurring(p)),
+    nontaxOnStub: round2(nontaxOnStub(p)),
+    taxableGross: round2(taxableGross(p)),
     shifts: si.n,
     shiftSource: si.source,
     shiftSourceText: SHIFT_SOURCE_TEXT[si.source],
@@ -636,7 +694,32 @@ export const PAY_PRESETS = [
       'Auto-gratuities are taxed as wages, not tips, so they do not count toward the federal tip deduction.',
   },
   { k: 'other', name: 'Other', unit: 'amt', kind: 'other', g: 'On top' },
+  // Non-taxable amounts for one night (a reimbursement): added to the check with no tax; not tips, not wages.
+  ...[
+    ['ntexpense', 'Expense reimbursement'],
+    ['ntmileage', 'Mileage reimbursement'],
+    ['ntuniform', 'Uniform / tool allowance'],
+    ['ntmeal', 'Meal allowance / per diem'],
+    ['ntother', 'Other non-taxable'],
+  ].map(([k, name]) => ({
+    k,
+    name,
+    unit: 'amt',
+    nontax: 1,
+    kind: 'other',
+    g: 'Non-taxable',
+    notes: 'Added to your check without tax. It doesn’t count as tips or wages.',
+  })),
 ];
+/** Non-taxable earnings on a paystub (Setup), the same kinds. "other" asks for a name. */
+export const NONTAX_PRESETS = [
+  { k: 'expense', name: 'Expense reimbursement' },
+  { k: 'mileage', name: 'Mileage reimbursement' },
+  { k: 'uniform', name: 'Uniform / tool allowance' },
+  { k: 'meal', name: 'Meal allowance / per diem' },
+  { k: 'other', name: 'Other non-taxable' },
+];
+export const findNontaxPreset = (k) => NONTAX_PRESETS.find((x) => x.k === k);
 /** Presets that pay for extra hours on top of a job: never a job, whatever their unit. */
 const EXTRA_HOUR_KEYS = ['ot', 'holiday', 'diff', 'pto'];
 /**
@@ -695,8 +778,10 @@ export function applyDeductionPreset(d, k) {
 /** Returns a new pay type from the preset; `mainRate` supplies the overtime multiple. */
 export function applyPayPreset(t, k, mainRate = 0) {
   const pr = findPayPreset(k) || PAY_PRESETS[PAY_PRESETS.length - 1];
-  const blankName = pr.k === 'other' || pr.k === 'otherjob';
+  const blankName = pr.k === 'other' || pr.k === 'otherjob' || pr.k === 'ntother';
   const out = { ...t, k: pr.k, name: blankName ? '' : pr.name, unit: pr.unit, supp: pr.supp ? 1 : 0 };
+  if (pr.nontax) out.nontax = 1;
+  else delete out.nontax;
   if (pr.rateMultiplier && mainRate) out.rate = +(num(mainRate) * pr.rateMultiplier).toFixed(2);
   if (pr.unit === 'amt') {
     out.rate = 0;

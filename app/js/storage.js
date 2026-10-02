@@ -112,6 +112,7 @@ function safeIdsInPlace(S) {
     if (!isObj(p)) return;
     each(p.payTypes, (t) => fix(t, 'id'));
     each(p.deductions, (d) => fix(d, 'id'));
+    each(p.nontaxable, (x) => fix(x, 'id'));
   };
   each(S.workplaces, (w) => {
     fix(w, 'id');
@@ -181,10 +182,25 @@ function cleanPayTypes(list) {
       o.k = typeof t.k === 'string' && t.k ? t.k.slice(0, 40) : i === 0 ? 'hourly' : 'other';
       if (t.supp) o.supp = 1;
       if (t.diff) o.diff = true;
+      if (t.nontax) o.nontax = 1; // a non-taxable amount (no withholding)
       return o;
     });
   if (!out.length) out.push({ id: 'p1', name: 'Main rate', rate: 0, unit: 'hr', usual: 7, k: 'hourly' });
   return out;
+}
+/** Non-taxable earnings: [{id, k, name, amount (>= 0), recurring (default true)}]. */
+function cleanNontax(list) {
+  const seen = new Set();
+  return (Array.isArray(list) ? list : [])
+    .filter(isObj)
+    .slice(0, 20)
+    .map((x, i) => ({
+      id: uniqueId(x.id, seen, 'x', i + 1),
+      k: typeof x.k === 'string' && x.k ? x.k.slice(0, 40) : 'other',
+      name: text(x.name),
+      amount: Math.max(0, numOr0(x.amount)),
+      recurring: x.recurring !== false,
+    }));
 }
 function cleanDeductions(list) {
   const seen = new Set();
@@ -223,10 +239,11 @@ function cleanSnap(s) {
       if (i === 0) o.usual = numOr0(t.usual);
       if (t.supp) o.supp = 1;
       if (t.diff) o.diff = 1;
+      if (t.nontax) o.nontax = 1;
       return o;
     });
   const to = isObj(s.tipout) ? s.tipout : {};
-  return {
+  const out = {
     v: 1,
     r: s.r,
     rf: s.rf,
@@ -241,6 +258,8 @@ function cleanSnap(s) {
       from: text(to.from, 'cash') || 'cash',
     },
   };
+  if (finiteIn(s.nontax, 0.01, 1e7)) out.nontax = s.nontax; // recurring non-taxable money per check
+  return out;
 }
 /** A comparison entry. Old ones (label, pred, actual, err only) stay valid; new ones also carry the pay period and the rate before/after. */
 function cleanCalib(c) {
@@ -372,6 +391,9 @@ function cleanProfile(p, { startFallback, entryDefault }) {
     out.payDelay = Math.min(21, Math.max(0, Math.round(Number(pd))));
   out.deductions = cleanDeductions(p.deductions);
   out.payTypes = cleanPayTypes(p.payTypes);
+  // Non-taxable earnings on the stub (only written once there is one, so older saves look the same)
+  const nt = cleanNontax(p.nontaxable);
+  if (nt.length) out.nontaxable = nt;
   const to = isObj(p.tipout) ? p.tipout : {};
   out.tipout = {
     on: !!to.on,
