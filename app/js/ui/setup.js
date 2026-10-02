@@ -1714,7 +1714,10 @@ function notReadyNote(ctx) {
 }
 
 /* ============ full setup ============ */
+let guidedShown = false; // the guided steps are on screen (the "TipNet Budget" card stays away from them)
+export const guidedOnScreen = () => guidedShown;
 export function render(root) {
+  guidedShown = false;
   const S0 = getState();
   resumeGuided(S0);
   const w = activeWorkplace(S0);
@@ -1736,6 +1739,7 @@ export function render(root) {
       guidedStep = g && g.workplaceId === w.id && [0, 1, 2].includes(g.step) ? g.step : 0;
       noDeductions = false;
     }
+    guidedShown = true;
     guided(root, ctx);
     return;
   }

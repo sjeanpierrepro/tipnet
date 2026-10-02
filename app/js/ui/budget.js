@@ -215,6 +215,84 @@ function sampleCard(S) {
   );
 }
 
+/** Payments switched on (billing-config.js has a provider and a product id). */
+const paymentsOn = () => !!BILLING.provider;
+
+/** Open the Budget preview (it works while the tab is hidden), then focus `id` or the heading. */
+function openPreview(id) {
+  bus.go('budget', { preview: true });
+  const t = (id && document.getElementById(id)) || document.querySelector('#app h1');
+  if (!t) return;
+  if (t.tagName === 'H1') t.setAttribute('tabindex', '-1');
+  try {
+    t.scrollIntoView({ block: 'center' });
+  } catch (e) {
+    /* not available */
+  }
+  t.focus();
+}
+
+/**
+ * The calm "TipNet Budget" card at the very bottom of Tonight, Pay periods and Setup, only while this device has no
+ * unlocked Budget. One card, no popups. Payments off: "Coming soon" instead of the buy buttons and the key box.
+ */
+export function upgradeTeaser() {
+  if (unlocked()) return null;
+  const on = paymentsOn();
+  const p = BILLING.prices;
+  const btn = (text, cls, onclick, id) =>
+    el('button', { type: 'button', class: 'btn ' + cls + ' btn-block', onclick, id }, text);
+  const buy = (plan, text) =>
+    checkoutUrl(plan)
+      ? el(
+          'a',
+          {
+            class: plan === 'yearly' ? 'btn btn-block' : 'btn btn-secondary btn-block',
+            href: checkoutUrl(plan),
+            target: '_blank',
+            rel: 'noopener noreferrer',
+          },
+          text,
+        )
+      : el(
+          'button',
+          {
+            type: 'button',
+            class: plan === 'yearly' ? 'btn btn-block' : 'btn btn-secondary btn-block',
+            disabled: true,
+          },
+          text,
+        );
+  return el(
+    'section',
+    { class: 'card stack upsell', id: 'budget-teaser', 'aria-labelledby': 'budget-teaser-h' },
+    el('h2', { id: 'budget-teaser-h' }, 'TipNet Budget'),
+    el('p', null, 'Plan your bills, spending and savings around your take-home.'),
+    el('p', { class: 'note' }, p.monthly + ' a month or ' + p.yearly + ' a year'),
+    on
+      ? el(
+          'div',
+          { class: 'stack-sm' },
+          buy('monthly', p.monthly + ' a month'),
+          buy('yearly', p.yearly + ' a year'),
+        )
+      : el(
+          'p',
+          { class: 'hint' },
+          el('strong', null, 'Coming soon. '),
+          'You’ll be able to unlock it here soon.',
+        ),
+    el(
+      'div',
+      { class: 'stack-sm' },
+      btn('See what’s inside', 'btn-secondary', () => openPreview(null), 'budget-teaser-see'),
+      on
+        ? btn('I have a license key', 'btn-secondary', () => openPreview('license-key'), 'budget-teaser-key')
+        : null,
+    ),
+  );
+}
+
 function upgradeCard() {
   const provider = getProvider();
   const ready = !!provider && !!checkoutUrl('monthly') && !!checkoutUrl('yearly');
@@ -239,8 +317,24 @@ function upgradeCard() {
           },
           text,
         );
+  const p = BILLING.prices;
+  // Payments off: the preview is still reachable from the "TipNet Budget" cards, and says it is coming.
+  if (!paymentsOn())
+    return el(
+      'section',
+      { class: 'card stack' },
+      el('h2', null, 'Unlock Budget'),
+      el('p', { class: 'note' }, p.monthly + ' a month or ' + p.yearly + ' a year.'),
+      el('p', null, el('strong', null, 'Coming soon')),
+      el(
+        'p',
+        { class: 'hint' },
+        'You’ll be able to unlock it here soon. Tips and pay estimates stay free, always.',
+      ),
+    );
   const keyIn = el('input', {
     type: 'text',
+    id: 'license-key',
     autocomplete: 'off',
     autocapitalize: 'off',
     spellcheck: 'false',
@@ -281,7 +375,6 @@ function upgradeCard() {
     toast('Budget is unlocked on this device.');
     bus.rerender();
   });
-  const p = BILLING.prices;
   return el(
     'section',
     { class: 'card stack' },

@@ -29,6 +29,10 @@ let current = 'tonight';
 /** Budget stays out of sight while payments are off, unless this device already has it unlocked. */
 const budgetShown = () => budgetVisible((storage.getState().settings || {}).entitlement);
 const visibleTabs = () => TABS.filter((t) => t !== 'budget' || budgetShown());
+// "See what's inside" on a "TipNet Budget" card opens the Budget preview even while its tab is hidden (payments off).
+// It lasts until another tab is picked.
+let preview = false;
+const budgetOpen = () => budgetShown() || preview;
 function syncTabs() {
   const shown = budgetShown();
   const b = document.querySelector('#tabs [data-tab="budget"]');
@@ -95,7 +99,7 @@ function render() {
   storage.lockFinished(); // a pay period that ended while the app was open locks before anything is drawn from Setup
   const root = document.getElementById('app');
   const y = window.scrollY;
-  if (syncTabs() === false && current === 'budget') {
+  if (syncTabs() === false && current === 'budget' && !preview) {
     go('tonight');
     return;
   }
@@ -107,6 +111,11 @@ function render() {
       if (current === 'tonight' || current === 'setup') {
         const nudge = backupReminder(); // "Last backup: never. Save a backup file" once there are 5+ real nights
         if (nudge) root.prepend(nudge);
+      }
+      // The "TipNet Budget" card, last on the page (not during guided setup), while Budget isn't unlocked here.
+      if (current !== 'budget' && !(current === 'setup' && setup.guidedOnScreen())) {
+        const teaser = budget.upgradeTeaser();
+        if (teaser) root.append(teaser);
       }
     } catch (e) {
       console.error(e);
@@ -121,8 +130,10 @@ function render() {
   window.scrollTo(0, y);
 }
 
-function go(tab, { focus = false } = {}) {
-  if (!SCREENS[tab] || (tab === 'budget' && !budgetShown())) tab = 'tonight';
+function go(tab, { focus = false, preview: asPreview = false } = {}) {
+  if (tab !== 'budget') preview = false;
+  else if (asPreview) preview = true;
+  if (!SCREENS[tab] || (tab === 'budget' && !budgetOpen())) tab = 'tonight';
   if (tab !== current) {
     try {
       periods.reset();

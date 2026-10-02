@@ -940,3 +940,11 @@ fieldset.field > legend {
   color: var(--accent-ink);
   font-weight: 700;
 }
+
+/* ---------- "TipNet Budget" card at the bottom of Tonight, Pay periods and Setup ---------- */
+.upsell {
+  margin-top: var(--s-5);
+}
+.upsell h2 {
+  margin: 0;
+}
