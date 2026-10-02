@@ -6,7 +6,7 @@
 import * as configModule from './billing-config.js';
 
 /**
- * billing-config.js is fetched network-first but this file may come from the cache, so the two can be from
+ * billing-config.js is served from the cache and refreshed in the background (see sw.js), so it and this file can be from
  * different versions. Read the config defensively: missing or extra fields are fine, and a missing export is too.
  */
 export function readConfig(raw) {

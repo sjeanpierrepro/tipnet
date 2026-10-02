@@ -483,7 +483,10 @@ export function nightFields(
   };
   let rootEl = null;
   const focusKey = (k) => {
-    const n = (rootEl || document).querySelector('[data-focus-key="' + k + '"]');
+    // matched by value, not by a selector built from it (an id from a restored backup may hold any character)
+    const n = Array.from((rootEl || document).querySelectorAll('[data-focus-key]')).find(
+      (x) => x.getAttribute('data-focus-key') === k,
+    );
     if (n) n.focus();
   };
   const drawJobs = () => {

@@ -22,7 +22,7 @@ export default [
     },
   },
   {
-    files: ['proxy/**/*.js', 'integrations/**/*.js'],
+    files: ['integrations/**/*.js'],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'module',

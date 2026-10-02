@@ -89,6 +89,81 @@ function uniqueId(v, seen, prefix, i) {
   seen.add(id);
   return id;
 }
+/**
+ * Ids end up in element ids, data attributes and keys, so they are kept to letters, digits, "_" and "-" (at most 40).
+ * Any other string id is rewritten the same way everywhere it appears (same input, same output), so references stay
+ * consistent: a restaurant id in its nights, the picked restaurant, the Pay periods filter, the guided draft and goals;
+ * a pay type id in each night's hours and locked numbers; a bill id in its "Paid" ticks; a category id in its spending.
+ */
+const SAFE_ID = /^[A-Za-z0-9_-]{1,40}$/;
+export function safeId(v) {
+  if (typeof v !== 'string' || v === '' || SAFE_ID.test(v)) return v;
+  let h = 2166136261; // FNV-1a: a short, stable fingerprint keeps two different bad ids apart
+  for (let i = 0; i < v.length; i++) h = Math.imul(h ^ v.charCodeAt(i), 16777619) >>> 0;
+  return 'x' + v.replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 24) + '_' + h.toString(36);
+}
+/** Rewrite every unsafe id in a raw (already cloned) state, in place, before it is cleaned. */
+function safeIdsInPlace(S) {
+  const each = (a, f) => Array.isArray(a) && a.forEach((x) => isObj(x) && f(x));
+  const fix = (o, k) => {
+    if (isObj(o) && typeof o[k] === 'string') o[k] = safeId(o[k]);
+  };
+  const profileIds = (p) => {
+    if (!isObj(p)) return;
+    each(p.payTypes, (t) => fix(t, 'id'));
+    each(p.deductions, (d) => fix(d, 'id'));
+  };
+  each(S.workplaces, (w) => {
+    fix(w, 'id');
+    profileIds(w.profile);
+  });
+  profileIds(S.profile);
+  each(S.nights, (n) => {
+    fix(n, 'id');
+    fix(n, 'workplaceId');
+    if (isObj(n.pay)) {
+      const pay = {};
+      Object.keys(n.pay).forEach((k) => {
+        pay[safeId(k)] = n.pay[k];
+      });
+      n.pay = pay;
+    }
+    if (isObj(n.snap)) each(n.snap.pay, (t) => fix(t, 'id'));
+  });
+  const s = S.settings;
+  if (isObj(s)) {
+    fix(s, 'activeWorkplaceId');
+    if (s.periodsFilter !== 'all') fix(s, 'periodsFilter');
+    if (isObj(s.guidedDraft)) {
+      fix(s.guidedDraft, 'workplaceId');
+      profileIds(s.guidedDraft.profile);
+    }
+  }
+  const B = S.budget;
+  if (isObj(B)) {
+    each(B.bills, (b) => fix(b, 'id'));
+    each(B.categories, (c) => fix(c, 'id'));
+    each(B.spends, (x) => {
+      fix(x, 'id');
+      fix(x, 'categoryId');
+    });
+    each(B.goals, (g) => {
+      fix(g, 'id');
+      fix(g, 'fundedBy');
+    });
+    each(B.income, (x) => fix(x, 'id'));
+    if (isObj(B.paidBills)) {
+      const out = {};
+      Object.keys(B.paidBills).forEach((k) => {
+        const old = /^(-?\d+):(.+)$/.exec(k); // "<periodIndex>:<billId>" (converted later)
+        const at = k.lastIndexOf('@'); // "<billId>@<due date>"
+        const key = old ? old[1] + ':' + safeId(old[2]) : at > 0 ? safeId(k.slice(0, at)) + k.slice(at) : k;
+        out[key] = B.paidBills[k];
+      });
+      B.paidBills = out;
+    }
+  }
+}
 function cleanPayTypes(list) {
   const seen = new Set();
   const out = (Array.isArray(list) ? list : [])
@@ -377,6 +452,7 @@ function migrateUnsafe(input, today) {
     S = null;
   }
   if (!S) return seedState();
+  safeIdsInPlace(S);
   const settingsIn = isObj(S.settings) ? S.settings : {};
   let rawW;
   if (Array.isArray(S.workplaces) && S.workplaces.some((w) => isObj(w) && isObj(w.profile)))

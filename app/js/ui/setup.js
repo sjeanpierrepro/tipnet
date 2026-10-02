@@ -1391,7 +1391,8 @@ function removeWorkplace(S, w) {
 }
 /** A rename shows right away everywhere on this screen (switcher buttons, heading, notes, Remove), without a redraw. */
 function showName(w) {
-  document.querySelectorAll('[data-workplace="' + w.id + '"]').forEach((b) => {
+  document.querySelectorAll('[data-workplace]').forEach((b) => {
+    if (b.getAttribute('data-workplace') !== w.id) return; // compared, not put in a selector: ids may hold any character
     b.textContent = w.name;
     b.title = w.name;
   });

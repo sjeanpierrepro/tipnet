@@ -29,7 +29,7 @@ if (!changed.length) {
   console.log('check-version: nothing under app/ changed, ok.');
   process.exit(0);
 }
-// billing-config.js alone needs no bump: installed apps refresh it in the background (network first in sw.js).
+// billing-config.js alone needs no bump: sw.js serves it cache-first and refreshes it in the background, so installed apps pick it up.
 if (changed.every((f) => f === 'app/js/billing-config.js')) {
   console.log('check-version: only app/js/billing-config.js changed (refreshed in the background), ok.');
   process.exit(0);
