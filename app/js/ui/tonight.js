@@ -411,7 +411,6 @@ export function nightFields(
     moneyInput({
       id: uid('tot'),
       placeholder: '0',
-      'aria-describedby': undefined,
       'data-focus-key': key + '-total',
     }),
     () => d.total,
@@ -420,12 +419,17 @@ export function nightFields(
     },
   );
   let totalNode;
-  const errEl = el('p', { class: 'field-error', hidden: true, role: 'alert' });
+  const errEl = el('p', { class: 'field-error', hidden: true, role: 'alert', id: totalInput.id + '-err' });
+  const hintId = totalInput.id + '-hint';
+  totalInput.setAttribute('aria-describedby', hintId); // the hint is read with the field, after the error when there is one
   const setTotalError = (m) => {
     errEl.hidden = !m;
     errEl.textContent = m || '';
     totalNode.toggleAttribute('data-invalid', !!m);
-    totalInput.toggleAttribute('aria-invalid', !!m);
+    if (m)
+      totalInput.setAttribute('aria-invalid', 'true'); // an empty aria-invalid reads as valid
+    else totalInput.removeAttribute('aria-invalid');
+    totalInput.setAttribute('aria-describedby', m ? errEl.id + ' ' + hintId : hintId);
   };
   if (big) {
     totalNode = el(
@@ -433,7 +437,7 @@ export function nightFields(
       { class: 'field' },
       el('label', { for: totalInput.id }, tips ? 'Tips you made tonight' : 'What you made tonight'),
       el('div', { class: 'money' }, el('span', { 'aria-hidden': 'true' }, '$'), totalInput),
-      el('p', { class: 'hint' }, hintText),
+      el('p', { class: 'hint', id: hintId }, hintText),
       errEl,
     );
   } else {
@@ -442,7 +446,7 @@ export function nightFields(
       { class: 'field' },
       el('label', { for: totalInput.id }, tips ? 'Tips you made' : 'What you made'),
       totalInput,
-      el('p', { class: 'hint' }, hintText),
+      el('p', { class: 'hint', id: hintId }, hintText),
       errEl,
     );
   }
@@ -526,7 +530,8 @@ export function nightFields(
           d.pay[t.id] = v;
         },
       );
-      const line = el('p', { class: 'hint job-rate' }, rateText(t, d.pay[t.id]));
+      const line = el('p', { class: 'hint job-rate', id: inp.id + '-rate' }, rateText(t, d.pay[t.id]));
+      inp.setAttribute('aria-describedby', line.id); // the rate line is read with the hours field
       rateLines.push({ t, input: inp, line });
       const cells = [
         field(r === 0 ? 'Job' : 'Job ' + (r + 1), sel),
@@ -600,7 +605,12 @@ export function nightFields(
     if (!d.showOther) {
       const btn = el(
         'button',
-        { type: 'button', class: 'btn-link', 'data-focus-key': key + '-add-other' },
+        {
+          type: 'button',
+          class: 'btn-link',
+          'data-focus-key': key + '-add-other',
+          'aria-describedby': key + '-other-hint',
+        },
         '+ Add other pay',
       );
       btn.addEventListener('click', () => {
@@ -616,7 +626,7 @@ export function nightFields(
           btn,
           el(
             'p',
-            { class: 'hint' },
+            { class: 'hint', id: key + '-other-hint' },
             'Overtime, holiday hours, a bonus and the like, only when you have them.',
           ),
         ),
@@ -680,6 +690,7 @@ export function nightFields(
   );
   kids.push(cashField);
   const offCb = el('input', { type: 'checkbox', id: uid('cop'), 'data-focus-key': key + '-cashoff' });
+  offCb.setAttribute('aria-describedby', offCb.id + '-hint');
   offCb.checked = !!d.cashOffPayroll;
   offCb.addEventListener('change', () => {
     d.cashOffPayroll = offCb.checked;
@@ -697,7 +708,7 @@ export function nightFields(
     ),
     el(
       'p',
-      { class: 'hint' },
+      { class: 'hint', id: offCb.id + '-hint' },
       'Tick this if no tax was taken out of tonight’s cash, so your check is bigger. The IRS still counts all tips as income, so TipNet shows what to set aside.',
     ),
   );

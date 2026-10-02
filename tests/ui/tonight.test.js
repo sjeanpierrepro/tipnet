@@ -286,3 +286,30 @@ test('tonight: at 1 a.m. on a pay period’s first day, the pay period summary i
     mock.timers.reset();
   }
 });
+
+test('tonight: hints are linked to their fields (aria-describedby), together with the error when there is one', async () => {
+  const page = await boot({ seed: seed() });
+  try {
+    const ids = (n) => (n.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
+    const texts = (n) => ids(n).map((id) => page.must(page.doc.getElementById(id), '#' + id).textContent);
+    const tot = totalInput(page);
+    assert.deepEqual(ids(tot).length, 1);
+    assert.match(texts(tot)[0], /Cash \+ card tips/);
+    const hours = hoursInput(page);
+    assert.ok(ids(hours).length >= 1, 'hours field has its rate hint');
+    assert.ok(
+      ids(hours).every((id) => page.doc.getElementById(id).classList.contains('hint')),
+      'only the hint while there is no error',
+    );
+    submit(page); // nothing typed: the total shows an error
+    assert.equal(tot.getAttribute('aria-invalid'), 'true');
+    assert.equal(ids(tot).length, 2, 'error and hint');
+    assert.ok(page.doc.getElementById(ids(tot)[0]).classList.contains('field-error'));
+    assert.match(texts(tot)[1], /Cash \+ card tips/);
+    page.type(cashInput(page), '20');
+    const off = page.must(page.$('[data-focus-key="night-cashoff"]'), 'cash checkbox');
+    assert.match(texts(off)[0], /Tick this if no tax was taken out/);
+  } finally {
+    await page.close();
+  }
+});

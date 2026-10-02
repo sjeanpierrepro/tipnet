@@ -76,7 +76,17 @@ export function field(label, input, { hint, optional } = {}) {
     optional ? el('span', { class: 'hint' }, ' (optional)') : null,
   );
   const kids = [lab, input];
-  if (hint) kids.push(el('p', { class: 'hint', id: input.id + '-hint' }, hint));
+  // The hint is read with the field (aria-describedby), after the error while there is one.
+  const base = (input.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
+  if (hint) {
+    kids.push(el('p', { class: 'hint', id: input.id + '-hint' }, hint));
+    base.push(input.id + '-hint');
+  }
+  const describe = (ids) => {
+    if (ids.length) input.setAttribute('aria-describedby', ids.join(' '));
+    else input.removeAttribute('aria-describedby');
+  };
+  describe(base);
   kids.push(err);
   const f = el('div', { class: 'field' }, kids);
   f.setError = (msg) => {
@@ -85,11 +95,11 @@ export function field(label, input, { hint, optional } = {}) {
     if (msg) {
       f.setAttribute('data-invalid', '');
       input.setAttribute('aria-invalid', 'true');
-      input.setAttribute('aria-describedby', err.id);
+      describe([err.id, ...base]);
     } else {
       f.removeAttribute('data-invalid');
       input.removeAttribute('aria-invalid');
-      input.removeAttribute('aria-describedby');
+      describe(base);
     }
   };
   return f;
