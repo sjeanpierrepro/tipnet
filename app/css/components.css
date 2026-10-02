@@ -1045,3 +1045,41 @@ h4 {
 .save-bar p {
   margin: 0;
 }
+
+/* Small screens: the Save bar is one compact row (buttons beside the status line), 44px targets kept */
+@media (max-width: 480px) {
+  .save-bar {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-1) var(--s-2);
+    padding: var(--s-2);
+  }
+  .save-bar .cluster {
+    flex-wrap: nowrap;
+    gap: var(--s-1);
+    order: 1;
+  }
+  .save-bar .btn {
+    padding: 10px 10px;
+    font-size: 15px;
+    white-space: nowrap;
+  }
+  .save-bar #draft-state {
+    order: 2;
+    flex: 1 1 5.5rem;
+    min-width: 0;
+    font-size: 0.75rem;
+    line-height: 1.25;
+  }
+  .save-bar #draft-ask-q {
+    flex: 1 1 100%;
+    order: 0;
+  }
+  .save-bar #draft-reasons {
+    order: 3;
+    flex: 1 1 100%;
+    font-size: 0.75rem;
+    line-height: 1.25;
+  }
+}
