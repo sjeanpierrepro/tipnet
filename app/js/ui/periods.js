@@ -867,6 +867,7 @@ function calibCard(S, today) {
       save();
       calMsg = { text: 'Back to the rates from your paystub.' };
       bus.rerender();
+      focusId('cal-run'); // Undo adjustments is off now (nothing left to undo), so focus moves to Compare with my estimate
       toast('Adjustments undone.', {
         undo: () => {
           p.rateOverride = was.rate;
@@ -878,6 +879,19 @@ function calibCard(S, today) {
       });
     },
   });
+  // Nothing adjusted yet (no rate change, no history): nothing to undo, and the button says why it is off.
+  const nothingToUndo = p.rateOverride == null && !(w.calib || []).length;
+  const undoWhy = nothingToUndo
+    ? el(
+        'p',
+        { class: 'hint', id: 'cal-undo-why' },
+        'Nothing to undo yet. TipNet hasn’t adjusted your rates.',
+      )
+    : null;
+  if (nothingToUndo) {
+    undo.disabled = true;
+    undo.setAttribute('aria-describedby', 'cal-undo-why');
+  }
   if (calPending && calPending.idx === calPeriod && calPending.wid === w.id)
     pendingNode = pendingBox(S, w, calPending.r, calPending.idx, calPending.prev);
   else calPending = null;
@@ -913,6 +927,7 @@ function calibCard(S, today) {
     field('Pay period', sel),
     field('Actual paycheck amount (take-home on the stub)', actual),
     el('div', { class: 'cluster' }, run, undo),
+    undoWhy,
     pendingNode,
     msg,
     hist.length ? el('ul', { class: 'stack-sm', style: 'list-style:none;margin:0;padding:0' }, hist) : null,

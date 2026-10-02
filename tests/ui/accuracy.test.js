@@ -31,6 +31,9 @@ test('check my accuracy: defaults to the newest finished period, blocks an unfin
     assert.equal(periodIndex(p, today), 2, 'today is in period 2');
     assert.equal(sel.value, '1', 'newest FINISHED period, not the one in progress');
     assert.equal(page.$('#cal-run').disabled, false);
+    assert.equal(page.$('#cal-undo').disabled, true, 'nothing to undo yet');
+    assert.equal(page.$('#cal-undo').getAttribute('aria-describedby'), 'cal-undo-why');
+    assert.match(page.text(), /Nothing to undo yet\. TipNet hasn’t adjusted your rates\./);
 
     // an unfinished period cannot be compared
     sel.value = '2';
@@ -73,12 +76,15 @@ test('check my accuracy: defaults to the newest finished period, blocks an unfin
     assert.match(page.text(), /Tax rate adjusted from 16\.65% to/);
 
     // undo puts the paystub rates back
+    assert.equal(page.$('#cal-undo').disabled, false, 'something to undo now');
+    assert.equal(page.$('#cal-undo-why'), null);
     page.click(page.$('#cal-undo'));
     assert.equal(page.state().workplaces[0].calib.length, 1, 'first tap only arms');
     assert.notEqual(page.state().workplaces[0].profile.rateOverride, null);
     page.click(page.$('#cal-undo'));
     assert.equal(page.state().workplaces[0].profile.rateOverride, null);
     assert.equal(page.state().workplaces[0].calib.length, 0);
+    assert.equal(page.$('#cal-undo').disabled, true, 'undone: nothing left to undo');
     // the toast brings the adjustment back
     const undoBtn = [...page.doc.querySelectorAll('#toast button')].find((b) => /undo/i.test(b.textContent));
     assert.ok(undoBtn, 'Undo toast offered');
