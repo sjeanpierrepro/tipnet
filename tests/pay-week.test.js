@@ -2,6 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as M from '../app/js/math.js';
+import * as B from '../app/js/budget.js';
 
 const prof = (freq, periodStart, extra = {}) => ({
   ...M.exampleProfile('2026-09-28'),
@@ -181,4 +182,47 @@ test('weekly overtime hours stay by the calendar week worked', () => {
     night('2026-09-22', undefined, { pay: { p1: 15 } }),
   ];
   assert.equal(M.weeklyHours(p, ns, '2026-09-22').hours, 45);
+});
+
+/* ---------- Budget follows the pay week a night counts toward ---------- */
+
+test('Budget: cash this period, set-aside on off-payroll cash and checks follow the assignment', () => {
+  const p = prof(14, '2026-09-07', { shifts: 10 });
+  const today = '2026-10-10'; // period 2 (10-05..10-18) is current, period 1 (09-21..10-04) finished
+  const late = night('2026-10-04', undefined, { cash: 150, cashOffPayroll: true });
+  const now = night('2026-10-06', undefined, { cash: 100 });
+  const base = B.expectedIncome(p, [late, now], today);
+  assert.equal(base.cashSoFar, 100);
+  assert.equal(base.setAsideSoFar, 0);
+  const moved = { ...late, periodStart: '2026-10-05' };
+  const inc = B.expectedIncome(p, [moved, now], today);
+  assert.equal(inc.cashSoFar, 250, 'the moved night’s cash counts this period');
+  assert.ok(inc.setAsideSoFar > 0, 'its off-payroll set-aside too');
+  assert.equal(inc.checkSoFar, M.periodTotals(p, [moved, now], 2, today, 10).chk);
+  // the finished period it left has no nights now, so it no longer feeds the average check
+  assert.notEqual(base.avgCheckPerPeriod, null);
+  assert.equal(inc.avgCheckPerPeriod, null);
+  // typical take-home (room to put aside) uses the same assignment
+  assert.notEqual(B.typicalTakeHome(p, [moved, now], today), B.typicalTakeHome(p, [late, now], today));
+});
+
+test('non-taxable per-shift money and the exact amount follow the assigned period', () => {
+  const p = prof(14, '2026-09-07', {
+    shifts: 0,
+    nontaxable: [{ id: 'x1', k: 'mileage', name: 'Mileage', amount: 40, recurring: true }],
+  });
+  const ns = [night('2026-09-08'), night('2026-09-22', '2026-09-07'), night('2026-09-23')];
+  const today = '2026-10-10';
+  // period 0 holds two nights (one moved in), period 1 one: each finished period carries exactly $40 of it
+  const t0 = M.periodTotals(p, ns, 0, today);
+  const t1 = M.periodTotals(p, ns, 1, today);
+  assert.equal(t0.ns.length, 2);
+  assert.equal(t1.ns.length, 1);
+  const n = M.shiftsPerPeriod(p, ns, today).n; // 1.5
+  const sum = (t) =>
+    t.ns.reduce((s, x) => s + M.computeNight(x, p, n).net - M.computeNight(x, p, n).nontaxPerShift, 0);
+  const fixedAdj = (t) =>
+    t.ns.reduce((s, x) => s + M.computeNight(x, p, n).fixedPerShift, 0) - M.fixedTotal(p);
+  assert.ok(Math.abs(t0.net - (sum(t0) + fixedAdj(t0) + 40)) < 0.02);
+  assert.ok(Math.abs(t1.net - (sum(t1) + fixedAdj(t1) + 40)) < 0.02);
 });

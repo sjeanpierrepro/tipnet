@@ -2,7 +2,7 @@
 import {
   computeNight,
   periodTotals,
-  periodIndex,
+  nightPeriodIndex,
   shiftsPerPeriod,
   calibrate,
   todayISO,
@@ -128,7 +128,7 @@ function redrawGroups(keys) {
 /** The group a night is listed in (its restaurant's pay period), or null. */
 const keyOfNight = (S, id) => {
   const n = S.nights.find((x) => x.id === id);
-  return n ? gkey(n.workplaceId, periodIndex(workplaceOf(S, n.workplaceId).profile, n.date)) : null;
+  return n ? gkey(n.workplaceId, nightPeriodIndex(workplaceOf(S, n.workplaceId).profile, n)) : null;
 };
 function openEditor(S, id) {
   const before = editingId == null ? null : keyOfNight(S, editingId);
@@ -146,7 +146,7 @@ function editor(S, n) {
   const typedAtOpen = JSON.stringify([d.total, d.pay]);
   let recalc = false;
   const preview = el('p', { class: 'hint', 'aria-live': 'polite' });
-  const shiftsFor = (date) => shiftsPerPeriod(p, mine, todayISO(), periodIndex(p, date)).n;
+  const shiftsFor = (night) => shiftsPerPeriod(p, mine, todayISO(), nightPeriodIndex(p, night)).n;
   /** The night as it will be saved. A locked night keeps its Setup numbers unless "Recalculate with current Setup" is ticked. */
   const build = () => {
     const out = storedNight(d, p, n.id);
@@ -159,7 +159,7 @@ function editor(S, n) {
         if (!(k in out.pay)) out.pay[k] = n.pay[k];
       });
       out.snap = n.snap;
-    } else if (n.snap && recalc) out.snap = snapshotFor(p, shiftsFor(out.date));
+    } else if (n.snap && recalc) out.snap = snapshotFor(p, shiftsFor(out));
     // Tips and hours untouched and no recalculation: the stored total (and typed tips) stay exactly as they were.
     const untouched = !recalc && JSON.stringify([d.total, d.pay]) === typedAtOpen;
     if (untouched && (tipsMode(p) || hasTips(n))) {
@@ -175,7 +175,7 @@ function editor(S, n) {
   };
   const upd = () => {
     const night = build();
-    const c = computeNight(night, p, shiftsFor(night.date));
+    const c = computeNight(night, p, shiftsFor(night));
     preview.textContent = 'Estimated take-home for this night: ' + money(c.net) + '.';
   };
   // A locked night shows the rates it keeps, unless "Recalculate with current Setup" is ticked.
@@ -245,7 +245,7 @@ function editor(S, n) {
       'data-focus-key': editKey(n),
       onclick: () => {
         editingId = null;
-        redrawGroups([gkey(w.id, periodIndex(p, n.date))]);
+        redrawGroups([gkey(w.id, nightPeriodIndex(p, n))]);
       },
     },
     'Cancel',

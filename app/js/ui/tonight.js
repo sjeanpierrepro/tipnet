@@ -1055,7 +1055,8 @@ export function render(root) {
     const hoursMissing = missingHoursRow(p, d) != null;
     let ot = null;
     const others = hist.filter((n) => n.id !== 'draft');
-    // Overtime is counted per restaurant: each employer counts its own 40 hours.
+    // Overtime is counted per restaurant: each employer counts its own 40 hours. By the calendar week the hours were
+    // worked (the night's date), even for a night counted in another pay week on Pay periods.
     const wk = weeklyHours(p, others.concat([night]), night.date);
     if (wk.over && c.hours > 0) {
       ot = el(
@@ -1190,6 +1191,7 @@ export function render(root) {
           id: cur.id,
           workplaceId: w.id,
           ...(cur.snap ? { snap: cur.snap } : {}),
+          ...(cur.periodStart ? { periodStart: cur.periodStart } : {}), // stays in the pay week it was moved to
         }));
       }),
     );

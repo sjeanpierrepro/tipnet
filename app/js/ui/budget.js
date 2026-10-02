@@ -1,6 +1,6 @@
 // Budget tab (paid add-on): safe to spend, next paycheck, bills, spending, goals, subscription.
 // Locked users see an honest preview and can buy or paste a license key. The free app is unchanged.
-import { todayISO, periodIndex, periodRange, round2 } from '../math.js';
+import { todayISO, periodIndex, periodRange, nightPeriodIndex, round2 } from '../math.js';
 import { isSetUp, isWorkplaceSetUp, nightsOf } from '../storage.js';
 import {
   safeToSpendAll,
@@ -917,11 +917,11 @@ const CHECK_HINT = {
 function cashLoggedNow(src, today = todayISO()) {
   return src.some((s) => {
     if (!s.profile || !s.profile.periodStart) return false;
-    const r = periodRange(s.profile, periodIndex(s.profile, today));
+    const idx = periodIndex(s.profile, today);
+    // by the pay period each night counts toward (a night can be moved to the pay week next to its date's)
     return s.nights.some(
       (n) =>
-        n.date >= r.start &&
-        n.date <= r.end &&
+        nightPeriodIndex(s.profile, n) === idx &&
         n.cash !== '' &&
         n.cash != null &&
         Number.isFinite(parseFloat(n.cash)),
