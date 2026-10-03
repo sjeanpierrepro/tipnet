@@ -263,20 +263,33 @@ function editor(S, n) {
   weekField.append(weekNoteLine);
   let shownFor = null;
   /**
-   * Rebuild the choices around the date typed now (the period before its own, its own, the next). The select shows the
-   * explicit pick while it is still one of them; otherwise the new date's own period, and a pick dropped that way says so.
+   * The choices around a date: the period before its own, its own, the next. While the date is the night's unchanged
+   * one, the pick it was saved with is offered too, even further away (e.g. after a 14 -> 7 day schedule change), so
+   * opening and saving the night never drops it.
+   */
+  const choicesFor = (date) => {
+    const cs = nightPeriodChoices(p, date);
+    if (!cs.length || !pickAtOpen || date !== n.date || cs.some((c) => c.start === pickAtOpen)) return cs;
+    const k = nightPeriodIndex(p, n);
+    return [...cs, { idx: k, ...periodRange(p, k), own: false }].sort((a, b) => a.idx - b.idx);
+  };
+  /**
+   * Rebuild the choices around the date typed now. The select shows the explicit pick while it is still one of them;
+   * otherwise the new date's own period, and a pick dropped that way (only after a date change) says so.
    */
   const syncWeek = () => {
-    const cs = nightPeriodChoices(p, d.date);
+    const cs = choicesFor(d.date);
     if (!cs.length) return; // a half-typed date: keep the options shown
     const own = cs.find((c) => c.own);
     const kept = chosen != null && cs.some((c) => c.start === chosen);
     pick = kept ? chosen : own.start;
-    const dropped = chosen != null && !kept;
-    weekNoteLine.hidden = !dropped;
-    weekNoteLine.textContent = dropped
+    const dropped = chosen != null && !kept && d.date !== n.date;
+    const noteText = dropped
       ? 'This night now counts by its new date (pay period ' + periodLabel(p, own.idx) + ').'
       : '';
+    // a status line: rewritten only when its words change, so it isn't announced again on every keystroke
+    if (weekNoteLine.hidden !== !dropped) weekNoteLine.hidden = !dropped;
+    if (weekNoteLine.textContent !== noteText) weekNoteLine.textContent = noteText;
     const sig = d.date + '|' + pick;
     if (sig === shownFor) return;
     shownFor = sig;
@@ -353,7 +366,7 @@ function editor(S, n) {
         syncWeek();
         upd();
       };
-      if (nightPeriodChoices(p, d.date).some((c) => c.start === at)) {
+      if (choicesFor(d.date).some((c) => c.start === at)) {
         back();
         weekSel.focus();
         return;

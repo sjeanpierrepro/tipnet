@@ -303,3 +303,88 @@ test('the editor estimate updates as typed but is spoken only after a pause (no 
     await page.close();
   }
 });
+
+// 7-day pay periods (e.g. after a 14 -> 7 day schedule change): week W0 is today-3 .. today+3.
+const seed7 = (nights) =>
+  realState((S) => {
+    S.workplaces[0].setupDone = true;
+    S.workplaces[0].profile.periodStart = CUR;
+    S.workplaces[0].profile.freq = 7;
+    S.workplaces[0].profile.periodEnd = addDays(CUR, 6);
+    S.workplaces[0].profile.shifts = 5;
+    S.settings.dayCutoffHour = 0;
+    S.nights = nights.map((n, i) => ({
+      id: 'n' + (i + 1),
+      total: 300,
+      cash: 80,
+      pay: { p1: 6 },
+      barback: true,
+      ...n,
+    }));
+  });
+
+test('a saved pick two pay periods from the night’s date is kept while the date is unchanged', async () => {
+  // dated in the finished week before CUR's, counted two weeks later (the week after CUR's)
+  const date = addDays(today, -10),
+    far = addDays(CUR, 7);
+  const page = await boot({ seed: seed7([{ date, periodStart: far }]) });
+  try {
+    page.tab('periods');
+    page.click(page.byLabel('Edit night ' + long(date)));
+    assert.equal(weekSel(page).value, far, 'offered and selected on opening');
+    assert.equal(note(page).hidden, true, 'no "now counts by its new date": the date did not change');
+    page.type(page.must(page.$('[data-focus-key$="-total"]', page.app), 'total'), '310');
+    await save(page);
+    assert.equal(ask(page), null, 'the pay period does not change: nothing to confirm');
+    assert.equal(night(page).total, 310);
+    assert.equal(night(page).periodStart, far, 'the pick is kept');
+  } finally {
+    await page.close();
+  }
+});
+
+test('a far pick dropped by a date edit comes back with “Keep where it is” (the date goes back)', async () => {
+  const date = addDays(today, -10),
+    far = addDays(CUR, 7);
+  const page = await boot({ seed: seed7([{ date, periodStart: far }]) });
+  try {
+    page.tab('periods');
+    await editDate(page, date, addDays(today, -9)); // same finished week: the far pick isn't offered around it
+    assert.notEqual(weekSel(page).value, far);
+    assert.equal(note(page).hidden, false);
+    await save(page);
+    page.click(page.button('Keep where it is', page.must(ask(page), 'confirmation')));
+    await page.settle();
+    assert.equal(dateInput(page).value, date);
+    assert.equal(weekSel(page).value, far);
+    assert.equal(note(page).hidden, true);
+    await save(page);
+    assert.equal(ask(page), null);
+    assert.equal(night(page).date, date);
+    assert.equal(night(page).periodStart, far);
+  } finally {
+    await page.close();
+  }
+});
+
+test('the dropped-pick status line is not rewritten while typing elsewhere', async () => {
+  const from = addDays(today, -5);
+  const page = await boot({ seed: seed([{ date: from, periodStart: CUR }]) });
+  try {
+    page.tab('periods');
+    await editDate(page, from, addDays(today, -20));
+    const line = note(page);
+    assert.equal(line.hidden, false);
+    let records = 0;
+    const mo = new page.win.MutationObserver((l) => (records += l.length));
+    mo.observe(line, { attributes: true, childList: true, characterData: true, subtree: true });
+    const total = page.must(page.$('[data-focus-key$="-total"]', page.app), 'total');
+    for (const v of ['3', '31', '310']) page.type(total, v);
+    await page.settle();
+    mo.disconnect();
+    assert.equal(records, 0, 'no rewrites, so it is not announced again');
+    assert.equal(line.hidden, false);
+  } finally {
+    await page.close();
+  }
+});
