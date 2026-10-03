@@ -387,7 +387,7 @@ function editor(S, n) {
         'This changes a finished pay period’s totals (' + what + '). Move it?',
         ks.some(compared)
           ? ' You already compared this pay period’s paycheck; the comparison won’t change automatically.'
-          : '',
+          : null,
       ),
       el('div', { class: 'cluster' }, moveBtn, keepBtn),
     );
