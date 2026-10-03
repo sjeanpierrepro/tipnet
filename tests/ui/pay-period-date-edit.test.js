@@ -87,6 +87,9 @@ test('reviewer repro: current to the adjacent finished period by date asks, then
     assert.match(sel.options[1].textContent, /\(this night’s date\)/);
     await save(page);
     assert.ok(page.text(page.must(ask(page), 'confirmation')).includes(label(PREV)));
+    // one paragraph, then the buttons: nothing empty between them
+    assert.equal(ask(page).querySelectorAll('p').length, 1);
+    assert.equal(ask(page).querySelector('p').childNodes.length, 1);
     assert.equal(night(page).date, from, 'nothing saved before Move night');
     await move(page);
     const n = night(page);
