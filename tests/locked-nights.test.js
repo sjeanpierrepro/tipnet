@@ -26,7 +26,10 @@ test('snapshotFor keeps the rates, pay types, tip-out, fixed total and shift bas
   assert.equal(s.n, 9);
   assert.deepEqual(s.pay[0], { id: 'p1', rate: 12, unit: 'hr', usual: 7 });
   assert.deepEqual(s.pay[2], { id: 'p3', rate: 0, unit: 'amt', supp: 1 });
-  assert.deepEqual(s.tipout, { on: true, mode: 'pct', value: 15, basis: 'before', from: 'cash' });
+  assert.deepEqual(s.tipout, { on: true, basis: 'before' });
+  assert.deepEqual(s.tipouts, [
+    { id: 't1', k: 'barback', who: 'Barback', mode: 'pctTips', value: 15, from: 'cash' },
+  ]);
   assert.equal(M.snapshotFor({ ...P(), shifts: 0 }).n, 8, 'no shift count: about 4 a week');
   // a snapshot is plain data: a JSON round trip changes nothing
   assert.deepEqual(JSON.parse(JSON.stringify(s)), s);

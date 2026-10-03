@@ -1,6 +1,16 @@
 // TipNet persistence: state shape, migration, backup codes, IndexedDB + localStorage.
 // The pure helpers (seedState, migrate, encodeBackup, decodeBackup) work in Node with no browser APIs.
-import { exampleProfile, exampleNights, num, parseISO, todayISO, lockFinishedNights } from './math.js';
+import {
+  exampleProfile,
+  exampleNights,
+  num,
+  parseISO,
+  todayISO,
+  lockFinishedNights,
+  legacyTipouts,
+  TIPOUT_PRESETS,
+  TIPOUT_MODES,
+} from './math.js';
 import { emptyBudget, migrateBudget } from './budget.js';
 
 export const SCHEMA_VERSION = 3;
@@ -113,6 +123,7 @@ function safeIdsInPlace(S) {
     each(p.payTypes, (t) => fix(t, 'id'));
     each(p.deductions, (d) => fix(d, 'id'));
     each(p.nontaxable, (x) => fix(x, 'id'));
+    each(p.tipouts, (x) => fix(x, 'id'));
   };
   each(S.workplaces, (w) => {
     fix(w, 'id');
@@ -129,7 +140,17 @@ function safeIdsInPlace(S) {
       });
       n.pay = pay;
     }
-    if (isObj(n.snap)) each(n.snap.pay, (t) => fix(t, 'id'));
+    if (isObj(n.tipouts)) {
+      const t = {};
+      Object.keys(n.tipouts).forEach((k) => {
+        t[safeId(k)] = n.tipouts[k];
+      });
+      n.tipouts = t;
+    }
+    if (isObj(n.snap)) {
+      each(n.snap.pay, (t) => fix(t, 'id'));
+      each(n.snap.tipouts, (x) => fix(x, 'id'));
+    }
   });
   const s = S.settings;
   if (isObj(s)) {
@@ -202,6 +223,33 @@ function cleanNontax(list) {
       recurring: x.recurring !== false,
     }));
 }
+/**
+ * Tip-outs of a profile or a snapshot, cleaned: {tipout: {on, basis}, tipouts: [{id, k, who, mode, value, from}]}.
+ * The old single {on, mode, value, basis, from} (no tipouts list) becomes one Barback when on, else an empty list.
+ */
+const TIPOUT_KEYS = TIPOUT_PRESETS.map((x) => x.k);
+function cleanTipoutSetup(src) {
+  const to = isObj(src.tipout) ? src.tipout : {};
+  const list = Array.isArray(src.tipouts) ? src.tipouts : legacyTipouts(to);
+  const seen = new Set();
+  const tipouts = list
+    .filter(isObj)
+    .slice(0, 20)
+    .map((x, i) => {
+      const k = TIPOUT_KEYS.includes(x.k) ? x.k : 'other';
+      const preset = TIPOUT_PRESETS.find((pr) => pr.k === k);
+      const who = typeof x.who === 'string' ? x.who.trim().slice(0, 40) : '';
+      return {
+        id: uniqueId(x.id, seen, 't', i + 1),
+        k,
+        who: who || preset.name,
+        mode: TIPOUT_MODES.includes(x.mode) ? x.mode : x.mode === 'flat' ? 'flat' : 'pctTips',
+        value: Math.max(0, numOr0(x.value)),
+        from: x.from === 'payroll' || x.from === 'check' ? 'payroll' : 'cash',
+      };
+    });
+  return { tipout: { on: !!to.on, basis: to.basis === 'after' ? 'after' : 'before' }, tipouts };
+}
 function cleanDeductions(list) {
   const seen = new Set();
   return (Array.isArray(list) ? list : [])
@@ -242,7 +290,6 @@ function cleanSnap(s) {
       if (t.nontax) o.nontax = 1;
       return o;
     });
-  const to = isObj(s.tipout) ? s.tipout : {};
   const out = {
     v: 1,
     r: s.r,
@@ -250,13 +297,7 @@ function cleanSnap(s) {
     fixed: s.fixed,
     n: s.n,
     pay,
-    tipout: {
-      on: !!to.on,
-      mode: to.mode === 'flat' ? 'flat' : 'pct',
-      value: numOr0(to.value),
-      basis: text(to.basis, 'before') || 'before',
-      from: text(to.from, 'cash') || 'cash',
-    },
+    ...cleanTipoutSetup(s), // an older snapshot's single tip-out becomes its list of one (or none)
   };
   if (finiteIn(s.nontax, 0.01, 1e7)) out.nontax = s.nontax; // recurring non-taxable money per check
   // a night recalculated in a finished period: the period's own fixed deductions and non-taxable money (periodTerms)
@@ -306,6 +347,23 @@ function cleanNights(list) {
         barback: n.barback === undefined ? true : !!n.barback,
         workplaceId: n.workplaceId,
       };
+      // who was tipped out tonight ({recipientId: true|false}); older nights only have barback (everyone or nobody)
+      if (isObj(n.tipouts)) {
+        const t = {};
+        Object.keys(n.tipouts)
+          .slice(0, 30)
+          .forEach((k) => {
+            if (k) t[k] = n.tipouts[k] === true;
+          });
+        o.tipouts = t;
+      }
+      // tonight's sales, for a % of sales tip-out
+      if (
+        (typeof n.sales === 'number' || (typeof n.sales === 'string' && n.sales.trim() !== '')) &&
+        Number.isFinite(parseFloat(n.sales)) &&
+        num(n.sales) >= 0
+      )
+        o.sales = Math.round(num(n.sales) * 100) / 100;
       if (n.cashOffPayroll === true && hasCash) o.cashOffPayroll = true;
       if (typeof n.tips === 'number' && Number.isFinite(n.tips) && n.tips >= 0)
         o.tips = Math.round(n.tips * 100) / 100;
@@ -399,14 +457,8 @@ function cleanProfile(p, { startFallback, entryDefault }) {
   // Non-taxable earnings on the stub (only written once there is one, so older saves look the same)
   const nt = cleanNontax(p.nontaxable);
   if (nt.length) out.nontaxable = nt;
-  const to = isObj(p.tipout) ? p.tipout : {};
-  out.tipout = {
-    on: !!to.on,
-    mode: to.mode === 'flat' ? 'flat' : 'pct',
-    value: numOr0(to.value),
-    basis: text(to.basis, 'before') || 'before',
-    from: text(to.from, 'cash') || 'cash',
-  };
+  // Tip-outs: the switch and basis, and the people tipped out (an old single tip-out becomes one Barback, or nobody when off)
+  Object.assign(out, cleanTipoutSetup(p));
   // "Cash tips here usually aren't run through payroll": the default for each new night (false for all old data)
   out.cashOffPayroll = p.cashOffPayroll === true;
   out.entryMode = ENTRY_MODES.includes(p.entryMode) ? p.entryMode : entryDefault;

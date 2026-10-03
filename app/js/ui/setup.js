@@ -27,6 +27,7 @@ import {
   findNontaxPreset,
   nontaxOnStub,
   taxableGross,
+  TIPOUT_PRESETS,
 } from '../math.js';
 import { budgetVisible, isUnlocked } from '../billing.js';
 import { subscriptionLine } from './budget.js';
@@ -155,8 +156,8 @@ function blankProfile() {
     t.rate = 0;
     t.usual = 0;
   });
-  b.tipout.on = false;
-  b.tipout.value = 0;
+  b.tipout = { on: false, basis: 'before' };
+  b.tipouts = [];
   b.entryMode = 'tips'; // new users type their tips; TipNet adds the hourly pay
   return b;
 }
@@ -1249,49 +1250,205 @@ function payCard(ctx) {
   return card;
 }
 
-/* ============ 4. tip-out ============ */
+/* ============ 4. tip-outs ============ */
+/** A plain reason the tip-outs can't be saved yet, else ''. */
+export function tipoutProblem(p) {
+  const to = p.tipout || {};
+  if (!to.on) return '';
+  const list = Array.isArray(p.tipouts) ? p.tipouts : [];
+  if (!list.length) return 'Add someone you tip out, or turn tip-outs off.';
+  if (list.some((r) => !(num(r.value) > 0))) return 'Enter how much you tip out each person, or remove them.';
+  if (list.some((r) => r.mode !== 'flat' && num(r.value) > 100)) return 'A tip-out can’t be more than 100%.';
+  return '';
+}
+let tipoutSeq = 0;
+/** A new person to tip out: the first preset not used yet (Barback, Runner, Busser...). */
+function newTipout(list) {
+  const used = list.map((r) => r.k);
+  const pr =
+    TIPOUT_PRESETS.find((x) => x.k !== 'other' && !used.includes(x.k)) ||
+    TIPOUT_PRESETS[TIPOUT_PRESETS.length - 1];
+  return {
+    id: 't' + Date.now().toString(36) + (tipoutSeq++ ? '_' + tipoutSeq : ''),
+    k: pr.k,
+    who: pr.name,
+    mode: 'pctTips',
+    value: 0,
+    from: 'cash',
+  };
+}
 function tipoutCard(ctx) {
   const { p, ph } = ctx;
+  if (!p.tipout || typeof p.tipout !== 'object') p.tipout = { on: false, basis: 'before' };
+  if (!Array.isArray(p.tipouts)) p.tipouts = [];
   const to = p.tipout;
   const on = el('input', { type: 'checkbox', id: 'to-on' });
   on.checked = !!to.on;
-  const mode = select(
-    [
-      ['pct', 'A % of my tips'],
-      ['flat', 'A flat $ per shift'],
-    ],
-    to.mode,
-  );
-  const value = moneyInput({
-    value: to.value ? String(to.value) : '',
-    placeholder: ph ? eg(ph.tipout.value) : null,
-  });
   const basis = select(
     [
       ['before', 'Before tip-out'],
       ['after', 'After tip-out'],
     ],
-    to.basis,
+    to.basis === 'after' ? 'after' : 'before',
+    { id: 'to-basis' },
   );
-  const from = select(
-    [
-      ['cash', 'My cash'],
-      ['check', 'Payroll'],
-    ],
-    to.from,
+  const basisHint = el('p', { class: 'hint', id: 'to-basis-note' });
+  const rowsHost = el('div', { class: 'stack-sm', id: 'to-rows' });
+  const listErr = el('p', { class: 'field-error', role: 'alert', hidden: true, id: 'to-err' });
+  const amountFields = []; // [{r, f, input}] for the rows on screen
+  const exampleValue = ph && Array.isArray(ph.tipouts) && ph.tipouts[0] ? ph.tipouts[0].value : null;
+  const amountLabel = (r) =>
+    r.mode === 'flat' ? 'Dollars a night' : r.mode === 'pctSales' ? 'Percent of sales' : 'Percent of tips';
+  const rowProblem = (r) =>
+    !(num(r.value) > 0)
+      ? 'Enter how much, or remove ' + r.who + '.'
+      : r.mode !== 'flat' && num(r.value) > 100
+        ? 'A tip-out can’t be more than 100%.'
+        : '';
+  const focusEl = (id) => {
+    const n = document.getElementById(id);
+    if (n) n.focus();
+  };
+  const drawRows = () => {
+    clear(rowsHost);
+    amountFields.length = 0;
+    p.tipouts.forEach((r) => {
+      const who = el('select', { id: 'tw-' + r.id });
+      TIPOUT_PRESETS.forEach((pr) => who.append(el('option', { value: pr.k }, pr.name)));
+      who.value = r.k;
+      if (who.value !== r.k) who.value = 'other';
+      const kids = [field('Who', who)];
+      if (who.value === 'other') {
+        const nm = el('input', {
+          type: 'text',
+          id: 'tn-' + r.id,
+          value: r.who === 'Other' ? '' : r.who,
+          placeholder: 'e.g. Sushi bar',
+          maxlength: '40',
+          autocomplete: 'off',
+        });
+        nm.addEventListener('input', () => {
+          r.who = nm.value.trim().slice(0, 40) || 'Other';
+          ctx.touch(false);
+        });
+        kids.push(field('Name', nm));
+      }
+      const amt = moneyInput({
+        id: 'tv-' + r.id,
+        value: r.value ? String(r.value) : '',
+        placeholder:
+          exampleValue && r.mode === 'pctTips' ? eg(exampleValue) : r.mode === 'flat' ? '0.00' : '0',
+      });
+      const fAmt = field(amountLabel(r), amt);
+      const mode = select(
+        [
+          ['pctTips', '% of my tips'],
+          ['pctSales', '% of sales'],
+          ['flat', 'Flat $ a night'],
+        ],
+        r.mode,
+        { id: 'tm-' + r.id },
+      );
+      const from = select(
+        [
+          ['cash', 'From my cash'],
+          ['payroll', 'Through payroll'],
+        ],
+        r.from === 'payroll' ? 'payroll' : 'cash',
+        { id: 'tf-' + r.id },
+      );
+      kids.push(el('div', { class: 'grid-2' }, fAmt, field('How', mode)));
+      kids.push(field('Paid', from));
+      const rm = el(
+        'button',
+        { type: 'button', class: 'btn btn-secondary btn-small', 'aria-label': 'Remove ' + r.who },
+        'Remove',
+      );
+      kids.push(el('div', null, rm));
+      amountFields.push({ r, f: fAmt, input: amt });
+      who.addEventListener('change', () => {
+        const pr = TIPOUT_PRESETS.find((x) => x.k === who.value) || TIPOUT_PRESETS[TIPOUT_PRESETS.length - 1];
+        r.k = pr.k;
+        r.who = pr.name;
+        ctx.touch(false);
+        drawRows();
+        focusEl('tw-' + r.id);
+      });
+      // decimals are fine (1.25%); a typed value applies as it is typed
+      amt.addEventListener('input', () => {
+        r.value = Math.max(0, numOf(amt.value));
+        ctx.touch(false);
+      });
+      amt.addEventListener('blur', () => {
+        ctx.seen.add(fAmt);
+        sync();
+      });
+      mode.addEventListener('change', () => {
+        r.mode = mode.value;
+        fAmt.querySelector('label').textContent = amountLabel(r);
+        ctx.touch(false);
+      });
+      from.addEventListener('change', () => {
+        r.from = from.value;
+        ctx.touch(false);
+      });
+      rm.addEventListener('click', () => {
+        const at = p.tipouts.indexOf(r);
+        p.tipouts = p.tipouts.filter((x) => x !== r);
+        ctx.touch(false);
+        drawRows();
+        focusNear(rowsHost, at, 'to-add');
+        toast('Removed ' + r.who + '.', {
+          undo: () => {
+            if (p.tipouts.includes(r)) return;
+            p.tipouts.splice(Math.min(at, p.tipouts.length), 0, r);
+            ctx.touch(false);
+            drawRows();
+            focusEl('tw-' + r.id);
+          },
+        });
+      });
+      rowsHost.append(
+        el(
+          'div',
+          {
+            class: 'repeat-row',
+            role: 'group',
+            'aria-label': r.who,
+            style: 'grid-template-columns:minmax(0,1fr)',
+          },
+          kids,
+        ),
+      );
+    });
+    if (!p.tipouts.length) rowsHost.append(el('p', { class: 'hint' }, 'Nobody yet.'));
+    sync();
+  };
+  const add = el(
+    'button',
+    { type: 'button', class: 'btn btn-secondary btn-small', id: 'to-add' },
+    '+ Add someone you tip out',
   );
-  const fValue = field('Amount', value);
+  add.addEventListener('click', () => {
+    const r = newTipout(p.tipouts);
+    p.tipouts.push(r);
+    ctx.touch(false);
+    drawRows();
+    focusEl('tw-' + r.id);
+  });
   const fields = el(
     'div',
     { class: 'stack' },
-    el('div', { class: 'grid-2' }, field('Tip-out is', mode), fValue),
+    field('The number I enter is', basis),
+    basisHint,
+    rowsHost,
+    el('div', null, add),
+    listErr,
     el(
-      'div',
-      { class: 'grid-2' },
-      field('The number I enter is', basis),
-      field('Barback gets paid from', from),
+      'p',
+      { class: 'hint' },
+      'A % of tips comes out of your tips only, never your hourly pay. Decimals are fine, like 1.25%. On Tonight you tick who you tipped out that night.',
     ),
-    el('p', { class: 'hint' }, 'The tip-out percentage applies to your tips only, never to your hourly pay.'),
   );
   const offCb = el('input', {
     type: 'checkbox',
@@ -1323,42 +1480,35 @@ function tipoutCard(ctx) {
       ),
     ),
   );
-  const sync = () => {
+  function sync() {
     fields.hidden = !to.on;
-    fValue.querySelector('label').textContent = to.mode === 'pct' ? 'Percent of tips' : 'Dollars per shift';
-    from.disabled = to.basis === 'after';
-    ctx.gate(fValue, to.on && !(num(to.value) > 0) ? 'Enter the tip-out amount, or turn tip-outs off.' : '');
-  };
+    const bt =
+      to.basis === 'after'
+        ? 'You type what you made after tipping out, so TipNet doesn’t take the tip-outs out again.'
+        : 'TipNet takes the tip-outs below out of what you type.';
+    if (basisHint.textContent !== bt) basisHint.textContent = bt;
+    amountFields.forEach(({ r, f }) => ctx.gate(f, to.on ? rowProblem(r) : ''));
+    const lm = to.on && !p.tipouts.length ? 'Add someone you tip out, or turn tip-outs off.' : '';
+    listErr.hidden = !(lm && (ctx.showAll || ctx.seen.has(listErr)));
+    listErr.textContent = listErr.hidden ? '' : lm;
+  }
   ctx.live.push(sync);
   on.addEventListener('change', () => {
     to.on = on.checked;
+    // turning tip-outs on with nobody in the list starts with one person to fill in
+    if (to.on && !p.tipouts.length) p.tipouts.push(newTipout(p.tipouts));
     ctx.touch(false);
-  });
-  mode.addEventListener('change', () => {
-    to.mode = mode.value;
-    ctx.touch(false);
-  });
-  value.addEventListener('input', () => {
-    to.value = numOf(value.value);
-    ctx.touch(false);
+    drawRows();
   });
   basis.addEventListener('change', () => {
     to.basis = basis.value;
     ctx.touch(false);
   });
-  from.addEventListener('change', () => {
-    to.from = from.value;
-    ctx.touch(false);
-  });
-  value.addEventListener('blur', () => {
-    ctx.seen.add(fValue);
-    sync();
-  });
-  sync();
+  drawRows();
   const card = el(
     'section',
     { class: 'card stack' },
-    el('h2', null, 'Barback tip-out'),
+    el('h2', null, 'Tip-outs'),
     el(
       'label',
       { class: 'check', for: 'to-on' },
@@ -1366,8 +1516,12 @@ function tipoutCard(ctx) {
       el(
         'span',
         null,
-        'My bar has barback tip-outs',
-        el('small', null, 'Leave unchecked if you don’t tip out a barback.'),
+        'I tip out',
+        el(
+          'small',
+          null,
+          'Barbacks, runners, bussers, the bar or the kitchen. Leave unchecked if you don’t.',
+        ),
       ),
     ),
     fields,
@@ -1376,9 +1530,14 @@ function tipoutCard(ctx) {
   card.validate = () => {
     ctx.showAll = true;
     sync();
-    return !to.on || num(to.value) > 0;
+    return !tipoutProblem(p);
   };
-  card.firstInvalid = () => (to.on && !(num(to.value) > 0) ? value : null);
+  card.firstInvalid = () => {
+    if (!to.on) return null;
+    if (!p.tipouts.length) return add;
+    const bad = amountFields.find(({ r }) => rowProblem(r));
+    return bad ? bad.input : null;
+  };
   return card;
 }
 
@@ -2039,8 +2198,8 @@ function draftProblems(S, w, d) {
     out.push('Type at least one deduction amount, or tick “My paystub has no deductions.”');
   const main = (p.payTypes || [])[0];
   if (!main || (main.unit !== 'amt' && !(num(main.rate) > 0))) out.push('Enter your main job’s rate.');
-  if (p.tipout && p.tipout.on && !(num(p.tipout.value) > 0))
-    out.push('Enter the tip-out amount, or turn tip-outs off.');
+  const tp = tipoutProblem(p);
+  if (tp) out.push(tp);
   return out;
 }
 

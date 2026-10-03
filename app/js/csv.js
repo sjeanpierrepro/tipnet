@@ -120,6 +120,8 @@ export const MAPPING_PRESETS = {
       card: ['card', 'card tips', 'credit tips', 'credit card tips', 'non-cash tips'],
       hours: ['hours', 'regular hours', 'hours worked', 'total hours'],
       employee: ['employee', 'name', 'employee name', 'server'],
+      sales: ['sales', 'net sales', 'total sales', 'gross sales', 'sales total'],
+      barback: ['barback', 'tip-out', 'tipout', 'tip out', 'tipped out', 'barback tip-out'],
     },
   },
   // Phase 2 seam: fill in once a real Toast labor/tips export is available. Header names below are
@@ -152,7 +154,9 @@ export function guessMapping(headerRow, preset = 'generic') {
         !/cash|card|credit/.test(h) &&
         i !== out.cash &&
         i !== out.card &&
-        i !== out.total,
+        i !== out.total &&
+        i !== out.barback &&
+        !/tip[- ]?out|tipped/.test(h),
     );
   if (out.tips === -1) out.tips = null;
   if (out.total != null && /tip/.test(hs[out.total]) && out.tips == null) {
@@ -200,12 +204,23 @@ export function listEmployees(rows, mapping) {
  * buildNights(rows, mapping, opts) -> {nights, skipped}
  *  rows: DATA rows (no header) as arrays. mapping: column indexes {date,total,tips,cash,card,hours,employee}.
  *  opts: {today (ISO; dates after tomorrow are skipped as 'date'), employee, refYear, rate (hourly $ for hours*rate), payId (id of the first HOURLY pay type; hours are stored there;
- *         null = no hourly pay type, so hours are ignored), barback (default true)}
+ *         null = no hourly pay type, so hours are ignored), barback (default true: everyone was tipped out)}
+ *  mapping.barback: a "tipped out" column (yes/no, y/n, true/false, 1/0, x): yes = everyone set up in Setup was tipped out
+ *  that night, no = nobody (a blank cell uses opts.barback). mapping.sales: tonight's sales, for a % of sales tip-out.
  *  total = total column, else tips (or cash + card) + hours * rate. Without a Total column the night also stores `tips`
  *  (the Tips column, or cash + card). Several rows on the same date are summed.
- *  Night: {id, date, total, cash|null, [tips], pay:{[payId]:hours}, barback}. skipped: [{row, reason}] (row = 1-based data row;
+ *  Night: {id, date, total, cash|null, [tips], [sales], pay:{[payId]:hours}, barback, [barbackSet: the file said]}. skipped: [{row, reason}] (row = 1-based data row;
  *  reason is 'date', 'amount', 'hours' (unreadable, ambiguous or over 24), or 'negative' for a negative money or hours value).
  */
+/** A yes/no cell: true, false, or null when blank or unreadable. */
+export function yesNo(v) {
+  const s = String(v == null ? '' : v)
+    .trim()
+    .toLowerCase();
+  if (/^(y|yes|true|1|x|✓|✔)$/.test(s)) return true;
+  if (/^(n|no|false|0|-)$/.test(s)) return false;
+  return null;
+}
 export function buildNights(rows, mapping, opts = {}) {
   const { employee, refYear, rate = 0, payId = 'p1', barback = true, today } = opts;
   const useHours = payId != null;
@@ -223,6 +238,8 @@ export function buildNights(rows, mapping, opts = {}) {
     const card = mapping.card != null ? parseMoney(r[mapping.card]) : null;
     const tips = mapping.tips != null ? parseMoney(r[mapping.tips]) : null;
     const hours = mapping.hours != null && useHours ? parseHours(r[mapping.hours]) : 0;
+    const sales = mapping.sales != null ? parseMoney(r[mapping.sales]) : null;
+    const out = mapping.barback != null ? yesNo(r[mapping.barback]) : null;
     let total = mapping.total != null ? parseMoney(r[mapping.total]) : null;
     const hadTotal = total != null;
     // A negative amount or hours (refund, void, typo) is not a night we can trust: skip the row and say why.
@@ -232,6 +249,7 @@ export function buildNights(rows, mapping, opts = {}) {
       (card != null && card < 0) ||
       (tips != null && tips < 0) ||
       (total != null && total < 0) ||
+      (sales != null && sales < 0) ||
       negHours
     ) {
       skipped.push({ row: rowNo, reason: 'negative' });
@@ -250,7 +268,18 @@ export function buildNights(rows, mapping, opts = {}) {
       }
       total = fromCents(toCents(tipsAmt || 0) + toCents(hours * rate));
     }
-    const cur = byDate.get(date) || { date, totalC: 0, cashC: null, tipsC: null, hours: 0, noTips: false };
+    const cur = byDate.get(date) || {
+      date,
+      totalC: 0,
+      cashC: null,
+      tipsC: null,
+      hours: 0,
+      noTips: false,
+      salesC: null,
+      out: null,
+    };
+    if (sales != null) cur.salesC = (cur.salesC || 0) + toCents(sales);
+    if (out != null) cur.out = !!(cur.out || out); // tipped out on any row of that date
     cur.totalC += toCents(total);
     if (cash != null) cur.cashC = (cur.cashC || 0) + toCents(cash);
     // A Total column wins: that row's total is stored as is, and no tips are stored beside it (tips + current pay could differ).
@@ -271,8 +300,10 @@ export function buildNights(rows, mapping, opts = {}) {
         total: fromCents(c.totalC),
         cash: c.cashC == null ? null : fromCents(c.cashC),
         pay: c.hours ? { [payId]: c.hours } : {},
-        barback,
+        barback: c.out == null ? barback : c.out,
       };
+      if (c.out != null) n.barbackSet = true;
+      if (c.salesC != null) n.sales = fromCents(c.salesC);
       if (c.tipsC != null && !c.noTips) n.tips = fromCents(c.tipsC);
       return n;
     });
@@ -295,11 +326,18 @@ export function dedupeNights(incoming, existing) {
 }
 /**
  * Merge incoming nights into existing. overwrite=true replaces EVERY existing night on a duplicate date with the imported
- * night. With exactly one existing night it keeps that night's id, barback choice, other pay types, and cash when the
- * import has none; with several it uses the imported night as is (first night's id and barback choice). false keeps them all
+ * night. With exactly one existing night it keeps that night's id, tip-out choices, other pay types, and cash when the
+ * import has none; with several it uses the imported night as is (first night's id and tip-out choices). A tipped-out
+ * column in the file (barbackSet) wins over the saved choices: everyone or nobody. false keeps them all
  * and skips those dates. Returns new array + counts (replaced = dates replaced, removed = existing nights removed).
  */
 export function mergeNights(existing, incoming, { overwrite = false } = {}) {
+  const clean = (n) => {
+    if (!('barbackSet' in n)) return n;
+    const o = { ...n };
+    delete o.barbackSet;
+    return o;
+  };
   const { fresh, duplicates } = dedupeNights(incoming, existing);
   let out = existing.slice();
   let removed = 0;
@@ -309,21 +347,27 @@ export function mergeNights(existing, incoming, { overwrite = false } = {}) {
     removed = existing.length - out.length;
     out.push(
       ...duplicates.map(({ incoming: inc, existing: ex, existingAll: all }) => {
-        if (all.length !== 1) return { ...inc, id: ex.id, barback: ex.barback };
+        const fromFile = !!inc.barbackSet;
+        if (all.length !== 1) {
+          const o = { ...inc, id: ex.id, barback: fromFile ? inc.barback : ex.barback };
+          if (!fromFile && ex.tipouts) o.tipouts = ex.tipouts;
+          return clean(o);
+        }
         const merged = {
           ...ex,
           ...inc,
           id: ex.id,
           cash: inc.cash ?? ex.cash ?? null,
           pay: { ...ex.pay, ...inc.pay },
-          barback: ex.barback,
+          barback: fromFile ? inc.barback : ex.barback,
         };
+        if (fromFile) delete merged.tipouts; // the file says everyone or nobody
         if (inc.tips === undefined) delete merged.tips; // the old tips no longer match the new total
-        return merged;
+        return clean(merged);
       }),
     );
   }
-  out.push(...fresh);
+  out.push(...fresh.map(clean));
   return {
     nights: out,
     added: fresh.length,

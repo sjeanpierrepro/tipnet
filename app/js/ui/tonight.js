@@ -20,6 +20,8 @@ import {
   findPayPreset,
   exampleProfile,
   exampleNights,
+  tipoutSetup,
+  tippedOut,
 } from '../math.js';
 import {
   businessDate,
@@ -89,6 +91,27 @@ const same = (a, b) => String(a) === String(b);
 const typeById = (p, id) => (p.payTypes || []).find((t) => same(t.id, id));
 const fmtHrs = (h) => String(Math.round(h * 100) / 100);
 
+/**
+ * The people a draft can tick as tipped out: from the locked night's own tip-outs (d.tipoutSnap, set by draftFromNight)
+ * or the restaurant's Setup. [] unless tip-outs are on and the number typed is before tip-out.
+ */
+export function draftTipouts(d, p) {
+  const ts = tipoutSetup((d && d.tipoutSnap) || p);
+  return ts.on && ts.basis === 'before' ? ts.list : [];
+}
+/** Ticked unless unticked: everyone starts ticked on a new night. */
+const ticked = (d, r) => !(d.tipouts && d.tipouts[r.id] === false);
+/** True when someone ticked tonight is tipped out a % of sales: the entry then needs tonight's sales. */
+export const salesNeeded = (d, p) => draftTipouts(d, p).some((r) => r.mode === 'pctSales' && ticked(d, r));
+export const SALES_MSG = 'Enter tonight’s sales for the % of sales tip-out.';
+/** "15%" / "1.25%": a tip-out percentage as typed. */
+const pctText = (v) => String(Math.round(num(v) * 1000) / 1000) + '%';
+/** "15% of tips", "1.25% of sales", "$20 flat": what one person gets. */
+export function tipoutHow(r) {
+  if (r.mode === 'flat') return money(num(r.value)) + ' flat';
+  return pctText(r.value) + (r.mode === 'pctSales' ? ' of sales' : ' of tips');
+}
+
 /** Drop the in-progress entry and the example view (e.g. after Erase everything or Restore). */
 export function resetDraft() {
   drafts.clear();
@@ -129,6 +152,8 @@ export function blankDraft(S, p) {
     rows: main ? [main.id] : [],
     showOther: false,
     barback: true,
+    tipouts: {}, // who was tipped out tonight (recipient id -> false when unticked); everyone is ticked to start
+    sales: '',
     cashOffPayroll: !!p.cashOffPayroll, // pre-ticked from the restaurant's Setup default until tonight's box is touched
     date: tonightOf(S),
   };
@@ -158,10 +183,17 @@ export function draftFromNight(n, p) {
     rows: [],
     showOther: false,
     barback: n.barback !== false,
+    tipouts: {},
+    sales: n.sales == null ? '' : String(n.sales),
+    tipoutSnap: n.snap || null, // a locked night ticks its own tip-out people
     cashOffPayroll: !!n.cashOffPayroll,
     cashOffTouched: true, // a saved night keeps its own choice, whatever Setup says now
     date: n.date,
   };
+  // who was tipped out that night (an older night: everyone or nobody, from its barback choice)
+  draftTipouts(d, p).forEach((r) => {
+    d.tipouts[r.id] = tippedOut(n, r);
+  });
   p.payTypes.forEach((t, i) => {
     const a = payAmount(n, t, i);
     if (payKind(t, i) === 'job') {
@@ -222,6 +254,20 @@ export function liveNight(d, id, p, { snap } = {}) {
     pay,
     barback: d.barback,
   };
+  // Who was tipped out tonight (everyone ticked unless unticked), and tonight's sales when a ticked person gets a % of them.
+  const people = draftTipouts(d, p);
+  if (people.length) {
+    const m = {};
+    people.forEach((r) => {
+      m[r.id] = ticked(d, r);
+    });
+    night.tipouts = m;
+    night.barback = people.some((r) => m[r.id]);
+    if (salesNeeded(d, p)) {
+      const s = typedAmount(d.sales);
+      if (s != null && s >= 0) night.sales = round2(s);
+    }
+  }
   if (d.cashOffPayroll && cash !== '') night.cashOffPayroll = true;
   if (tipsMode(p)) {
     const t = typedAmount(d.total);
@@ -246,8 +292,10 @@ export function storedNight(d, p, id, { snap } = {}) {
     total: tipsMode(p) ? num(ln.total) : numOf(d.total),
     cash: ln.cash === '' ? null : numOf(ln.cash),
     pay,
-    barback: d.barback,
+    barback: ln.barback,
   };
+  if (ln.tipouts) out.tipouts = ln.tipouts;
+  if (ln.sales != null) out.sales = ln.sales;
   if (ln.cashOffPayroll) out.cashOffPayroll = true;
   if (tipsMode(p) && hasTips(ln)) out.tips = ln.tips;
   return out;
@@ -313,7 +361,8 @@ export function entryProblem(p, d, when = 'tonight') {
   return '';
 }
 /**
- * Everything that blocks saving, in the order the person meets it: {where: 'total'|'hours'|'date', msg, id?} or null.
+ * Everything that blocks saving, in the order the person meets it: {where: 'total'|'hours'|'sales'|'date', msg, id?} or
+ * null. 'sales': someone ticked tonight is tipped out a % of sales and tonight's sales aren't entered.
  * today: the business date for tonight (dates may be at most one day after it).
  */
 export function entryCheck(p, d, { when = 'tonight', today = todayISO() } = {}) {
@@ -325,6 +374,11 @@ export function entryCheck(p, d, { when = 'tonight', today = todayISO() } = {}) 
   if (bad.msg) return { where: 'hours', msg: bad.msg, id: bad.id };
   if (tipsMode(p) && !(num(liveNight(d, 'check', p).total) > 0))
     return { where: 'total', msg: 'Enter your tips or your hours first.' };
+  if (salesNeeded(d, p)) {
+    const s = typedAmount(d.sales);
+    if (s == null) return { where: 'sales', msg: SALES_MSG };
+    if (s < 0) return { where: 'sales', msg: 'Sales can’t be a negative number.' };
+  }
   const dp = dateProblem(d.date, today);
   if (dp) return { where: 'date', msg: dp };
   return null;
@@ -344,6 +398,18 @@ export function mergeNights(a, b, p) {
   const tb = a.snap ? num(b.total) : nightTotal(b, p);
   const out = { ...a, total: round2(nightTotal(a, p) + tb), cash, pay };
   delete out.tips;
+  // Tip-outs: someone tipped out in either part was tipped out that night; sales add up.
+  if (a.tipouts || b.tipouts) {
+    const m = {};
+    const ids = new Set([...Object.keys(a.tipouts || {}), ...Object.keys(b.tipouts || {})]);
+    ids.forEach((id) => {
+      const on = (x) => (x.tipouts ? x.tipouts[id] === true : !!x.barback);
+      m[id] = on(a) || on(b);
+    });
+    out.tipouts = m;
+  }
+  out.barback = !!(a.barback || b.barback);
+  if (a.sales != null || b.sales != null) out.sales = round2(num(a.sales) + num(b.sales));
   // cash skipped payroll only if every part of the night's cash did (a part with no cash doesn't count)
   const offA = !!a.cashOffPayroll || a.cash == null,
     offB = !!b.cashOffPayroll || b.cash == null;
@@ -389,14 +455,15 @@ export function nightFields(
     refresh();
     onInputRaw();
   };
-  const to = p.tipout || {};
-  const after = to.on && to.basis === 'after';
+  const ts = tipoutSetup(d.tipoutSnap || p);
+  const after = ts.on && ts.basis === 'after';
+  const people = draftTipouts(d, p); // the people who can be ticked tonight
   const tips = tipsMode(p);
   const hintText = tips
-    ? (after ? 'Cash tips + card tips, after paying the barback.' : 'Cash tips + card tips.') +
+    ? (after ? 'Cash tips + card tips, after tip-outs.' : 'Cash tips + card tips.') +
       ' TipNet adds the pay for the jobs below.'
     : after
-      ? 'Cash + card tips + all hourly pay, after the barback tip-out.'
+      ? 'Cash + card tips + all hourly pay, after tip-outs.'
       : 'Cash + card tips + all hourly pay, before anything comes out.';
   const bind = (input, get, set) => {
     input.value = get();
@@ -452,25 +519,44 @@ export function nightFields(
   }
 
   const kids = [totalNode];
-  if (to.on && to.basis === 'before') {
-    const cb = el('input', { type: 'checkbox', id: uid('bb'), 'data-focus-key': key + '-barback' });
-    cb.checked = !!d.barback;
-    cb.addEventListener('change', () => {
-      d.barback = cb.checked;
-      onInput();
+  /* ----- who was tipped out tonight (everyone ticked to start), and tonight's sales for a % of sales tip-out ----- */
+  const salesInput = bind(
+    moneyInput({ id: uid('sales'), placeholder: '0', 'data-focus-key': key + '-sales' }),
+    () => d.sales || '',
+    (v) => {
+      d.sales = v;
+    },
+  );
+  const salesField = field('Sales tonight ($)', salesInput, {
+    hint: 'Your sales for the night, from your checkout report.',
+  });
+  if (people.length) {
+    const boxes = people.map((r) => {
+      const cb = el('input', {
+        type: 'checkbox',
+        id: uid('to'),
+        'data-focus-key': key + '-tipout-' + r.id,
+      });
+      cb.checked = ticked(d, r);
+      cb.addEventListener('change', () => {
+        d.tipouts = { ...(d.tipouts || {}), [r.id]: cb.checked };
+        onInput();
+      });
+      return el(
+        'label',
+        { class: 'check check-compact', for: cb.id },
+        cb,
+        el('span', null, r.who, el('small', null, tipoutHow(r))),
+      );
     });
     kids.push(
       el(
-        'label',
-        { class: 'check', for: cb.id },
-        cb,
-        el(
-          'span',
-          null,
-          'Barback tip-out tonight',
-          el('small', null, 'Uncheck if you worked without a barback.'),
-        ),
+        'fieldset',
+        { class: 'field tipouts-tonight' },
+        el('legend', null, 'Tipped out tonight:'),
+        el('div', { class: 'tipout-checks' }, boxes),
       ),
+      salesField,
     );
   } else d.barback = d.barback !== false ? d.barback : true;
 
@@ -677,14 +763,23 @@ export function nightFields(
       d.cash = v;
     },
   );
-  const collected = !!(to.on && to.basis === 'before' && to.from === 'cash');
+  // Someone is paid out of the cash: the box takes all the cash collected, and TipNet takes their cash out.
+  const fromCash = people.filter((r) => r.from !== 'payroll');
+  const collected = fromCash.length > 0;
+  const whoText = (r) => (r.k && r.k !== 'other' ? 'the ' + r.who.toLowerCase() : r.who);
   const cashField = field(
-    collected ? 'Cash tips collected (before paying the barback)' : 'Cash you’re taking home',
+    collected
+      ? fromCash.length === 1
+        ? 'Cash tips collected (before paying ' + whoText(fromCash[0]) + ')'
+        : 'Cash tips collected (before cash tip-outs)'
+      : 'Cash you’re taking home',
     cash,
     {
       optional: true,
       hint: collected
-        ? 'Count all the cash you made tonight, then TipNet takes the barback’s cash out.'
+        ? fromCash.length === 1
+          ? 'Count all the cash you made tonight, then TipNet takes ' + whoText(fromCash[0]) + '’s cash out.'
+          : 'Count all the cash you made tonight, then TipNet takes the cash tip-outs out.'
         : undefined,
     },
   );
@@ -730,6 +825,10 @@ export function nightFields(
   const dateField = field('Date', date);
   kids.push(dateField);
   refresh = () => {
+    // the sales box shows only while someone ticked tonight gets a % of sales (then it is needed)
+    const needSales = salesNeeded(d, p);
+    salesField.hidden = !needSales;
+    if (!needSales || typedAmount(d.sales) != null) salesField.setError('');
     cashField.setError(cashCheck(d, p).message);
     offField.hidden = !(cashCheck(d, p).status === 'ok' && clean(d.cash) !== '');
     offCb.checked = !!d.cashOffPayroll;
@@ -748,9 +847,11 @@ export function nightFields(
     setTotalError,
     setHoursError,
     setDateError: (m) => dateField.setError(m),
+    setSalesError: (m) => salesField.setError(m),
     refresh,
     focusPay: (id) => focusKey(key + '-pay-' + id),
     focusDate: () => date.focus(),
+    focusSales: () => salesInput.focus(),
   };
 }
 
@@ -762,6 +863,9 @@ export function showEntryProblem(f, prob) {
   } else if (prob.where === 'hours') {
     f.setHoursError(prob.msg);
     if (prob.id != null) f.focusPay(prob.id);
+  } else if (prob.where === 'sales') {
+    f.setSalesError(prob.msg);
+    f.focusSales();
   } else {
     f.setDateError(prob.msg);
     f.focusDate();
@@ -803,7 +907,10 @@ export function resultCard(c, w, note, hoursMissing = false) {
   ];
   if (c.extra) rows.push(bullet('Extra pay (bonus etc.)', '+' + money(c.extra)));
   if (c.nontax) rows.push(bullet('Non-taxable tonight (no tax)', '+' + money(c.nontax)));
-  if (c.tipout) rows.push(bullet('Barback tip-out', minus(c.tipout)));
+  // one line per person tipped out tonight: "Runner (1.25% of sales) −$12.50"
+  (c.tipouts || []).forEach((l) => {
+    if (l.amount > 0) rows.push(bullet(l.who + ' (' + tipoutHow(l) + ')', minus(l.amount)));
+  });
   rows.push(bullet('Taxes and % deductions (' + pct(c.r) + ')', minus(c.tax)));
   if (c.fixedPerShift) rows.push(bullet('Share of fixed deductions', minus(c.fixedPerShift)));
   if (c.nontaxPerShift)
@@ -819,6 +926,16 @@ export function resultCard(c, w, note, hoursMissing = false) {
     ),
     el('dl', { class: 'breakdown' }, rows),
   ];
+  if (c.tipoutScaled)
+    kids.push(
+      el(
+        'p',
+        { class: 'note', id: 'tipout-scaled' },
+        'Your tip-outs came to more than tonight’s tips, so TipNet scaled each one down to add up to your tips (' +
+          money(c.tipout) +
+          ').',
+      ),
+    );
   if (c.cashInHand != null) {
     kids.push(
       el(

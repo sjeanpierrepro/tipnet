@@ -140,7 +140,7 @@ test('tips mode with an after-tip-out basis says so in the hint', async () => {
   try {
     assert.match(
       page.text(),
-      /Cash tips \+ card tips, after paying the barback\. TipNet adds the pay for the jobs below\./,
+      /Cash tips \+ card tips, after tip-outs\. TipNet adds the pay for the jobs below\./,
     );
   } finally {
     await page.close();

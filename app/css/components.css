@@ -1134,3 +1134,17 @@ h4 {
   background: var(--sunk);
   border-color: var(--border-strong);
 }
+
+/* ---------- "Tipped out tonight:" (Tonight and the night editor): compact boxes, two per row on a phone ---------- */
+.tipout-checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--s-2);
+}
+.check.check-compact {
+  gap: 8px;
+  padding: 8px 10px;
+}
+.check.check-compact small {
+  font-size: 13px;
+}

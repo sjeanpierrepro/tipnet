@@ -32,7 +32,7 @@ test('cash off payroll: needs cash entered; tip-out paid from payroll leaves all
   assert.equal(none.cashOffPayroll, false);
   near(none.net, M.computeNight(night({ cash: null }), P(), 10).net);
   const p = P();
-  p.tipout.from = 'check';
+  p.tipouts[0].from = 'payroll';
   const c = M.computeNight(night({ cashOffPayroll: true }), p, 10);
   assert.equal(c.cashTipsKept, 210);
 });

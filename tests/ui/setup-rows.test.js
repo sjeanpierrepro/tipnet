@@ -205,7 +205,10 @@ test('setup rows: Save is disabled with plain reasons while the basics are missi
       page.type(amt, '');
     }
     assert.equal(page.$('#draft-save').disabled, true);
-    assert.match(page.$('#draft-reasons').textContent, /Enter the tip-out amount, or turn tip-outs off\./);
+    assert.match(
+      page.$('#draft-reasons').textContent,
+      /Enter how much you tip out each person, or remove them\./,
+    );
   } finally {
     await page.close();
   }

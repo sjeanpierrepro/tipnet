@@ -20,6 +20,8 @@ const FIELDS = [
   ['cash', 'Cash tips', false],
   ['card', 'Card tips', false],
   ['hours', 'Hours', false],
+  ['sales', 'Sales (for a % of sales tip-out)', false],
+  ['barback', 'Tipped out (yes / no)', false],
   ['employee', 'Employee', false],
 ];
 const REASONS = {
@@ -399,7 +401,7 @@ export function renderImporter(host) {
       el(
         'p',
         { class: 'hint' },
-        'Match the columns. Tips is what you were tipped in all. TipNet adds hours times your hourly rate to get the total. If you pick Total made (tips plus pay), that is used as is. Or pick Cash tips and Card tips.',
+        'Match the columns. Tips is what you were tipped in all. TipNet adds hours times your hourly rate to get the total. If you pick Total made (tips plus pay), that is used as is. Or pick Cash tips and Card tips. Tipped out: yes means you tipped out everyone in your Setup tip-outs that night, no means nobody.',
       ),
       ...(wpField ? [wpField] : []),
       grid,

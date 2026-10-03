@@ -11,6 +11,8 @@ test('guessMapping: a "Total Tips" column is Tips, "Total" / "Earnings" is Total
     card: null,
     hours: 2,
     employee: null,
+    sales: null,
+    barback: null,
   });
   assert.equal(guessMapping(['Date', 'Tips Total']).tips, 1);
   assert.equal(guessMapping(['Date', 'Tips']).tips, 1);

@@ -386,7 +386,7 @@ test('guided setup: ticking the tip-out box shows no error until the amount is l
     const visible = () => page.$$('.field-error', page.app).filter((e) => !e.hidden && e.textContent);
     assert.equal(visible().length, 0, 'no error on tick');
     page.click(page.button('Finish setup'));
-    assert.match(page.text(), /Enter the tip-out amount/);
+    assert.match(page.text(), /Enter how much, or remove Barback./);
   } finally {
     await page.close();
   }

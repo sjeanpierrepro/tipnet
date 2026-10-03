@@ -54,11 +54,13 @@ test('basis "after" has zero tip-out and cash split ignores it', () => {
 
 test('flat tip-out, capped at tips, and from "check" leaves cash alone', () => {
   const p = P();
+  delete p.tipouts; // the old single tip-out shape still works
   p.tipout = { on: true, mode: 'flat', value: 500, basis: 'before', from: 'check' };
   const c = M.computeNight({ total: 585, cash: 210, pay: { p1: 8 }, barback: true }, p, 10);
   assert.equal(c.tipout, 489);
   assert.equal(c.fromCash, 0);
   const p2 = P();
+  delete p2.tipouts;
   p2.tipout = { on: true, mode: 'flat', value: 20, basis: 'before', from: 'cash' };
   assert.equal(M.computeNight({ total: 585, pay: { p1: 8 }, barback: true }, p2, 10).tipout, 20);
 });

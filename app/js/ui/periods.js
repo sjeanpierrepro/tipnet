@@ -22,6 +22,8 @@ import {
   round2,
   num,
   rate as currentRate,
+  tipoutsTonight,
+  tipoutSetup,
 } from '../math.js';
 import { businessDate, cutoffFromSettings } from '../inputs.js';
 import { isSetUp, workplaceOf, findWorkplace, nightsOf, activeWorkplace, lockFinished } from '../storage.js';
@@ -92,7 +94,12 @@ function nightSub(n, c, p) {
   bits.push('made ' + money(c.total));
   if (tipsMode(p)) bits.push('tips ' + money(c.tips));
   if (c.tipout) bits.push(money(c.tipout) + ' tip-out');
-  else if ((n.snap ? n.snap.tipout.on : p.tipout.on) && !n.barback) bits.push('no barback');
+  else {
+    // tip-outs are on for that night, but nobody was tipped out
+    const ts = tipoutSetup(n.snap || p);
+    if (ts.on && ts.basis === 'before' && ts.list.length && !tipoutsTonight(ts, n).length)
+      bits.push('no tip-out');
+  }
   if (c.onCheck != null) bits.push(money(c.onCheck) + ' on check');
   if (c.cashOffPayroll) bits.push('cash off payroll');
   return bits.join(' · ');
