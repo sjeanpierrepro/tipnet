@@ -27,7 +27,8 @@ const STATE_KEY = 'state';
  *               pay schedule, paystub, jobs, tip-out and entry mode (profile) and its own "Check my accuracy" history (calib).
  *   nights:     [{..., workplaceId}]  every night belongs to one restaurant.
  *   settings:   {theme:'auto'|'light'|'dark', lastTab, csvMapping, activeWorkplaceId, periodsFilter?, dayCutoffHour?, guidedDraft?,
- *                lastBackupAt?, backupNudgeUntil?, iosNoteSeen?, entitlement?}  (shared by every restaurant)
+ *                lastBackupAt?, backupNudgeUntil?, nightsSinceBackup?, backupNightsAt?, iosNoteSeen?, entitlement?}
+ *               (shared by every restaurant)
  *   budget:     see budget.js (shared: bills are paid from all money; a goal may name the restaurant it is saved from, fundedBy).
  *   profileExample / nightsExample: first-run example mode; only ever about the first restaurant.
  * Read restaurants only through activeWorkplace / workplaceOf / nightsOf below.
@@ -416,6 +417,11 @@ function cleanSettings(x, ids) {
   const ms = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0 && v < 1e14;
   if (ms(s.lastBackupAt)) out.lastBackupAt = s.lastBackupAt;
   if (ms(s.backupNudgeUntil)) out.backupNudgeUntil = s.backupNudgeUntil;
+  // Real nights saved on Tonight since the last backup, and the count at which the "10 nights" card shows again
+  // after "Not now" (whole numbers only)
+  const count = (v) => Number.isInteger(v) && v >= 0 && v < 1e7;
+  if (count(s.nightsSinceBackup)) out.nightsSinceBackup = s.nightsSinceBackup;
+  if (count(s.backupNightsAt)) out.backupNightsAt = s.backupNightsAt;
   if (s.iosNoteSeen === true) out.iosNoteSeen = true; // the iPhone "Safari may clear data" note was shown once
   // The license entitlement is device-only. decodeBackup strips it before migrate; here we only keep its known plain fields.
   if (isObj(s.entitlement)) {

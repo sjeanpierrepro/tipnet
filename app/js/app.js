@@ -16,7 +16,7 @@ import {
   updateAction,
 } from './ui/common.js';
 import { budgetVisible, reloadConfig } from './billing.js';
-import { restoreFromCode, eraseEverything, backupReminder } from './ui/backup.js';
+import { restoreFromCode, eraseEverything, backupReminder, nightsBackupCard } from './ui/backup.js';
 import * as tonight from './ui/tonight.js';
 import * as periods from './ui/periods.js';
 import * as setup from './ui/setup.js';
@@ -109,7 +109,9 @@ function render() {
     try {
       SCREENS[current].render(root);
       if (current === 'tonight' || current === 'setup') {
-        const nudge = backupReminder(); // "Last backup: never. Save a backup file" once there are 5+ real nights
+        // Tonight: "You've logged 10 nights since your last backup" first; never both reminders at once.
+        // Otherwise "Last backup: never. Save a backup file" once there are 5+ real nights (Tonight and Setup).
+        const nudge = (current === 'tonight' && nightsBackupCard()) || backupReminder();
         if (nudge) root.prepend(nudge);
       }
       // The "TipNet Budget" card, last on the page (not during guided setup), while Budget isn't unlocked here.

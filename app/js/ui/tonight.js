@@ -36,6 +36,7 @@ import {
   MIN_NIGHT_DATE,
 } from '../inputs.js';
 import { lockFinished, isSetUp, isWorkplaceSetUp, activeWorkplace, nightsOf } from '../storage.js';
+import { countSavedNight } from './backup.js';
 import {
   el,
   clear,
@@ -1261,6 +1262,7 @@ export function render(root) {
       S.nightsExample = false;
     }
     verb();
+    countSavedNight(S); // every 10th real night since the last backup suggests one
     lockFinished({ force: true });
     save();
     drafts.set(w.id, blankDraft(S, p));

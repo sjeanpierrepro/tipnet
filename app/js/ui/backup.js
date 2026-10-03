@@ -192,7 +192,10 @@ export const fileSaver = {
 };
 export const backupFileName = (today = todayISO()) => 'tipnet-backup-' + today + '.json';
 const markBackedUp = () => {
-  getState().settings.lastBackupAt = Date.now();
+  const st = getState().settings;
+  st.lastBackupAt = Date.now();
+  st.nightsSinceBackup = 0; // the "10 nights since your last backup" count starts again
+  delete st.backupNightsAt;
   save();
 };
 /** Download tipnet-backup-YYYY-MM-DD.json: the same data as a backup code (no license key). */
@@ -201,6 +204,66 @@ export function saveBackupFile() {
   markBackedUp();
 }
 const FILE_SAVED = 'Backup file saved. Keep a copy somewhere safe, like your email or cloud storage.';
+
+/* ---------- "You've logged 10 nights since your last backup" (Tonight) ---------- */
+/** Nights saved between two backups before Tonight suggests one (and again after each "Not now"). */
+export const NIGHTS_PER_BACKUP = 10;
+/** Tonight saved a real night: one more since the last backup (settings.nightsSinceBackup). */
+export function countSavedNight(S) {
+  const st = S.settings;
+  st.nightsSinceBackup = (Number.isInteger(st.nightsSinceBackup) ? st.nightsSinceBackup : 0) + 1;
+}
+/** Pure. True once 10 real nights were saved since the last backup (or 10 more since "Not now"). */
+export function nightsBackupDue(S) {
+  if (!S || S.nightsExample || !S.settings) return false;
+  const n = S.settings.nightsSinceBackup;
+  if (!Number.isInteger(n)) return false;
+  const at = Number.isInteger(S.settings.backupNightsAt) ? S.settings.backupNightsAt : NIGHTS_PER_BACKUP;
+  return n >= at;
+}
+/** The small card on Tonight, or null. "Not now" hides it until 10 more nights are saved. */
+export function nightsBackupCard() {
+  const S = getState();
+  if (!nightsBackupDue(S)) return null;
+  const n = S.settings.nightsSinceBackup;
+  const saveBtn = el(
+    'button',
+    { type: 'button', class: 'btn btn-secondary btn-small', id: 'nights-backup-save' },
+    'Save backup file',
+  );
+  saveBtn.addEventListener('click', () => {
+    saveBackupFile();
+    toast(FILE_SAVED);
+    bus.rerender();
+  });
+  const later = el('button', { type: 'button', class: 'btn-link', id: 'nights-backup-later' }, 'Not now');
+  later.addEventListener('click', () => {
+    const st = getState().settings;
+    st.backupNightsAt = (st.nightsSinceBackup || 0) + NIGHTS_PER_BACKUP;
+    save();
+    bus.rerender();
+    const h = document.querySelector('#app h1');
+    if (h) {
+      h.setAttribute('tabindex', '-1');
+      h.focus();
+    }
+  });
+  return el(
+    'div',
+    { class: 'banner backup-nudge', id: 'nights-backup', role: 'region', 'aria-label': 'Backup reminder' },
+    el(
+      'p',
+      null,
+      'You’ve logged ' +
+        n +
+        (S.settings.lastBackupAt
+          ? ' nights since your last backup.'
+          : ' nights and haven’t saved a backup yet.') +
+        ' Save a backup so they’re safe if this phone is lost or its data is cleared.',
+    ),
+    el('div', { class: 'cluster' }, saveBtn, later),
+  );
+}
 
 /* ---------- "Last backup" reminder (Tonight and Setup) ---------- */
 /** Pure. Remind when there are 5+ real nights and no backup in 30 days (or ever), unless dismissed in the last 30 days. */
