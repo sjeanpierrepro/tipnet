@@ -14,9 +14,10 @@ test('harness: the default time of day is the fake moment’s time when it has o
   try {
     const d = new Date();
     // the clock keeps ticking from the pin: allow a minute
-    const mins = d.getHours() * 60 + d.getMinutes();
     const [h, m] = DEFAULT_TIME.split(':').map(Number);
-    assert.ok(Math.abs(mins - (h * 60 + m)) <= 1, pad(d.getHours()) + ':' + pad(d.getMinutes()));
+    // that wall-clock time as the local clock shows it (02:30 on the spring-forward day does not exist: it is 03:30)
+    const want = new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, m);
+    assert.ok(Math.abs(d.getTime() - want.getTime()) <= 60000, pad(d.getHours()) + ':' + pad(d.getMinutes()));
   } finally {
     await page.close();
   }
