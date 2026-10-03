@@ -606,12 +606,15 @@ export function calibrate(p, nights, idx, actual, today = todayISO(), shifts, ra
     Tt = 0,
     C = 0,
     N = 0,
+    SP = 0,
     predC = 0;
   cs.forEach((c) => {
     T += toCents(c.kept) + toCents(c.extra); // non-taxable money is not in here: it is never taxed
     Tt += toCents(c.kept) + toCents(c.extra) - toCents(c.cashTipsKept); // the part payroll really taxed
     C += toCents(c.cashInHand);
     N += toCents(c.nontax); // the nights' own non-taxable amounts
+    // Bonus/Commission is withheld at r - rf + 22%, not r: that extra is taken out first, so it never skews the rate
+    SP += toCents(c.extraTax) - toCents(c.extra * c.r);
     predC += toCents(c.onCheck) + toCents(c.fixedPerShift) - toCents(c.nontaxPerShift);
   });
   const F = toCents(periodFixed(p, ns));
@@ -624,7 +627,9 @@ export function calibrate(p, nights, idx, actual, today = todayISO(), shifts, ra
   // The rate the check implies, always computed: pred uses the nights' locked rates, not rOld.
   const rNew =
     Tt > 0
-      ? clampRate((fromCents(T) - (A + fromCents(F) + fromCents(C) - fromCents(N))) / fromCents(Tt))
+      ? clampRate(
+          (fromCents(T) - (A + fromCents(F) + fromCents(C) - fromCents(N)) - fromCents(SP)) / fromCents(Tt),
+        )
       : rOld;
   // matched: the estimate already matches AND the check implies the rate it would change, so nothing to adjust
   const matched = Math.abs(err) < MATCH_ERROR && Math.abs(rNew - rOld) < MATCH_RATE;

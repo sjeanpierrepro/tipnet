@@ -744,3 +744,34 @@ test('calibration: a period locked at an older rate, checked exactly, still prop
   assert.equal(again.matched, true);
   near(again.rateOverride, r0, 1e-12);
 });
+
+test('calibration with a Bonus night: an exact check implies the rate in use (supplemental 22% is not the rate)', () => {
+  const p = P();
+  const ns = N();
+  ns[2] = { ...ns[2], pay: { ...ns[2].pay, p3: 250 } }; // a $250 bonus, withheld at r - rf + 22%
+  const t = M.periodTotals(p, ns, 0, AFTER);
+  const r = M.calibrate(p, ns, 0, t.chk, AFTER);
+  near(r.err, 0, 1e-9);
+  near(r.rNew, M.rate(p), 1e-4);
+  assert.equal(r.matched, true, 'was "off by 0.0%" with a proposed rise');
+  assert.equal(r.change, 0);
+  assert.equal(r.rateOverride, M.rate(p));
+});
+
+test('calibration with a Bonus night: a miss proposes the same rate as the same taxable money without a bonus', () => {
+  const p = P();
+  const bonus = N();
+  bonus[3] = { ...bonus[3], pay: { ...bonus[3].pay, p3: 250 } }; // night 4 has no tip-out
+  const plain = N();
+  plain[3] = { ...plain[3], total: plain[3].total + 250 }; // the same $250, taxed at r as tips
+  const pb = M.calibrate(p, bonus, 0, 1000, AFTER).pred;
+  const pp = M.calibrate(p, plain, 0, 1000, AFTER).pred;
+  assert.ok(pb < pp, 'the bonus is withheld at a higher rate');
+  const miss = pp * 0.05; // the same dollars off (5% of the plain check)
+  const rb = M.calibrate(p, bonus, 0, pb - miss, AFTER);
+  const rp = M.calibrate(p, plain, 0, pp - miss, AFTER);
+  assert.equal(rb.matched, false);
+  near(rb.rNew, rp.rNew, 1e-4);
+  near(rb.rateOverride, rp.rateOverride, 1e-4);
+  assert.ok(rb.change > 0, 'a smaller check implies a higher rate');
+});
