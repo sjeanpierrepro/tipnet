@@ -58,7 +58,7 @@ Something changed (raise, new insurance)? Update it in **Setup**. Once you are s
 ## 4. Every night
 
 - **Tips you made tonight:** type your tips (cash + card); TipNet adds the pay for the jobs you worked. (If you picked **Everything** in Setup, the box says **What you made tonight**: type tips plus hourly pay.)
-- **What did you work tonight?** Your main job is already picked. Type the **hours** (8, 7.5 or 7:30); the rate fills in by itself. Worked a double? Tap **+ Add another job**, pick it and type its hours (for example Prep 2 hours, then Bartender 6 hours). Overtime, holiday hours or a bonus? Tap **+ Add other pay**.
+- **What did you work tonight?** Your main job is already picked (with only one job, TipNet just shows it). Type the **hours** (8, 7.5 or 7:30); the rate fills in by itself. Worked a double? Tap **+ Add another job**, pick it and type its hours (for example Prep 2 hours, then Bartender 6 hours). Overtime, holiday hours or a bonus? Tap **+ Add other pay**.
 - **Cash not run through payroll:** If your bar doesn't run cash tips through payroll, tick the box; set aside the amount TipNet shows for tax time.
 - **Tipped out tonight:** everyone you tip out is ticked. Untick anyone you did not tip out tonight. If someone gets a % of sales, type **Sales tonight** (from your checkout report). Your result lists each tip-out, for example Runner (1.25% of sales) −$12.50.
 - **Cash:** if you tip anyone out of your cash, type all the cash tips you collected, before paying them (TipNet takes their cash out). Otherwise type the cash you are taking home.

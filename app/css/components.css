@@ -1148,3 +1148,18 @@ h4 {
 .check.check-compact small {
   font-size: 13px;
 }
+
+/* Tonight: the only job there is to pick, as plain text (no one-choice dropdown) */
+.job-fixed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 4px;
+  min-height: var(--tap);
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.job-fixed .hint {
+  font-weight: 400;
+}

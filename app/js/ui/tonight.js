@@ -620,10 +620,30 @@ export function nightFields(
       const line = el('p', { class: 'hint job-rate', id: inp.id + '-rate' }, rateText(t, d.pay[t.id]));
       inp.setAttribute('aria-describedby', line.id); // the rate line is read with the hours field
       rateLines.push({ t, input: inp, line });
-      const cells = [
-        field(r === 0 ? 'Job' : 'Job ' + (r + 1), sel),
-        field(t.unit === 'shift' ? 'Shifts' : 'Hours', inp),
-      ];
+      // Only one job to pick for this row (one job in Setup, or the others are in rows above): its name as plain text,
+      // with its rate, instead of a dropdown with a single choice. Read as "Job: Bartender".
+      const choices = jobs.filter((j) => !d.rows.some((x, k) => k !== r && same(x, j.id)));
+      const jobLabel = r === 0 ? 'Job' : 'Job ' + (r + 1);
+      let jobCell;
+      if (choices.length > 1) jobCell = field(jobLabel, sel);
+      else {
+        const rr = rateOf(t);
+        jobCell = el(
+          'div',
+          { class: 'field' },
+          el('span', { class: 'field-label', 'aria-hidden': 'true' }, jobLabel),
+          el(
+            'p',
+            { class: 'job-fixed', 'data-focus-key': key + '-job-' + r },
+            el('span', { class: 'sr-only' }, jobLabel + ': '),
+            payName(t, p.payTypes.indexOf(t)),
+            rr > 0
+              ? el('span', { class: 'hint' }, ' · ' + money(rr) + (t.unit === 'shift' ? '/shift' : '/h'))
+              : null,
+          ),
+        );
+      }
+      const cells = [jobCell, field(t.unit === 'shift' ? 'Shifts' : 'Hours', inp)];
       let rm = null;
       if (r > 0) {
         rm = el(
