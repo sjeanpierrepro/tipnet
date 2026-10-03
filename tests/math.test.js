@@ -696,20 +696,31 @@ test('calibration: an exact check at a high (50%) paystub rate proposes no chang
   assert.ok(miss.rateOverride > 0.5);
 });
 
-test('calibration: a match needs an error under 0.5% AND an implied rate within 0.05 points of the current one', () => {
+test('calibration: a match is an error under 0.5% AND an implied rate within the gap a 0.5% miss stands for', () => {
   const p = P();
   const pred = M.calibrate(p, N(), 0, 800, AFTER).pred;
   const tiny = M.calibrate(p, N(), 0, pred + 0.01, AFTER); // a cent off
   assert.equal(tiny.matched, true);
-  assert.ok(Math.abs(tiny.rNew - M.rate(p)) < M.MATCH_RATE, 'the implied rate is still computed');
+  assert.ok(Math.abs(tiny.rNew - M.rate(p)) < tiny.matchRate, 'the implied rate is still computed');
   assert.equal(tiny.rateOverride, M.rate(p));
   assert.equal(tiny.change, 0);
   assert.equal(tiny.capped, false);
-  // under 0.5% off, but implying a rate more than 0.05 points away: a small change is proposed
-  const near5 = M.calibrate(p, N(), 0, pred * 1.004, AFTER);
-  assert.ok(Math.abs(near5.err) < M.MATCH_ERROR);
-  assert.equal(near5.matched, false);
-  assert.ok(near5.change < 0 && near5.change > -0.01, String(near5.change));
+  // matchRate is MATCH_ERROR x check / taxed money: about 0.3 points here, not a fixed 0.05
+  near(tiny.matchRate, (M.MATCH_ERROR * tiny.actual) / tiny.T, 1e-9); // no cash off payroll here, so all of T was taxed
+  assert.ok(tiny.matchRate > 0.001 && tiny.matchRate < 0.01, String(tiny.matchRate));
+  // 0.1% and 0.4% off (either way): matched, nothing proposed (0.1% used to propose a change)
+  for (const e of [0.001, -0.001, 0.004, -0.004]) {
+    const r = M.calibrate(p, N(), 0, pred / (1 + e), AFTER);
+    near(r.err, e, 1e-4);
+    assert.equal(r.matched, true, 'err ' + e);
+    assert.equal(r.change, 0, 'err ' + e);
+  }
+  // 0.6% off: a small change is proposed, in the right direction
+  for (const e of [0.006, -0.006]) {
+    const r = M.calibrate(p, N(), 0, pred / (1 + e), AFTER);
+    assert.equal(r.matched, false, 'err ' + e);
+    assert.ok(Math.sign(r.change) === Math.sign(e) && Math.abs(r.change) < 0.01, e + ': ' + r.change);
+  }
   const off = M.calibrate(p, N(), 0, pred * 1.02, AFTER);
   assert.equal(off.matched, false);
   assert.ok(off.change < 0);

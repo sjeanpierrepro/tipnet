@@ -571,16 +571,17 @@ export const MAX_RATE_STEP = 0.03;
 export const SUSPECT_ERROR = 0.25;
 /** A prediction within this (0.5%) of the check already matches: calibrate proposes no change. */
 export const MATCH_ERROR = 0.005;
-/** ...and only when the rate that check implies is within this (0.05 points) of the rate it would change. */
-export const MATCH_RATE = 0.0005;
 /**
  * calibrate(profile, nights, idx, actual, today?, shifts?)
  * Does not mutate. Returns {ok:false, reason:'nonights'|'noactual'|'notFinal'|'missingCash', missingCash}
  * or {ok:true, pred, actual, err, rNew, rOld, rateOverride, uncapped, capped, change,
  *     nightsLogged, expectedShifts, expectedSource, missingNights, suspect, T, C, F}.
  *   rNew: the rate the check implies, within 0..MAX_RATE (always computed). matched: |err| < MATCH_ERROR and
- *   |rNew - rOld| < MATCH_RATE, and then nothing moves (uncapped = rateOverride = rOld, change 0). Both are needed:
+ *   |rNew - rOld| < matchRate, and then nothing moves (uncapped = rateOverride = rOld, change 0). Both are needed:
  *   the prediction uses the nights' locked rates, so a check can match it while implying a rate other than rOld.
+ *   matchRate = MATCH_ERROR x actual / (money payroll taxed): the rate gap a 0.5% miss stands for (the implied rate
+ *   moves by (pred - actual) / taxed money), so a match also means the check is within 0.5% of what the rate in use
+ *   would predict: the same band as err, not a fixed one (a 0.1% miss never proposes a change).
  *   rOld: the current rate. uncapped: (rOld + rNew) / 2. rateOverride: that, kept within MAX_RATE_STEP of rOld (capped says so).
  *   expectedShifts: the entered shift count if set, else the period's expected count (shiftsPerPeriod); missingNights is
  *   how many fewer nights were logged than that (0 if none). suspect: |err| > SUSPECT_ERROR.
@@ -632,7 +633,8 @@ export function calibrate(p, nights, idx, actual, today = todayISO(), shifts, ra
         )
       : rOld;
   // matched: the estimate already matches AND the check implies the rate it would change, so nothing to adjust
-  const matched = Math.abs(err) < MATCH_ERROR && Math.abs(rNew - rOld) < MATCH_RATE;
+  const matchRate = Tt > 0 ? (MATCH_ERROR * A) / fromCents(Tt) : Infinity;
+  const matched = Math.abs(err) < MATCH_ERROR && Math.abs(rNew - rOld) < matchRate;
   const uncapped = matched ? rOld : (rOld + rNew) / 2; // blend to avoid overreacting to one check
   const rateOverride = matched
     ? rOld
@@ -644,6 +646,7 @@ export function calibrate(p, nights, idx, actual, today = todayISO(), shifts, ra
     actual: A,
     err,
     matched,
+    matchRate,
     rNew,
     rOld,
     rateOverride,
