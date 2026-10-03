@@ -833,7 +833,7 @@ function pendingBox(S, w, r, idx, prev) {
   });
   keep.addEventListener('click', () => {
     calPending = null;
-    calMsg = { text: 'No change made. Your tax rate stays at ' + pct(r.rOld, 2) + '.' };
+    calMsg = { text: 'No change made. Your tax rate stays at ' + pct(from, 2) + '.' }; // the rate in use now
     bus.rerender();
     focusId('cal-run');
   });

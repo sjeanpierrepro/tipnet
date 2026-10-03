@@ -337,3 +337,28 @@ test('check my accuracy: a period locked at an older rate, checked exactly, prop
     await page.close();
   }
 });
+
+test('check my accuracy, Replace offered: "Don’t change" names the rate in use now, not the rate before', async () => {
+  const page = await boot({ seed: seed(2) });
+  try {
+    page.tab('periods');
+    const S0 = page.state();
+    const pred = calibrate(S0.workplaces[0].profile, S0.nights, 1, 1, today).pred;
+    const compare = (v) => {
+      page.type(page.$('#cal-actual'), v);
+      page.click(page.$('#cal-run'));
+    };
+    compare(String(Math.round(pred * 0.9))); // the typo: 10% low, applied
+    page.click(page.$('#cal-apply'));
+    const typoRate = page.state().workplaces[0].profile.rateOverride;
+    compare(pred.toFixed(2)); // the right amount: Replace is offered
+    assert.match(page.$('#cal-apply').textContent, /Replace my earlier comparison/);
+    page.click(page.$('#cal-keep'));
+    const typoPct = (typoRate * 100).toFixed(2).replace('.', '\.');
+    assert.match(page.text(), new RegExp('No change made\. Your tax rate stays at ' + typoPct + '%\.'));
+    assert.doesNotMatch(page.text(), /stays at 16\.65%/);
+    assert.equal(page.state().workplaces[0].profile.rateOverride, typoRate, 'nothing changed');
+  } finally {
+    await page.close();
+  }
+});
