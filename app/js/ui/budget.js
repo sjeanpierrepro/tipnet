@@ -219,7 +219,7 @@ function sampleCard(S) {
 const paymentsOn = () => !!BILLING.provider;
 
 /** Open the Budget preview (it works while the tab is hidden), then focus `id` or the heading. */
-function openPreview(id) {
+export function openPreview(id) {
   bus.go('budget', { preview: true });
   const t = (id && document.getElementById(id)) || document.querySelector('#app h1');
   if (!t) return;

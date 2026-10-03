@@ -30,7 +30,7 @@ import {
   TIPOUT_PRESETS,
 } from '../math.js';
 import { budgetVisible, isUnlocked } from '../billing.js';
-import { subscriptionLine } from './budget.js';
+import { subscriptionLine, openPreview } from './budget.js';
 import {
   el,
   clear,
@@ -62,7 +62,8 @@ import {
   isFirstWorkplace,
   nightsOf,
   newWorkplaceId,
-  MAX_WORKPLACES,
+  canAddWorkplace,
+  workplaceLimit,
   lockFinished,
   flush,
 } from '../storage.js';
@@ -1626,6 +1627,10 @@ function nameProblem(S, w, n) {
 }
 /** A new restaurant with a blank paystub; its guided setup starts right away (setupDone false until Finish or Skip). */
 function startNewWorkplace(S, name) {
+  if (!canAddWorkplace(S, isUnlocked(S.settings.entitlement))) {
+    adding = null;
+    return bus.rerender();
+  }
   const w = { id: newWorkplaceId(S), name, profile: blankProfile(), calib: [], setupDone: false };
   S.workplaces.push(w);
   S.settings.activeWorkplaceId = w.id;
@@ -1644,7 +1649,44 @@ function startNewWorkplace(S, name) {
 }
 /** "+ Set up another restaurant", then its name. */
 function addWorkplaceCard(S) {
-  if (S.workplaces.length >= MAX_WORKPLACES) return null;
+  const unlocked = isUnlocked(S.settings.entitlement);
+  if (!canAddWorkplace(S, unlocked)) {
+    // At the limit: the button stays (disabled) with a plain line. Nothing already there is touched.
+    adding = null;
+    const addBtn = el(
+      'button',
+      {
+        type: 'button',
+        class: 'btn btn-secondary btn-small',
+        id: 'wp-add',
+        disabled: true,
+        'aria-describedby': 'wp-limit',
+      },
+      '+ Set up another establishment',
+    );
+    const line = el(
+      'p',
+      { class: 'hint', id: 'wp-limit' },
+      unlocked
+        ? 'You can have up to ' + workplaceLimit(true) + ' establishments.'
+        : 'You can have up to ' +
+            workplaceLimit(false) +
+            ' establishments. Unlock TipNet Budget to add up to ' +
+            workplaceLimit(true) +
+            '. ',
+    );
+    if (!unlocked) {
+      const see = el(
+        'button',
+        { type: 'button', class: 'btn-link', id: 'wp-limit-see' },
+        'See what’s inside',
+      );
+      // leaving Setup with unsaved changes asks first (the tab switch does that)
+      see.addEventListener('click', () => openPreview(null));
+      line.append(see);
+    }
+    return el('div', { class: 'stack-sm' }, el('div', null, addBtn), line);
+  }
   if (!adding) {
     const addBtn = el(
       'button',

@@ -53,7 +53,7 @@ Enter: start Sep 1, end Sep 14, shifts 10, every two weeks, gross $2,000, the fo
 
 Something changed (raise, new insurance)? Update it in **Setup**. Once you are set up, Setup shows each establishment as one line (for example "Bartender $12/h · every two weeks · payday Fri"). Tap it to open everything for that establishment, make your changes, then tap **Save** (or **Cancel** to throw them away). Nothing changes until you save; if you leave with changes not saved, TipNet asks **Save changes?** first. The shared settings below (Late nights, Appearance, Import nights, Install TipNet, Backups) are one line each too; tap to open them. Those apply right away.
 
-**Work at a second establishment?** In **Setup**, tap **+ Set up another establishment**, type its name, and do the same three steps with a paystub from there. Its pay schedule, jobs and tip-out are kept apart from the first one. To rename or remove an establishment, open its line in Setup (removing one also removes its nights; **Undo** brings them back).
+**Work at a second establishment?** In **Setup**, tap **+ Set up another establishment**, type its name, and do the same three steps with a paystub from there. Its pay schedule, jobs and tip-out are kept apart from the first one. You can have up to 3 establishments in the free app, or up to 5 with TipNet Budget. To rename or remove an establishment, open its line in Setup (removing one also removes its nights; **Undo** brings them back).
 
 ## 4. Every night
 

@@ -37,7 +37,17 @@ const STATE_KEY = 'state';
  */
 export const ENTRY_MODES = ['tips', 'total'];
 export const FIRST_WORKPLACE_NAME = 'My establishment';
+/** The most establishments a save or a backup keeps when it loads (earlier versions let people add up to 12). */
 export const MAX_WORKPLACES = 12;
+/** How many establishments can be ADDED: 3 in the free app, 5 with TipNet Budget unlocked. */
+export const FREE_WORKPLACES = 3;
+export const BUDGET_WORKPLACES = 5;
+export const workplaceLimit = (unlocked) => (unlocked ? BUDGET_WORKPLACES : FREE_WORKPLACES);
+/**
+ * True while another establishment can be added. Only adding is ever blocked: establishments already there (from an
+ * earlier version, a restored backup or a Budget subscription that ended) are never removed or hidden.
+ */
+export const canAddWorkplace = (S, unlocked) => S.workplaces.length < workplaceLimit(unlocked);
 export function seedState() {
   return {
     schemaVersion: SCHEMA_VERSION,
