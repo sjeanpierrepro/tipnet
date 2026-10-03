@@ -696,15 +696,51 @@ test('calibration: an exact check at a high (50%) paystub rate proposes no chang
   assert.ok(miss.rateOverride > 0.5);
 });
 
-test('calibration: an error under 0.5% is a match (no adjustment); 0.5% or more still adjusts', () => {
+test('calibration: a match needs an error under 0.5% AND an implied rate within 0.05 points of the current one', () => {
   const p = P();
   const pred = M.calibrate(p, N(), 0, 800, AFTER).pred;
-  const tiny = M.calibrate(p, N(), 0, pred * 1.004, AFTER);
+  const tiny = M.calibrate(p, N(), 0, pred + 0.01, AFTER); // a cent off
   assert.equal(tiny.matched, true);
+  assert.ok(Math.abs(tiny.rNew - M.rate(p)) < M.MATCH_RATE, 'the implied rate is still computed');
   assert.equal(tiny.rateOverride, M.rate(p));
   assert.equal(tiny.change, 0);
   assert.equal(tiny.capped, false);
+  // under 0.5% off, but implying a rate more than 0.05 points away: a small change is proposed
+  const near5 = M.calibrate(p, N(), 0, pred * 1.004, AFTER);
+  assert.ok(Math.abs(near5.err) < M.MATCH_ERROR);
+  assert.equal(near5.matched, false);
+  assert.ok(near5.change < 0 && near5.change > -0.01, String(near5.change));
   const off = M.calibrate(p, N(), 0, pred * 1.02, AFTER);
   assert.equal(off.matched, false);
   assert.ok(off.change < 0);
+});
+
+test('calibration: a period locked at an older rate, checked exactly, still proposes moving toward that rate', () => {
+  const today = '2026-10-02';
+  const p = M.exampleProfile(today);
+  p.periodStart = '2026-09-06';
+  p.periodEnd = '2026-09-19';
+  p.shifts = 2;
+  p.tipout = { on: false };
+  const k = M.periodIndex(p, '2026-09-10');
+  const nights = M.lockFinishedNights(
+    p,
+    [
+      { id: 'a', date: '2026-09-10', total: 400, cash: 100, pay: { p1: 6 }, barback: false },
+      { id: 'b', date: '2026-09-12', total: 300, cash: 50, pay: { p1: 5 }, barback: false },
+    ],
+    today,
+  ).nights;
+  const r0 = M.rate(p);
+  p.rateOverride = r0 + 0.03; // another period's comparison moved the rate up 3 points since
+  const t = M.periodTotals(p, nights, k, today);
+  const r = M.calibrate(p, nights, k, t.chk, today); // matches the (locked) estimate exactly
+  near(r.err, 0, 1e-9);
+  near(r.rNew, r0, 1e-9);
+  assert.equal(r.matched, false, 'the check implies the locked rate, not the current one');
+  near(r.rateOverride, r0 + 0.015, 1e-9);
+  // measured from the period's rate before (Replace), the same check matches and moves nothing from it
+  const again = M.calibrate(p, nights, k, t.chk, today, undefined, r0);
+  assert.equal(again.matched, true);
+  near(again.rateOverride, r0, 1e-12);
 });

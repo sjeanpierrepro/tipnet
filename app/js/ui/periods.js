@@ -929,8 +929,10 @@ function calibCard(S, today) {
       }
       return show('Pick a pay period with nights in it and enter the check amount.');
     }
-    // Within 0.5% of the check: nothing to adjust, so nothing to ask (and nothing is recorded).
-    if (r.matched) return show(MATCHED_TEXT);
+    // Within 0.5% of the check and implying the current rate: nothing to adjust, nothing to ask, nothing recorded.
+    // With an earlier comparison of this period, Replace is still offered (from its rate before), so a mistyped
+    // check that was applied is undone by comparing the right amount.
+    if (r.matched && !prev) return show(MATCHED_TEXT);
     // Nothing changes yet: show old -> new and ask.
     calMsg = null;
     calPending = { idx, r, prev, wid: w.id };

@@ -561,13 +561,16 @@ export const MAX_RATE_STEP = 0.03;
 export const SUSPECT_ERROR = 0.25;
 /** A prediction within this (0.5%) of the check already matches: calibrate proposes no change. */
 export const MATCH_ERROR = 0.005;
+/** ...and only when the rate that check implies is within this (0.05 points) of the rate it would change. */
+export const MATCH_RATE = 0.0005;
 /**
  * calibrate(profile, nights, idx, actual, today?, shifts?)
  * Does not mutate. Returns {ok:false, reason:'nonights'|'noactual'|'notFinal'|'missingCash', missingCash}
  * or {ok:true, pred, actual, err, rNew, rOld, rateOverride, uncapped, capped, change,
  *     nightsLogged, expectedShifts, expectedSource, missingNights, suspect, T, C, F}.
- *   rNew: the rate the check implies, within 0..MAX_RATE. matched: |err| < MATCH_ERROR, and then nothing moves
- *   (rNew = uncapped = rateOverride = rOld, change 0).
+ *   rNew: the rate the check implies, within 0..MAX_RATE (always computed). matched: |err| < MATCH_ERROR and
+ *   |rNew - rOld| < MATCH_RATE, and then nothing moves (uncapped = rateOverride = rOld, change 0). Both are needed:
+ *   the prediction uses the nights' locked rates, so a check can match it while implying a rate other than rOld.
  *   rOld: the current rate. uncapped: (rOld + rNew) / 2. rateOverride: that, kept within MAX_RATE_STEP of rOld (capped says so).
  *   expectedShifts: the entered shift count if set, else the period's expected count (shiftsPerPeriod); missingNights is
  *   how many fewer nights were logged than that (0 if none). suspect: |err| > SUSPECT_ERROR.
@@ -608,11 +611,13 @@ export function calibrate(p, nights, idx, actual, today = todayISO(), shifts, ra
   const pred = fromCents(predC);
   const err = (pred - A) / A;
   const rOld = typeof rateBase === 'number' && Number.isFinite(rateBase) ? rateBase : rate(p); // rateBase: the rate in effect before this period was first adjusted (Replace)
-  const matched = Math.abs(err) < MATCH_ERROR; // the estimate already matches: nothing to adjust
+  // The rate the check implies, always computed: pred uses the nights' locked rates, not rOld.
   const rNew =
-    Tt > 0 && !matched
+    Tt > 0
       ? clampRate((fromCents(T) - (A + fromCents(F) + fromCents(C) - fromCents(N))) / fromCents(Tt))
       : rOld;
+  // matched: the estimate already matches AND the check implies the rate it would change, so nothing to adjust
+  const matched = Math.abs(err) < MATCH_ERROR && Math.abs(rNew - rOld) < MATCH_RATE;
   const uncapped = matched ? rOld : (rOld + rNew) / 2; // blend to avoid overreacting to one check
   const rateOverride = matched
     ? rOld

@@ -275,3 +275,58 @@ test('check my accuracy: a check that matches the estimate (within 0.5%) says so
     await page.close();
   }
 });
+
+test('check my accuracy: a mistyped check applied, then the right one (matching the estimate) offers Replace and restores the rate', async () => {
+  const page = await boot({ seed: seed(2) });
+  try {
+    page.tab('periods');
+    const S0 = page.state();
+    const r0 = rate(S0.workplaces[0].profile);
+    const pred = calibrate(S0.workplaces[0].profile, S0.nights, 1, 1, today).pred;
+    const compare = (v) => {
+      page.type(page.$('#cal-actual'), v);
+      page.click(page.$('#cal-run'));
+    };
+    compare(String(Math.round(pred * 0.9))); // the typo: 10% low
+    page.click(page.$('#cal-apply'));
+    const typoRate = page.state().workplaces[0].profile.rateOverride;
+    assert.ok(typoRate - r0 > 0.02, 'the typo moved the rate up');
+    compare(pred.toFixed(2)); // the right amount: it matches the (locked) estimate
+    assert.ok(page.$('#cal-pending'), 'not "matched": the earlier comparison can be replaced');
+    assert.doesNotMatch(page.text(), /Your estimate matched/);
+    assert.match(page.text(), /You already compared this pay period/);
+    assert.match(page.$('#cal-apply').textContent, /Replace my earlier comparison for this pay period/);
+    page.click(page.$('#cal-apply'));
+    const W = page.state().workplaces[0];
+    assert.ok(Math.abs(rate(W.profile) - r0) < 1e-9, 'back to the paystub rate: ' + rate(W.profile));
+    assert.equal(W.calib.length, 1, 'the history row was replaced, not added');
+    assert.ok(Math.abs(W.calib[0].err) < 1e-9);
+    assert.equal(W.calib[0].actual, Number(pred.toFixed(2)));
+  } finally {
+    await page.close();
+  }
+});
+
+test('check my accuracy: a period locked at an older rate, checked exactly, proposes moving back toward it', async () => {
+  const page = await boot({ seed: seed(2) });
+  try {
+    page.tab('periods');
+    const S0 = page.state();
+    const r0 = rate(S0.workplaces[0].profile);
+    assert.ok(S0.nights.filter((n) => n.snap).length >= 2, 'finished periods are locked at the paystub rate');
+    // another adjustment moved the rate 3 points up since (the locked nights keep r0)
+    S0.workplaces[0].profile.rateOverride = r0 + 0.03;
+    page.tab('tonight');
+    page.tab('periods');
+    const pred = calibrate(page.state().workplaces[0].profile, page.state().nights, 1, 1, today).pred;
+    page.type(page.$('#cal-actual'), pred.toFixed(2));
+    page.click(page.$('#cal-run'));
+    assert.doesNotMatch(page.text(), /Your estimate matched/);
+    assert.ok(page.$('#cal-pending'), 'a change is proposed');
+    page.click(page.$('#cal-apply'));
+    const got = page.state().workplaces[0].profile.rateOverride;
+    assert.ok(Math.abs(got - (r0 + 0.015)) < 0.0005, 'halfway back toward the locked rate: ' + got);
+  } finally {
+    await page.close();
+  }
+});
