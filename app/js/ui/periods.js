@@ -13,6 +13,8 @@ import {
   isFinal,
   indexNights,
   snapshotFor,
+  periodSnap,
+  nightsInPeriod,
   periodRange,
   totalFromTips,
   hasTips,
@@ -42,6 +44,7 @@ import {
   getState,
   keepFocus,
   workplaceSwitcher,
+  debounce,
 } from './common.js';
 import {
   nightFields,
@@ -150,22 +153,40 @@ function editor(S, n) {
   d.note = n.note || ''; // the editor's own field; draftFromNight knows nothing about notes
   const typedAtOpen = JSON.stringify([d.total, d.pay]);
   let recalc = false;
-  const preview = el('p', { class: 'hint', 'aria-live': 'polite' });
+  // The estimate follows the typing on screen, but is only spoken after a pause (like Tonight's summary), so a screen
+  // reader isn't interrupted on every keystroke.
+  const preview = el('p', { class: 'hint' });
+  const previewLive = el('p', {
+    class: 'sr-only',
+    role: 'status',
+    'aria-live': 'polite',
+    'aria-atomic': 'true',
+  });
+  const speak = debounce(() => {
+    previewLive.textContent = preview.textContent;
+  }, 800);
   const shiftsFor = (night) => shiftsPerPeriod(p, mine, todayISO(), nightPeriodIndex(p, night)).n;
-  // "Counts toward the pay week that started": the period before the night's date's, its own (the default), or the next.
-  // Every choice can be picked, finished or not (the person's own correction); moving into or out of a finished pay
-  // period asks first (see the submit handler), and a night moved into a finished period is locked right away.
-  const pickAtOpen = periodRange(p, nightPeriodIndex(p, n)).start;
-  let pick = pickAtOpen; // the picked period's start date
-  let confirmed = false; // "Move night" was tapped for the pick shown
+  // "Counts toward the pay period that started": the period before the night's date's, its own (the default), or the
+  // next, always offered around the date typed now. Every choice can be picked, finished or not (the person's own
+  // correction). Whatever changes the pay period the night counts toward (a pick or a new date) and touches a finished
+  // pay period asks first (see the submit handler); a night that joins a finished period is locked right away.
+  const ownStart = (date) => {
+    const k = periodIndex(p, date);
+    return Number.isFinite(k) ? periodRange(p, k).start : null;
+  };
+  // The explicit pick: a pay period other than the date's, picked in this editor or saved before (a valid one only).
+  // null: the night follows its date.
+  const pickAtOpen = nightPeriodMoved(p, n) ? periodRange(p, nightPeriodIndex(p, n)).start : null;
+  let chosen = pickAtOpen;
+  let pick = chosen || ownStart(d.date); // the period shown in the select (its start date)
+  let confirmed = false; // "Move night" was tapped for the move shown
   /** The night's periodStart as it will be saved: the pick, or none when it is the night's own date's period. */
   const pickedStart = () => {
-    const own = periodRange(p, periodIndex(p, d.date)).start;
+    const own = ownStart(d.date);
     return pick && pick !== own ? pick : null;
   };
-  /** {from, to}: period indexes when the pick moves the night to another pay period, else null. */
+  /** {from, to}: period indexes when the edit (a pick or a new date) changes the pay period the night counts toward. */
   const moveOf = (night) => {
-    if (pick === pickAtOpen) return null;
     const from = nightPeriodIndex(p, n),
       to = nightPeriodIndex(p, night);
     return from === to ? null : { from, to };
@@ -179,18 +200,29 @@ function editor(S, n) {
     const ps = pickedStart();
     if (ps) out.periodStart = ps;
     else delete out.periodStart;
-    // Moved by the pick: into a finished pay period it is locked (its own snapshot, or one with today's Setup, as
-    // locking would); into one that has not ended it follows the current Setup again (no snapshot).
+    // Moved (by a pick or a new date) into a finished pay period it is locked: with that period's own snapshot when
+    // it has locked nights (so its fixed deductions and non-taxable money don't change), else its own snapshot, else
+    // one with today's Setup, as locking would. Into one that has not ended it follows the current Setup (no snapshot).
     const mv = moveOf(out);
-    const keepSnap = mv ? isFinal(p, mv.to, todayISO()) && !!n.snap : !!n.snap;
+    const intoFinished = !!mv && isFinal(p, mv.to, todayISO());
+    const joined =
+      intoFinished && !recalc
+        ? periodSnap(
+            nightsInPeriod(
+              p,
+              nightsOf(S, w.id).filter((x) => x.id !== n.id),
+              mv.to,
+            ),
+          )
+        : null;
+    const keepSnap = joined || (mv ? intoFinished && n.snap : n.snap);
     if (keepSnap && !recalc) {
       // keep amounts for pay types removed from Setup since, so the locked numbers stay whole
       Object.keys(n.pay || {}).forEach((k) => {
         if (!(k in out.pay)) out.pay[k] = n.pay[k];
       });
-      out.snap = n.snap;
-    } else if (mv ? isFinal(p, mv.to, todayISO()) : n.snap && recalc)
-      out.snap = snapshotFor(p, shiftsFor(out));
+      out.snap = keepSnap === n.snap ? n.snap : JSON.parse(JSON.stringify(keepSnap));
+    } else if (mv ? intoFinished : n.snap && recalc) out.snap = snapshotFor(p, shiftsFor(out));
     // Tips and hours untouched and no recalculation: the stored total (and typed tips) stay exactly as they were.
     const untouched = !recalc && JSON.stringify([d.total, d.pay]) === typedAtOpen;
     if (untouched && (tipsMode(p) || hasTips(n))) {
@@ -206,10 +238,12 @@ function editor(S, n) {
     if (out.snap && out.snap !== n.snap && hasTips(out)) out.total = totalFromTips(out.tips, out, p);
     return out;
   };
-  const upd = () => {
+  /** quiet: the first draw (opening the editor) shows the estimate without speaking it. */
+  const upd = (quiet) => {
     const night = build();
     const c = computeNight(night, p, shiftsFor(night));
     preview.textContent = 'Estimated take-home for this night: ' + money(c.net) + '.';
+    if (quiet !== true) speak();
   };
   // A locked night shows the rates it keeps, unless "Recalculate with current Setup" is ticked.
   const rateOf = (t) => {
@@ -218,17 +252,31 @@ function editor(S, n) {
     return s ? num(s.rate) : num(t.rate);
   };
   const weekSel = el('select', { id: 'edit-' + n.id + '-week', 'data-focus-key': 'edit-' + n.id + '-week' });
-  const weekField = field('Counts toward the pay week that started:', weekSel, { hint: ' ' });
+  const weekField = field('Counts toward the pay period that started:', weekSel, { hint: ' ' });
   const weekHint = weekField.querySelector('p.hint');
   weekSel.setAttribute('aria-describedby', weekHint.id);
   weekHint.textContent =
-    'Pick the pay week your paycheck counted this night in, if it isn’t the one for its date.';
+    'Pick the pay period your paycheck counted this night in, if it isn’t the one for its date.';
+  // One line when a new date drops the night's earlier pick (it is more than one pay period away from the new date).
+  const weekNoteLine = el('p', { class: 'hint', role: 'status', id: 'edit-' + n.id + '-week-note' });
+  weekNoteLine.hidden = true;
+  weekField.append(weekNoteLine);
   let shownFor = null;
+  /**
+   * Rebuild the choices around the date typed now (the period before its own, its own, the next). The select shows the
+   * explicit pick while it is still one of them; otherwise the new date's own period, and a pick dropped that way says so.
+   */
   const syncWeek = () => {
     const cs = nightPeriodChoices(p, d.date);
     if (!cs.length) return; // a half-typed date: keep the options shown
-    // a new date: a pick that is no longer offered goes back to the night's own date's period
-    if (!cs.some((c) => c.start === pick) && pick !== pickAtOpen) pick = cs.find((c) => c.own).start;
+    const own = cs.find((c) => c.own);
+    const kept = chosen != null && cs.some((c) => c.start === chosen);
+    pick = kept ? chosen : own.start;
+    const dropped = chosen != null && !kept;
+    weekNoteLine.hidden = !dropped;
+    weekNoteLine.textContent = dropped
+      ? 'This night now counts by its new date (pay period ' + periodLabel(p, own.idx) + ').'
+      : '';
     const sig = d.date + '|' + pick;
     if (sig === shownFor) return;
     shownFor = sig;
@@ -244,16 +292,15 @@ function editor(S, n) {
           (isFinal(p, c.idx, today) ? ' (finished)' : ''),
       ),
     );
-    // counted in a pay week that isn't next to its (edited) date: that one stays offered, as it is now
-    if (!cs.some((c) => c.start === pick)) {
-      const k = nightPeriodIndex(p, n);
-      opts.push(el('option', { value: pick }, fmtDate(pick) + ' · ' + periodLabel(p, k)));
-    }
     weekSel.replaceChildren(...opts);
     weekSel.value = pick;
   };
   // Moving into or out of a finished pay period asks first, in the editor (Save does nothing until "Move night").
-  const ask = el('div', { class: 'note stack-sm', role: 'group', 'aria-label': 'Move to another pay week?' });
+  const ask = el('div', {
+    class: 'note stack-sm',
+    role: 'group',
+    'aria-label': 'Move to another pay period?',
+  });
   ask.hidden = true;
   const hideAsk = () => {
     ask.hidden = true;
@@ -261,7 +308,8 @@ function editor(S, n) {
     confirmed = false;
   };
   weekSel.addEventListener('change', () => {
-    pick = weekSel.value;
+    // picking the date's own period means "follow the date" (a later date edit moves it along)
+    chosen = weekSel.value === ownStart(d.date) ? null : weekSel.value;
     hideAsk();
     syncWeek();
     upd();
@@ -295,12 +343,28 @@ function editor(S, n) {
       saveBtn.click();
     });
     keepBtn.addEventListener('click', () => {
-      pick = pickAtOpen;
       hideAsk();
-      shownFor = null;
-      syncWeek();
-      upd();
-      weekSel.focus();
+      // Back to the pay period it counts toward now: picked explicitly when the date typed still offers it, else the
+      // date goes back too (a date further away can't stay in that period).
+      const at = periodRange(p, nightPeriodIndex(p, n)).start;
+      const back = () => {
+        chosen = at === ownStart(d.date) ? null : at;
+        shownFor = null;
+        syncWeek();
+        upd();
+      };
+      if (nightPeriodChoices(p, d.date).some((c) => c.start === at)) {
+        back();
+        weekSel.focus();
+        return;
+      }
+      const dateInput = f.root.querySelector('input[type=date]');
+      dateInput.value = n.date;
+      d.date = n.date;
+      lastDate = d.date;
+      f.refresh();
+      back();
+      dateInput.focus();
     });
     const what = ks.map((k) => periodLabel(p, k)).join(' and ');
     ask.replaceChildren(
@@ -317,12 +381,18 @@ function editor(S, n) {
     ask.hidden = false;
     moveBtn.focus();
   }
+  let lastDate = d.date;
   const f = nightFields(p, d, {
     key: 'edit-' + n.id,
     rateOf,
     onInput: () => {
       f.setTotalError('');
-      syncWeek(); // a new date offers the pay weeks around it
+      if (d.date !== lastDate) {
+        // a new date: the choices follow it, and a "Move night?" asked for the old date no longer applies
+        lastDate = d.date;
+        hideAsk();
+      }
+      syncWeek();
       upd();
     },
   });
@@ -393,6 +463,7 @@ function editor(S, n) {
     weekField,
     lockNote,
     preview,
+    previewLive,
     ask,
     el('div', { class: 'cluster' }, saveBtn, cancel),
   );
@@ -417,27 +488,33 @@ function editor(S, n) {
       return;
     }
     n = S.nights[i]; // build() reads the current night (its lock, its stored total)
+    const was = nightPeriodIndex(p, n);
     const out = { ...build(), workplaceId: w.id };
     S.nights[i] = out;
     save();
     bus.rerender();
+    // Says what was saved: the pay period it counts toward when that is not its date's, or when the edit changed it.
+    const k = nightPeriodIndex(p, out);
+    const start = fmtDate(periodRange(p, k).start);
     toast(
       nightPeriodMoved(p, out)
-        ? 'Night updated. It counts in the pay week that started ' + fmtDate(out.periodStart) + '.'
-        : 'Night updated.',
+        ? 'Night updated. It counts in the pay period that started ' + start + '.'
+        : k !== was
+          ? 'Night updated. It counts by its date, in the pay period that started ' + start + '.'
+          : 'Night updated.',
     );
   });
   syncWeek();
-  upd();
+  upd(true);
   return form;
 }
 
-/** A row's line about its pay week: counted in another one, or a picked one the schedule no longer has. Else null. */
+/** A row's line about its pay period: counted in another one, or a picked one the schedule no longer has. Else null. */
 function weekNote(n, p) {
   if (nightPeriodStale(p, n))
-    return el('div', { class: 'hint' }, 'pay week no longer matches your schedule, counted by its date');
+    return el('div', { class: 'hint' }, 'pay period no longer matches your schedule, counted by its date');
   if (nightPeriodMoved(p, n))
-    return el('div', { class: 'hint' }, 'counted in pay week of ' + fmtShort(n.periodStart));
+    return el('div', { class: 'hint' }, 'counted in the pay period starting ' + fmtShort(n.periodStart));
   return null;
 }
 

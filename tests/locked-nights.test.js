@@ -181,3 +181,24 @@ test('imported past nights lock right away with the current Setup', async () => 
   assert.equal(S.lockFinished({ force: true, today: '2026-10-09' }), 1);
   assert.ok(st.nights[0].snap && !st.nights[1].snap);
 });
+
+test('a night locked into a finished period that has locked nights copies that period snapshot (fixed/nontax unchanged)', () => {
+  const p = P();
+  const old = lock(N(), p, 10); // the period, locked with the Setup of the time
+  const fixedBefore = M.periodFixed(p, old);
+  const ntBefore = M.periodNontax(p, old);
+  raise(p); // Setup changed since: a new fixed deduction
+  p.nontaxRecurring = undefined;
+  const added = { id: 'late', date: old[0].date, total: 200, cash: 50, pay: { p1: 5 }, barback: false };
+  const r = M.lockFinishedNights(p, [...old, added], AFTER);
+  assert.equal(r.stamped, 1);
+  const got = r.nights.find((x) => x.id === 'late');
+  assert.deepEqual(got.snap, old[old.length - 1].snap, 'the period snapshot, not today’s Setup');
+  assert.notEqual(got.snap, old[old.length - 1].snap, 'a copy');
+  const ns = M.nightsInPeriod(p, r.nights, 0);
+  assert.equal(M.periodFixed(p, ns), fixedBefore, 'the period keeps its fixed deductions');
+  assert.equal(M.periodNontax(p, ns), ntBefore);
+  // a period with no locked night yet still locks with the current Setup
+  const fresh = M.lockFinishedNights(p, N(), AFTER);
+  assert.equal(fresh.nights[0].snap.fixed, M.snapshotFor(p, 10).fixed);
+});

@@ -1,4 +1,4 @@
-// Picking the pay week a night counts toward (night.periodStart): math helper, totals, locking, calibration.
+// Picking the pay period a night counts toward (night.periodStart): math helper, totals, locking, calibration.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as M from '../app/js/math.js';
@@ -22,7 +22,7 @@ const night = (date, periodStart, extra = {}) => ({
   ...extra,
 });
 
-test('nightPeriodIndex follows a valid picked pay week in all six schedules', () => {
+test('nightPeriodIndex follows a valid picked pay period in all six schedules', () => {
   const cases = [
     [7, '2026-09-07', '2026-09-23'],
     [14, '2026-09-07', '2026-09-23'],
@@ -184,7 +184,7 @@ test('weekly overtime hours stay by the calendar week worked', () => {
   assert.equal(M.weeklyHours(p, ns, '2026-09-22').hours, 45);
 });
 
-/* ---------- Budget follows the pay week a night counts toward ---------- */
+/* ---------- Budget follows the pay period a night counts toward ---------- */
 
 test('Budget: cash this period, set-aside on off-payroll cash and checks follow the assignment', () => {
   const p = prof(14, '2026-09-07', { shifts: 10 });

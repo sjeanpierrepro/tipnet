@@ -1,4 +1,4 @@
-// A night's picked pay week (night.periodStart) is kept by migrate, backups and the two-copies merge.
+// A night's picked pay period (night.periodStart) is kept by migrate, backups and the two-copies merge.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -53,7 +53,7 @@ test('backup codes and backup files carry periodStart', () => {
   assert.equal(decodeBackupFile(backupFileText(S)).nights[0].periodStart, '2026-09-07');
 });
 
-test('the two-copies merge carries a pay week picked in one copy', () => {
+test('the two-copies merge carries a pay period picked in one copy', () => {
   const b = state([night('a', '2026-09-22'), night('b', '2026-09-23')]);
   const mine = JSON.parse(JSON.stringify(b));
   mine.nights[0].periodStart = '2026-09-07';

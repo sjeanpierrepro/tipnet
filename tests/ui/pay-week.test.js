@@ -1,4 +1,4 @@
-// Pay periods: "Counts toward the pay week that started" in the night editor (owner request).
+// Pay periods: "Counts toward the pay period that started" in the night editor (owner request).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { boot, realState } from './harness.js';
@@ -29,9 +29,9 @@ const sections = (page) => page.$$('section[data-period]', page.app);
 const sectionOf = (page, start) =>
   sections(page).find((s) => s.querySelector('.label').textContent.includes(short(start)));
 const openEdit = (page, date) => page.click(page.byLabel('Edit night ' + long(date)));
-const weekSel = (page) => page.must(page.$('select[id$="-week"]', page.app), 'pay week select');
+const weekSel = (page) => page.must(page.$('select[id$="-week"]', page.app), 'pay period select');
 
-test('the editor offers the previous, own and next pay week, labelled with start and range', async () => {
+test('the editor offers the previous, own and next pay period, labelled with start and range', async () => {
   const start = addDays(today, -3); // current period: today-3 .. today+10
   const page = await boot({ seed: seed(start, [{ date: addDays(today, -1) }]) });
   try {
@@ -39,7 +39,7 @@ test('the editor offers the previous, own and next pay week, labelled with start
     openEdit(page, addDays(today, -1));
     const sel = weekSel(page);
     const label = page.$('label[for="' + sel.id + '"]');
-    assert.equal(label.textContent.trim(), 'Counts toward the pay week that started:');
+    assert.equal(label.textContent.trim(), 'Counts toward the pay period that started:');
     assert.equal(sel.getAttribute('data-focus-key'), sel.id, 'stable focus key');
     const opts = [...sel.options];
     assert.equal(opts.length, 3);
@@ -53,8 +53,8 @@ test('the editor offers the previous, own and next pay week, labelled with start
       opts[1].textContent,
       long(start) + ' · ' + short(start) + ' – ' + short(addDays(start, 13)) + ' (this night’s date)',
     );
-    assert.equal(sel.value, start, 'its own pay week by default');
-    assert.match(opts[0].textContent, /\(finished\)$/, 'a finished pay week is marked');
+    assert.equal(sel.value, start, 'its own pay period by default');
+    assert.match(opts[0].textContent, /\(finished\)$/, 'a finished pay period is marked');
     assert.ok(
       opts.every((o) => !o.disabled),
       'every choice can be picked, finished or not',
@@ -65,7 +65,7 @@ test('the editor offers the previous, own and next pay week, labelled with start
   }
 });
 
-test('saving a pick moves the night to that pay week with a row note; picking its own week again removes it', async () => {
+test('saving a pick moves the night to that pay period with a row note; picking its own pay period again removes it', async () => {
   const start = addDays(today, -13); // the current period ends today; the night is dated tomorrow (next period)
   const date = addDays(today, 1);
   const page = await boot({ seed: seed(start, [{ date }, { id: 'other', date: addDays(today, -2) }]) });
@@ -76,19 +76,19 @@ test('saving a pick moves the night to that pay week with a row note; picking it
     const curBefore = page.text(sectionOf(page, start).querySelector('b'));
     openEdit(page, date);
     const sel = weekSel(page);
-    assert.equal(sel.options[0].disabled, false, 'the current pay week has not finished');
+    assert.equal(sel.options[0].disabled, false, 'the current pay period has not finished');
     sel.value = start;
     page.change(sel);
     page.click(page.button('Save changes'));
     await page.settle();
     const n = page.state().nights.find((x) => x.date === date);
     assert.equal(n.periodStart, start);
-    assert.equal(sectionOf(page, next), undefined, 'the next pay week has no nights now');
+    assert.equal(sectionOf(page, next), undefined, 'the next pay period has no nights now');
     const cur = sectionOf(page, start);
-    assert.equal(cur.querySelectorAll('.list-row').length, 2, 'listed under the pay week it counts toward');
-    assert.ok(page.text(cur).includes('counted in pay week of ' + short(start)));
+    assert.equal(cur.querySelectorAll('.list-row').length, 2, 'listed under the pay period it counts toward');
+    assert.ok(page.text(cur).includes('counted in the pay period starting ' + short(start)));
     assert.notEqual(page.text(cur.querySelector('b')), curBefore, 'the totals moved with it');
-    assert.match(page.text(page.doc.getElementById('toast')), /counts in the pay week that started/);
+    assert.match(page.text(page.doc.getElementById('toast')), /counts in the pay period that started/);
 
     // and back to its own week: periodStart is removed
     openEdit(page, date);
@@ -101,7 +101,7 @@ test('saving a pick moves the night to that pay week with a row note; picking it
     assert.equal('periodStart' in page.state().nights.find((x) => x.date === date), false);
     assert.equal(sectionOf(page, next).querySelectorAll('.list-row').length, 1);
     assert.equal(page.text(sectionOf(page, start).querySelector('b')), curBefore);
-    assert.ok(!page.text(page.app).includes('counted in pay week of'));
+    assert.ok(!page.text(page.app).includes('counted in the pay period starting'));
   } finally {
     await page.close();
   }
@@ -118,7 +118,7 @@ const pickPrev = (page, date) => {
   page.change(sel);
   page.click(page.button('Save changes'));
 };
-const ask = (page) => page.$('[role=group][aria-label="Move to another pay week?"]', page.app);
+const ask = (page) => page.$('[role=group][aria-label="Move to another pay period?"]', page.app);
 
 test('moving a night back into the just-finished pay period asks first, then moves and locks it', async () => {
   const late = addDays(today, -2);
@@ -147,7 +147,7 @@ test('moving a night back into the just-finished pay period asks first, then mov
     const after = totals();
     assert.notEqual(after[0], before[0], 'this period’s total went down');
     assert.notEqual(after[1], before[1], 'the finished period’s total went up');
-    assert.ok(page.text(sectionOf(page, PREV)).includes('counted in pay week of ' + short(PREV)));
+    assert.ok(page.text(sectionOf(page, PREV)).includes('counted in the pay period starting ' + short(PREV)));
   } finally {
     await page.close();
   }
@@ -164,7 +164,7 @@ test('“Keep where it is” changes nothing', async () => {
     page.click(page.button('Keep where it is', ask(page)));
     await page.settle();
     assert.equal(ask(page).hidden, true);
-    assert.equal(weekSel(page).value, START, 'back to its own pay week');
+    assert.equal(weekSel(page).value, START, 'back to its own pay period');
     assert.equal(page.doc.activeElement, weekSel(page));
     assert.equal(JSON.stringify(page.state().nights), was);
   } finally {
@@ -240,7 +240,7 @@ test('after a schedule change a stale pick is counted by its date, with a note',
     page.tab('periods');
     const cur = sectionOf(page, start);
     assert.equal(cur.querySelectorAll('.list-row').length, 1, 'counted by its date');
-    assert.ok(page.text(cur).includes('pay week no longer matches your schedule, counted by its date'));
+    assert.ok(page.text(cur).includes('pay period no longer matches your schedule, counted by its date'));
     openEdit(page, date);
     assert.equal(weekSel(page).value, start);
     page.click(page.button('Save changes'));

@@ -173,7 +173,7 @@ const byDate = (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
 
 /* ---------- the pay period a night counts toward ---------- */
 /*
- * night.periodStart (optional, owner request): the first day of the pay period ("pay week") the night counts toward,
+ * night.periodStart (optional, owner request): the first day of the pay period the night counts toward,
  * picked in the Pay periods editor. A DATE, not an index, so a Setup schedule change can't silently renumber it.
  * It only counts while it is still the first day of a period in this restaurant's schedule (any of the six modes;
  * payday/payDelay never moves period boundaries). Otherwise the night counts by its own date, and nightPeriodStale says so.
@@ -185,12 +185,12 @@ function assignedIndex(p, night) {
   if (!Number.isFinite(k) || periodRange(p, k).start !== s) return null;
   return k;
 }
-/** The pay period index a night counts toward: its picked pay week (night.periodStart) when valid, else its date's. */
+/** The pay period index a night counts toward: its picked pay period (night.periodStart) when valid, else its date's. */
 export function nightPeriodIndex(p, night) {
   const k = assignedIndex(p, night);
   return k == null ? periodIndex(p, night.date) : k;
 }
-/** True when a night has a picked pay week that no longer matches the schedule (so it is counted by its date). */
+/** True when a night has a picked pay period that no longer matches the schedule (so it is counted by its date). */
 export const nightPeriodStale = (p, night) =>
   !!night && night.periodStart != null && night.periodStart !== '' && assignedIndex(p, night) == null;
 /** True when a night counts toward a pay period other than the one its date falls in. */
@@ -300,6 +300,10 @@ export function lockFinishedNights(profile, nights, today = todayISO()) {
   const snaps = new Map();
   index.forEach((list, idx) => {
     if (!isFinal(profile, idx, today) || list.every((n) => n.snap)) return;
+    // Some nights there are locked already (a night added or moved in later): the newcomers get the period's own
+    // snapshot, so its fixed deductions and non-taxable money (periodSnap) stay what they were.
+    const have = periodSnap(list);
+    if (have) return snaps.set(idx, have);
     const shifts = base.source === 'default' ? shiftsPerPeriod(profile, nights, today, idx, index).n : base.n;
     snaps.set(idx, snapshotFor(profile, shifts));
   });
@@ -340,15 +344,25 @@ function termsOf(night, p, shifts) {
     n: shifts > 0 ? shifts : shiftsPerPeriod(p, [], todayISO()).n,
   };
 }
-/** Fixed deductions a period's check carries: from the newest locked night in it, else the current Setup. */
-export function periodFixed(p, ns) {
-  for (let i = ns.length - 1; i >= 0; i--) if (ns[i].snap) return ns[i].snap.fixed;
-  return fixedTotal(p);
+/**
+ * The snapshot a pay period's check is worked out with (its fixed deductions and recurring non-taxable money): the
+ * newest locked night's in ns (oldest first, as nightsInPeriod returns them), else null. Every way a night is locked
+ * INTO a period that already has locked nights (lockFinishedNights, a move in the night editor) copies this snapshot,
+ * so adding a night to a finished period never changes what the period's check carries.
+ */
+export function periodSnap(ns) {
+  for (let i = ns.length - 1; i >= 0; i--) if (ns[i] && ns[i].snap) return ns[i].snap;
+  return null;
 }
-/** Recurring non-taxable money a period's check carries: from the newest locked night in it, else the current Setup. */
+/** Fixed deductions a period's check carries: from its snapshot (periodSnap), else the current Setup. */
+export function periodFixed(p, ns) {
+  const s = periodSnap(ns);
+  return s ? s.fixed : fixedTotal(p);
+}
+/** Recurring non-taxable money a period's check carries: from its snapshot (periodSnap), else the current Setup. */
 export function periodNontax(p, ns) {
-  for (let i = ns.length - 1; i >= 0; i--) if (ns[i].snap) return num(ns[i].snap.nontax);
-  return nontaxRecurring(p);
+  const s = periodSnap(ns);
+  return s ? num(s.nontax) : nontaxRecurring(p);
 }
 
 /* ---------- one night (6.4) ---------- */

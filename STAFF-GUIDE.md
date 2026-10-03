@@ -78,7 +78,7 @@ The estimate usually gets closer after a check or two. Changing gross pay or a d
 ## Good to know
 
 - **Logging after midnight?** Before 6 a.m. it is saved as the night before.
-- **Paycheck counted a night in another week?** In **Pay periods**, tap **Edit** on that night and pick the pay week it counts toward under **Counts toward the pay week that started:** (the week before, its own, or the next). If that changes a pay period that has already ended (for example moving a night back into last week), TipNet asks first.
+- **Paycheck counted a night in another pay period?** In **Pay periods**, tap **Edit** on that night and pick the pay period it counts toward under **Counts toward the pay period that started:** (the pay period before, its own, or the next). If that changes a pay period that has already ended (for example moving a night back into the pay period that just ended), TipNet asks first.
 - **Your data stays on your phone.** Your bar cannot see it.
 - **It is an estimate,** not an exact paycheck.
 - **Tax questions?** Ask payroll or a tax professional. TipNet is not tax advice.

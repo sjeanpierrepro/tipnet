@@ -928,7 +928,7 @@ function cashLoggedNow(src, today = todayISO()) {
   return src.some((s) => {
     if (!s.profile || !s.profile.periodStart) return false;
     const idx = periodIndex(s.profile, today);
-    // by the pay period each night counts toward (a night can be moved to the pay week next to its date's)
+    // by the pay period each night counts toward (a night can be moved to the pay period next to its date's)
     return s.nights.some(
       (n) =>
         nightPeriodIndex(s.profile, n) === idx &&
