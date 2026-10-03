@@ -14,6 +14,7 @@ import {
   indexNights,
   snapshotFor,
   periodSnap,
+  periodTerms,
   nightsInPeriod,
   periodRange,
   totalFromTips,
@@ -222,7 +223,21 @@ function editor(S, n) {
         if (!(k in out.pay)) out.pay[k] = n.pay[k];
       });
       out.snap = keepSnap === n.snap ? n.snap : JSON.parse(JSON.stringify(keepSnap));
-    } else if (mv ? intoFinished : n.snap && recalc) out.snap = snapshotFor(p, shiftsFor(out));
+    } else if (mv ? intoFinished : n.snap && recalc) {
+      out.snap = snapshotFor(p, shiftsFor(out));
+      // Recalculated in (or into) a finished pay period that already has a snapshot: the night uses today's Setup,
+      // but the period's check keeps the fixed deductions and non-taxable money it had (periodTerms).
+      const ref = recalc
+        ? periodSnap(
+            nightsInPeriod(
+              p,
+              mv ? nightsOf(S, w.id).filter((x) => x.id !== n.id) : nightsOf(S, w.id),
+              mv ? mv.to : nightPeriodIndex(p, n),
+            ),
+          )
+        : null;
+      if (ref) out.snap.period = periodTerms(ref);
+    }
     // Tips and hours untouched and no recalculation: the stored total (and typed tips) stay exactly as they were.
     const untouched = !recalc && JSON.stringify([d.total, d.pay]) === typedAtOpen;
     if (untouched && (tipsMode(p) || hasTips(n))) {
@@ -423,6 +438,9 @@ function editor(S, n) {
   let lockNote = null;
   if (n.snap) {
     const cb = el('input', { type: 'checkbox', id: 'edit-' + n.id + '-recalc' });
+    // In a finished pay period, the period's check keeps its fixed deductions whatever this night is recalculated with.
+    const inFinished = isFinal(p, nightPeriodIndex(p, n), todayISO());
+    if (inFinished) cb.setAttribute('aria-describedby', cb.id + '-hint');
     cb.addEventListener('change', () => {
       recalc = cb.checked;
       f.refresh();
@@ -447,6 +465,13 @@ function editor(S, n) {
           el('small', null, 'Uses today’s pay rates, deductions and tip-out for this night.'),
         ),
       ),
+      inFinished
+        ? el(
+            'p',
+            { class: 'hint', id: cb.id + '-hint' },
+            'This night uses today’s Setup; the pay period’s fixed deductions stay as they were.',
+          )
+        : null,
     );
   }
   const saveBtn = el(

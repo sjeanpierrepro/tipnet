@@ -222,3 +222,37 @@ test('locking is not cached for the day once something changed: a mid-day schedu
   S.lockFinished({ today: TODAY });
   assert.equal(JSON.stringify(st.nights.filter((x) => x.snap)), was, 'the locked nights keep their numbers');
 });
+
+test('a recalculated night keeps the period’s fixed deductions and non-taxable money in snap.period (either order)', () => {
+  const p = P();
+  const nights = lock(N(), p); // fixed 60
+  const was = M.periodTotals(p, nights, 0, AFTER);
+  raise(p); // fixed now 100
+  const recalcAt = (list, i) => {
+    const out = list.slice();
+    const ref = M.periodSnap(M.nightsInPeriod(p, list, 0));
+    out[i] = { ...list[i], snap: { ...M.snapshotFor(p, 10), period: M.periodTerms(ref) } };
+    return out;
+  };
+  const last = nights.length - 1;
+  for (const order of [
+    [last, 0],
+    [0, last],
+  ]) {
+    const after = recalcAt(recalcAt(nights, order[0]), order[1]);
+    assert.equal(M.periodFixed(p, after), 60, 'order ' + order);
+    assert.equal(M.periodNontax(p, after), M.periodNontax(p, nights));
+    // the recalculated nights' own numbers change; the period's fixed amount does not
+    assert.notEqual(M.periodTotals(p, after, 0, AFTER).net, was.net);
+  }
+  // without snap.period the newest night's (today's) fixed total would be used: the regression this guards
+  const bare = nights.slice();
+  bare[last] = { ...nights[last], snap: M.snapshotFor(p, 10) };
+  assert.equal(M.periodFixed(p, bare), 100);
+  // kept through storage
+  const S = migrate({
+    profile: { ...p },
+    nights: [{ ...nights[0], snap: { ...M.snapshotFor(p, 10), period: { fixed: 60, nontax: 7 } } }],
+  });
+  assert.deepEqual(S.nights[0].snap.period, { fixed: 60, nontax: 7 });
+});

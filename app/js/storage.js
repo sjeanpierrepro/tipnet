@@ -259,6 +259,9 @@ function cleanSnap(s) {
     },
   };
   if (finiteIn(s.nontax, 0.01, 1e7)) out.nontax = s.nontax; // recurring non-taxable money per check
+  // a night recalculated in a finished period: the period's own fixed deductions and non-taxable money (periodTerms)
+  if (isObj(s.period) && finiteIn(s.period.fixed, 0, 1e7))
+    out.period = { fixed: s.period.fixed, nontax: finiteIn(s.period.nontax, 0, 1e7) ? s.period.nontax : 0 };
   return out;
 }
 /** A comparison entry. Old ones (label, pred, actual, err only) stay valid; new ones also carry the pay period and the rate before/after. */

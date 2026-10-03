@@ -4,7 +4,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { boot, realState } from './harness.js';
-import { addDays, todayISO } from '../../app/js/math.js';
+import {
+  addDays,
+  todayISO,
+  fixedTotal,
+  periodIndex,
+  nightsInPeriod,
+  periodFixed,
+  periodNontax,
+} from '../../app/js/math.js';
 
 const today = todayISO();
 const fmt = (iso, o) => new Date(iso + 'T00:00:00Z').toLocaleDateString('en-US', { ...o, timeZone: 'UTC' });
@@ -391,3 +399,59 @@ test('the dropped-pick status line is not rewritten while typing elsewhere', asy
     await page.close();
   }
 });
+
+for (const first of ['n2', 'n1']) {
+  test(
+    'Recalculate with current Setup in a finished pay period keeps the period’s fixed deductions (' +
+      (first === 'n2' ? 'newest night first' : 'older night first') +
+      ')',
+    async () => {
+      const snap = () => ({
+        v: 1,
+        r: 0.2,
+        rf: 0.1,
+        fixed: 50,
+        nontax: 7,
+        n: 5,
+        pay: [{ id: 'p1', rate: 9, unit: 'hr', usual: 6 }],
+        tipout: { on: false, mode: 'pct', value: 0, basis: 'before', from: 'cash' },
+      });
+      const d1 = addDays(today, -10),
+        d2 = addDays(today, -6); // both in the finished PREV; n2 is the newest
+      const page = await boot({
+        seed: seed([
+          { date: d1, snap: snap() },
+          { date: d2, snap: snap() },
+        ]),
+      });
+      try {
+        page.tab('periods');
+        const p = page.state().workplaces[0].profile;
+        const fixedNow = fixedTotal(p);
+        assert.notEqual(fixedNow, 50, 'today’s Setup differs from the period’s');
+        const k = periodIndex(p, d1);
+        const period = () => {
+          const ns = nightsInPeriod(p, page.state().nights, k);
+          return [periodFixed(p, ns), periodNontax(p, ns)];
+        };
+        assert.deepEqual(period(), [50, 7]);
+        for (const id of first === 'n2' ? ['n2', 'n1'] : ['n1', 'n2']) {
+          page.click(page.byLabel('Edit night ' + long(id === 'n1' ? d1 : d2)));
+          const cb = page.must(page.$('#edit-' + id + '-recalc'), 'recalculate');
+          const hint = page.must(page.doc.getElementById(cb.getAttribute('aria-describedby')), 'hint');
+          assert.equal(
+            page.text(hint),
+            'This night uses today’s Setup; the pay period’s fixed deductions stay as they were.',
+          );
+          cb.checked = true;
+          page.change(cb);
+          await save(page);
+          assert.equal(night(page, id).snap.fixed, fixedNow, 'the night itself uses today’s Setup');
+          assert.deepEqual(period(), [50, 7], 'after recalculating ' + id);
+        }
+      } finally {
+        await page.close();
+      }
+    },
+  );
+}

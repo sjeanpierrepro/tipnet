@@ -354,15 +354,25 @@ export function periodSnap(ns) {
   for (let i = ns.length - 1; i >= 0; i--) if (ns[i] && ns[i].snap) return ns[i].snap;
   return null;
 }
-/** Fixed deductions a period's check carries: from its snapshot (periodSnap), else the current Setup. */
+/**
+ * {fixed, nontax} a period's check carries per its snapshot s (a periodSnap result). A night recalculated with the
+ * current Setup in a finished period keeps the period's own numbers in s.period (see the night editor), so
+ * "Recalculate with current Setup" never changes the period's fixed deductions or non-taxable money, whichever
+ * night is the newest.
+ */
+export function periodTerms(s) {
+  const t = s.period || s;
+  return { fixed: num(t.fixed), nontax: num(t.nontax) };
+}
+/** Fixed deductions a period's check carries: from its snapshot (periodSnap, periodTerms), else the current Setup. */
 export function periodFixed(p, ns) {
   const s = periodSnap(ns);
-  return s ? s.fixed : fixedTotal(p);
+  return s ? periodTerms(s).fixed : fixedTotal(p);
 }
-/** Recurring non-taxable money a period's check carries: from its snapshot (periodSnap), else the current Setup. */
+/** Recurring non-taxable money a period's check carries: from its snapshot (periodSnap, periodTerms), else the current Setup. */
 export function periodNontax(p, ns) {
   const s = periodSnap(ns);
-  return s ? num(s.nontax) : nontaxRecurring(p);
+  return s ? periodTerms(s).nontax : nontaxRecurring(p);
 }
 
 /* ---------- one night (6.4) ---------- */
