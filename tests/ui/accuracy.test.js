@@ -354,8 +354,8 @@ test('check my accuracy, Replace offered: "Don’t change" names the rate in use
     compare(pred.toFixed(2)); // the right amount: Replace is offered
     assert.match(page.$('#cal-apply').textContent, /Replace my earlier comparison/);
     page.click(page.$('#cal-keep'));
-    const typoPct = (typoRate * 100).toFixed(2).replace('.', '\.');
-    assert.match(page.text(), new RegExp('No change made\. Your tax rate stays at ' + typoPct + '%\.'));
+    const typoPct = (typoRate * 100).toFixed(2).replace('.', '\\.');
+    assert.match(page.text(), new RegExp('No change made\\. Your tax rate stays at ' + typoPct + '%\\.'));
     assert.doesNotMatch(page.text(), /stays at 16\.65%/);
     assert.equal(page.state().workplaces[0].profile.rateOverride, typoRate, 'nothing changed');
   } finally {
