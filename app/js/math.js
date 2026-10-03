@@ -633,7 +633,8 @@ export function calibrate(p, nights, idx, actual, today = todayISO(), shifts, ra
         )
       : rOld;
   // matched: the estimate already matches AND the check implies the rate it would change, so nothing to adjust
-  const matchRate = Tt > 0 ? (MATCH_ERROR * A) / fromCents(Tt) : Infinity;
+  // Floor the band at a cent per night so cent rounding alone can't turn an exact match on a tiny check into a "−0.00" proposal.
+  const matchRate = Tt > 0 ? Math.max(MATCH_ERROR * A, 0.01 * cs.length) / fromCents(Tt) : Infinity;
   const matched = Math.abs(err) < MATCH_ERROR && Math.abs(rNew - rOld) < matchRate;
   const uncapped = matched ? rOld : (rOld + rNew) / 2; // blend to avoid overreacting to one check
   const rateOverride = matched

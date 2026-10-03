@@ -786,3 +786,21 @@ test('calibration with a Bonus night: a miss proposes the same rate as the same 
   near(rb.rateOverride, rp.rateOverride, 1e-4);
   assert.ok(rb.change > 0, 'a smaller check implies a higher rate');
 });
+
+test('calibrate: exact tiny checks (/usr/bin/bash.50–) still match despite cent rounding', () => {
+  // A few dollars on the check against ~$700 of taxed money: cent rounding alone must not produce a "−0.00 points" proposal.
+  const p = M.exampleProfile('2026-09-21');
+  let tried = 0;
+  for (let c = 200; c <= 300; c += 0.25) {
+    const nights = [
+      { id: 'n1', date: '2026-09-22', total: 400, cash: c, pay: { p1: 8 }, barback: false },
+      { id: 'n2', date: '2026-09-24', total: 380, cash: 300, pay: { p1: 8 }, barback: false },
+    ];
+    const probe = M.calibrate(p, nights, 0, 1, '2026-10-20');
+    if (!probe.ok || probe.pred < 0.5 || probe.pred > 5) continue;
+    tried++;
+    const r = M.calibrate(p, nights, 0, probe.pred, '2026-10-20');
+    assert.equal(r.matched, true, 'cash ' + c + ', predicted ' + probe.pred);
+  }
+  assert.ok(tried >= 10, 'enough tiny-check cases: ' + tried);
+});
