@@ -1,5 +1,6 @@
 // Runs the whole test suite as if today were each of a few awkward dates, so no test depends on the real calendar.
-// Usage: npm run test:dates   (or: node tools/run-dates.mjs 2026-10-05 2027-01-01)
+// Usage: npm run test:dates   (or: node tools/run-dates.mjs 2026-10-05 2027-01-01T01:30)
+// A run is a date (noon) or a date and time, YYYY-MM-DDTHH:MM (24-hour, local).
 // Named run-dates (not test-*) so a plain `node --test` never picks it up as a test file and "passes" without running anything.
 // Each run sets TIPNET_FAKE_TODAY and preloads tools/fake-today.mjs into every test process via NODE_OPTIONS.
 // A run that fails, skips, or finds no tests fails this script.
@@ -12,10 +13,19 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const preload = pathToFileURL(path.join(root, 'tools', 'fake-today.mjs')).href;
 // Right after the example pay period ends (the old time bomb), a new year, a leap day, a month end before the fixtures'
-// September (2026-01-31) and the US daylight-saving switch (2026-03-08).
+// September (2026-01-31) and the US daylight-saving switch (2026-03-08). Two time-of-day runs on top: 01:30 (before the
+// 6 a.m. Late-nights cutoff, when a night still belongs to yesterday) and 23:30 (just before midnight).
 const dates = process.argv.slice(2).length
   ? process.argv.slice(2)
-  : ['2026-10-05', '2027-01-01', '2028-02-29', '2026-01-31', '2026-03-08'];
+  : [
+      '2026-10-05',
+      '2027-01-01',
+      '2028-02-29',
+      '2026-01-31',
+      '2026-03-08',
+      '2026-10-05T01:30',
+      '2026-10-05T23:30',
+    ];
 const testGlob = 'tests/**/*.test.js';
 
 const failed = [];

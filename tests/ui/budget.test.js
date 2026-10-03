@@ -163,6 +163,7 @@ test('budget: month end sets aside a day-based allowance and explains it', async
   mock.timers.enable({ apis: ['Date'], now: new Date(2026, 8, 30, 12, 0) }); // Sep 30
   try {
     const page = await boot({
+      time: null,
       url: DEV,
       seed: realState((S) => {
         S.workplaces[0].setupDone = true;

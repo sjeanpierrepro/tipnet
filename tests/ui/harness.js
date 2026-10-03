@@ -31,6 +31,27 @@ globalThis.setTimeout = (...a) => {
   return t;
 };
 
+// The clock: every boot() pins the time of day (default 14:00 local, on today's date) so no UI test depends on the real
+// time of day (before 6 a.m. the Late-nights rule dates a night to yesterday). The clock keeps ticking from there.
+// A test that cares passes boot({ time: '01:30' }). Fake dates from tools/fake-today.mjs are respected (only the time is pinned).
+const BaseDate = globalThis.Date;
+export const DEFAULT_TIME = '14:00';
+function pinTime(time) {
+  const [h, m] = time.split(':').map(Number);
+  const n = new BaseDate();
+  const offset = new BaseDate(n.getFullYear(), n.getMonth(), n.getDate(), h, m, 0).getTime() - n.getTime();
+  globalThis.Date = class PinnedDate extends BaseDate {
+    constructor(...args) {
+      if (args.length === 0) super(BaseDate.now() + offset);
+      else super(...args);
+    }
+    static now() {
+      return BaseDate.now() + offset;
+    }
+  };
+}
+pinTime(DEFAULT_TIME);
+
 const setGlobal = (k, v) =>
   Object.defineProperty(globalThis, k, { value: v, configurable: true, writable: true });
 const tick = () => new Promise((r) => setImmediate(r));
@@ -40,9 +61,16 @@ let bootN = 0;
  * boot({url, seed, payments}) -> the page.
  *   url:      page address (hostname and ?unlock=dev matter). Default http://localhost/
  *   seed:     a state object written to localStorage (tipnet.v2) before the app starts. Default: first run.
+ *   time:     the local time of day the clock shows at boot ('HH:MM', default 14:00), on today's date.
  *   payments: true switches payments on in memory (BILLING.provider) before the app starts.
  */
-export async function boot({ url = 'http://localhost/', seed = null, payments = false } = {}) {
+export async function boot({
+  url = 'http://localhost/',
+  seed = null,
+  payments = false,
+  time = DEFAULT_TIME,
+} = {}) {
+  if (time) pinTime(time);
   const win = new Window({
     url,
     width: 390,

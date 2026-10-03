@@ -42,6 +42,8 @@ npm run test:dates
 
 (`npm test` runs `tests/**/*.test.js`; the date check is tools/run-dates.mjs and prints the test count per date.)
 
+Tests must not depend on the real clock. `npm run test:dates` reruns the whole suite with a fake clock on several awkward dates and two times of day (01:30, before the 6 a.m. Late-nights cutoff, and 23:30); GitHub Actions runs in UTC, so a late-evening push in Eastern time lands in those early hours. To fake one moment yourself: `node tools/run-dates.mjs 2026-10-05T01:30` (a date alone means noon). The screen-test harness (`tests/ui/harness.js`) boots at 14:00 local time unless a test passes `boot({ time: '01:30' })`, or `time: null` when it fakes the clock itself with `mock.timers`.
+
 To see TipNet running locally:
 
 ```

@@ -67,14 +67,14 @@ test('tonight: Enter in the total field saves the night', async () => {
 test('tonight: before 6 a.m. the default date is yesterday (fake clock), after 6 it is today', async () => {
   mock.timers.enable({ apis: ['Date'], now: new Date(2026, 8, 30, 3, 15) }); // Sep 30, 3:15 a.m. local time
   try {
-    const page = await boot({ seed: seed() });
+    const page = await boot({ seed: seed(), time: null });
     try {
       assert.equal(page.$('[data-focus-key="night-date"]').value, '2026-09-29');
     } finally {
       await page.close();
     }
     mock.timers.setTime(new Date(2026, 8, 30, 6, 0).getTime());
-    const page2 = await boot({ seed: seed() });
+    const page2 = await boot({ seed: seed(), time: null });
     try {
       assert.equal(page2.$('[data-focus-key="night-date"]').value, '2026-09-30');
     } finally {
@@ -264,6 +264,7 @@ test('tonight: at 1 a.m. on a pay period’s first day, the pay period summary i
   mock.timers.enable({ apis: ['Date'], now: new Date(2026, 9, 5, 1, 0) }); // Oct 5, 1 a.m.: a new period starts Oct 5
   try {
     const page = await boot({
+      time: null,
       seed: realState((S) => {
         S.workplaces[0].setupDone = true;
         Object.assign(S.workplaces[0].profile, {
@@ -332,7 +333,7 @@ test('tonight: the result card says estimates use one tax rate, and Check my acc
 test('tonight: clearing the Date field falls back to the Late-nights business date, not the calendar date', async () => {
   mock.timers.enable({ apis: ['Date'], now: new Date(2026, 8, 30, 3, 15) }); // Sep 30, 3:15 a.m.: still Sep 29's night
   try {
-    const page = await boot({ seed: seed() });
+    const page = await boot({ seed: seed(), time: null });
     try {
       const date = page.must(page.$('[data-focus-key="night-date"]'), 'date field');
       page.type(date, '2026-09-20');
