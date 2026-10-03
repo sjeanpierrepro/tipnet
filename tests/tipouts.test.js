@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as M from '../app/js/math.js';
-import { migrate, encodeBackup, decodeBackup } from '../app/js/storage.js';
+import { migrate, encodeBackup, decodeBackup, pinTipouts } from '../app/js/storage.js';
 import { buildNights, mergeNights, guessMapping, yesNo } from '../app/js/csv.js';
 
 const today = '2026-09-20';
@@ -220,10 +220,10 @@ test('migration: new fields are cleaned (who, mode, value, from), hostile ids re
   assert.deepEqual(list[1], { id: 'x', k: 'other', who: 'Other', mode: 'pctTips', value: 0, from: 'cash' });
   assert.deepEqual(out.nights[0].tipouts, { [list[0].id]: true, x: false });
   assert.equal(out.nights[0].sales, 980.5);
-  // a night without sales or tip-out choices stays as it was
+  // a night without sales gets none; one without tip-out choices gets its barback choice for the people set up now
   const plain = migrate(oldState({ on: true, mode: 'pct', value: 15 }), { today });
   assert.equal('sales' in plain.nights[0], false);
-  assert.equal('tipouts' in plain.nights[0], false);
+  assert.deepEqual(plain.nights[0].tipouts, { t1: true });
 });
 
 test('migration: old backup codes restore with the tip-out list; new ones round-trip it', () => {
@@ -269,6 +269,44 @@ test('locked periods never change: an old single-tip-out snapshot keeps working 
   assert.equal(snap.tipouts.length, 2);
   p.tipouts[1].value = 99;
   assert.equal(snap.tipouts[1].value, 50, 'a copy, not the live list');
+});
+
+test('an older night keeps the people set up when it was saved: someone added to Setup later is not counted on it', () => {
+  const out = migrate(oldState({ on: true, mode: 'pct', value: 15, basis: 'before', from: 'cash' }), {
+    today,
+  });
+  const n = out.nights[0];
+  assert.ok(!n.snap, 'still in the current pay period');
+  assert.deepEqual(n.tipouts, { t1: true }, 'pinned to the one Barback it stood for');
+  const p = out.workplaces[0].profile;
+  const before = M.computeNight(n, p, 10);
+  p.tipouts.push({ ...RUNNER, mode: 'flat', value: 50 });
+  const after = M.computeNight(n, p, 10);
+  assert.equal(after.tipout, before.tipout);
+  assert.equal(after.net, before.net);
+  // nights with no list (an import): nobody stays nobody, everyone is everyone set up right now, and only once
+  const off = { id: 'n2', date: today, total: 300, cash: 100, pay: {}, barback: false, workplaceId: 'w1' };
+  const imp = { id: 'n3', date: today, total: 300, cash: 100, pay: {}, barback: true, workplaceId: 'w1' };
+  assert.equal(pinTipouts(out.workplaces, [off, imp]), 2);
+  assert.deepEqual(off.tipouts, { t1: false, t2: false });
+  assert.deepEqual(imp.tipouts, { t1: true, t2: true });
+  assert.equal(pinTipouts(out.workplaces, [off, imp]), 0);
+});
+
+test('imported nights are pinned when the import locks, before a Setup change can add someone', async () => {
+  const S = await import('../app/js/storage.js');
+  const st = S.setState(oldState({ on: true, mode: 'pct', value: 15, basis: 'before', from: 'cash' }), {
+    today,
+  });
+  st.nights.push({ id: 'i1', date: today, total: 300, cash: 100, pay: {}, barback: true, workplaceId: 'w1' });
+  S.lockFinished({ force: true, today });
+  assert.deepEqual(st.nights[1].tipouts, { t1: true });
+  st.workplaces[0].profile.tipouts.push({ ...RUNNER });
+  const c = M.computeNight(st.nights[1], st.workplaces[0].profile, 10);
+  assert.deepEqual(
+    c.tipouts.map((l) => l.who),
+    ['Barback'],
+  );
 });
 
 /* ---------- CSV ---------- */

@@ -8,6 +8,7 @@ import {
   todayISO,
   lockFinishedNights,
   legacyTipouts,
+  tipoutSetup,
   TIPOUT_PRESETS,
   TIPOUT_MODES,
 } from './math.js';
@@ -513,6 +514,28 @@ export function lockAll(workplaces, nights, today = todayISO()) {
   return { nights: out, stamped };
 }
 
+/**
+ * A night with no list of who was tipped out (saved before several tip-outs, or imported from a CSV file) only says
+ * everyone or nobody (night.barback). Pin that to the people set up now (its snapshot's people once it is locked), in
+ * place, so someone added to Setup later is never counted on it. Returns how many nights got a list.
+ */
+export function pinTipouts(workplaces, nights) {
+  const lists = new Map(workplaces.map((w) => [w.id, tipoutSetup(w.profile).list]));
+  const first = workplaces.length ? lists.get(workplaces[0].id) : [];
+  let pinned = 0;
+  nights.forEach((n) => {
+    if (isObj(n.tipouts)) return;
+    const list = n.snap ? tipoutSetup(n.snap).list : lists.get(n.workplaceId) || first;
+    const t = {};
+    list.forEach((r) => {
+      t[r.id] = !!n.barback;
+    });
+    n.tipouts = t;
+    pinned++;
+  });
+  return pinned;
+}
+
 /** Old prototype profile shapes, converted in place (the prototype's migrate). rawNights: that profile's nights. */
 function upgradeOldProfile(p, rawNights) {
   // Oldest prototype: single hourly rate and hours instead of payTypes.
@@ -606,7 +629,9 @@ function migrateUnsafe(input, today) {
     if (w.noDeductions === true) out.noDeductions = true; // "My paystub has no deductions"
     return out;
   });
-  const nights = lockAll(workplaces, cleanNights(rawNights), today).nights;
+  const cleaned = cleanNights(rawNights);
+  pinTipouts(workplaces, cleaned); // older nights' "everyone or nobody" becomes the people set up now
+  const nights = lockAll(workplaces, cleaned, today).nights;
   // Old states and old backup codes have no budget: they get an empty one. Old "Paid" ticks (keyed by pay period) are
   // converted with the first restaurant's schedule, the only one there was then.
   const budget = migrateBudget(S.budget, workplaces[0].profile, today);
@@ -1125,8 +1150,11 @@ let lockedOn = null; // the day the state was last looked at, while nothing has 
 export function lockFinished({ force = false, today = todayISO() } = {}) {
   if (!force && lockedOn === today) return 0;
   const S = getState();
+  // Imported nights say everyone or nobody: pinned to today's people before a Setup change can add someone.
+  const pinned = pinTipouts(S.workplaces, S.nights);
   const r = lockAll(S.workplaces, S.nights, today); // each restaurant locks on its own pay schedule
   if (!r.stamped) {
+    if (pinned) scheduleSave();
     lockedOn = today;
     return 0;
   }
