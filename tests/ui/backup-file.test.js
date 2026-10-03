@@ -5,6 +5,7 @@ import { boot, realState } from './harness.js';
 import * as storage from '../../app/js/storage.js';
 import { fileSaver, backupDue } from '../../app/js/ui/backup.js';
 import { exampleNights, todayISO } from '../../app/js/math.js';
+import { businessDate } from '../../app/js/inputs.js';
 
 // The harness unrefs timers, so hold the event loop open while waiting.
 const wait = (ms) =>
@@ -17,7 +18,7 @@ const wait = (ms) =>
   });
 const withNights = (count = 5, f) =>
   realState((S) => {
-    S.nights = exampleNights().slice(0, count);
+    S.nights = exampleNights(businessDate()).slice(0, count); // before tonight's work date, also at 1 a.m.
     while (S.nights.length < count)
       S.nights.push({ ...S.nights[0], id: 'x' + S.nights.length, date: '2026-01-0' + S.nights.length });
     if (f) f(S);

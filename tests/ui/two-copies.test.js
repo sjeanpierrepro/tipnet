@@ -7,6 +7,9 @@ import { boot, realState } from './harness.js';
 import * as storage from '../../app/js/storage.js';
 import { exampleBudget } from '../../app/js/budget.js';
 import { todayISO, addDays } from '../../app/js/math.js';
+import { businessDate } from '../../app/js/inputs.js';
+// nights before tonight's work date (yesterday's before 6 a.m.), so a Tonight save never meets a night already saved
+const tonight = () => businessDate();
 
 const DEV = 'http://localhost/?unlock=dev';
 const seed = () =>
@@ -16,7 +19,7 @@ const seed = () =>
     S.nights = [
       {
         id: 'n0',
-        date: addDays(todayISO(), -1),
+        date: addDays(tonight(), -1),
         total: 300,
         cash: null,
         pay: { p1: 6 },
@@ -38,7 +41,7 @@ async function otherWindowSaves(page, withData) {
     theirs.nights.push({
       ...theirs.nights[0],
       id: 'fromB' + ++stamp,
-      date: addDays(todayISO(), -2),
+      date: addDays(tonight(), -2),
       total: 111,
     });
   }

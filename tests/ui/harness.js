@@ -2,6 +2,7 @@
 // The app's modules are shared (Node caches them), so boot() first resets every piece of module-level state
 // (storage cache, screen drafts, billing config, install prompt) and the window/document/localStorage globals are replaced.
 import { readFileSync } from 'node:fs';
+import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { Window } from 'happy-dom';
@@ -33,14 +34,23 @@ globalThis.setTimeout = (...a) => {
 
 // The clock: every boot() pins the time of day (default 14:00 local, on today's date) so no UI test depends on the real
 // time of day (before 6 a.m. the Late-nights rule dates a night to yesterday). The clock keeps ticking from there.
-// A test that cares passes boot({ time: '01:30' }). Fake dates from tools/fake-today.mjs are respected (only the time is pinned).
+// A test that cares passes boot({ time: '01:30' }). Fake dates from tools/fake-today.mjs are respected; a fake moment
+// WITH a time (TIPNET_FAKE_TODAY=2026-10-05T01:30, the run-dates night runs) is the default time instead of 14:00, so
+// every screen is also tested at night. A test that installs mock.timers must pass boot({ time: null }) (checked).
 const BaseDate = globalThis.Date;
-export const DEFAULT_TIME = '14:00';
+const fakeTime = /T(\d{2}:\d{2})$/.exec(process.env.TIPNET_FAKE_TODAY || '');
+export const DEFAULT_TIME = fakeTime ? fakeTime[1] : '14:00';
+let pinned = null; // the Date class the last pin installed
 function pinTime(time) {
+  if (pinned && globalThis.Date !== pinned)
+    throw new Error(
+      'The clock was replaced (mock.timers?) while the harness pins the time of day: pass boot({ time: null }) ' +
+        'so the mocked clock is used, not silently overridden.',
+    );
   const [h, m] = time.split(':').map(Number);
   const n = new BaseDate();
   const offset = new BaseDate(n.getFullYear(), n.getMonth(), n.getDate(), h, m, 0).getTime() - n.getTime();
-  globalThis.Date = class PinnedDate extends BaseDate {
+  pinned = globalThis.Date = class PinnedDate extends BaseDate {
     constructor(...args) {
       if (args.length === 0) super(BaseDate.now() + offset);
       else super(...args);
@@ -61,7 +71,8 @@ let bootN = 0;
  * boot({url, seed, payments}) -> the page.
  *   url:      page address (hostname and ?unlock=dev matter). Default http://localhost/
  *   seed:     a state object written to localStorage (tipnet.v2) before the app starts. Default: first run.
- *   time:     the local time of day the clock shows at boot ('HH:MM', default 14:00), on today's date.
+ *   time:     the local time of day the clock shows at boot ('HH:MM', default DEFAULT_TIME), on today's date; null: no
+ *             pin (required with mock.timers).
  *   payments: true switches payments on in memory (BILLING.provider) before the app starts.
  */
 export async function boot({
