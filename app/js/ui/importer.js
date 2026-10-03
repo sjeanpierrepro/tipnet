@@ -151,7 +151,7 @@ export function renderImporter(host) {
     const empHost = el('div');
     let wpField = null;
     if (ready.length > 1) {
-      const s = select([['', 'Choose the restaurant']].concat(ready.map((w) => [w.id, w.name])), st.wid, {
+      const s = select([['', 'Choose the establishment']].concat(ready.map((w) => [w.id, w.name])), st.wid, {
         id: 'map-workplace',
       });
       s.addEventListener('change', () => {
@@ -161,7 +161,7 @@ export function renderImporter(host) {
       wpField = el(
         'div',
         { class: 'field' },
-        el('label', { for: 'map-workplace' }, 'Which restaurant are these nights from?'),
+        el('label', { for: 'map-workplace' }, 'Which establishment are these nights from?'),
         s,
       );
     }
@@ -211,7 +211,7 @@ export function renderImporter(host) {
       }
       const w = ready.find((x) => x.id === st.wid);
       if (!w) {
-        preview.append(el('p', { class: 'hint' }, 'Choose the restaurant above to see a preview.'));
+        preview.append(el('p', { class: 'hint' }, 'Choose the establishment above to see a preview.'));
         return;
       }
       const p = w.profile;

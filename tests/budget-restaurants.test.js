@@ -47,7 +47,7 @@ const sources = () => [
 ];
 const sumC = (list) => list.reduce((s, x) => s + toCents(x), 0) / 100;
 
-test('safe to spend runs until the next money from any restaurant, and says whose check it is', () => {
+test('safe to spend runs until the next money from any establishment, and says whose check it is', () => {
   const r = B.safeToSpendAll(B.emptyBudget(), sources(), TODAY, { cashOnHand: 500 });
   assert.equal(r.payday, '2026-10-02');
   assert.equal(r.daysAway, 1);
@@ -67,7 +67,7 @@ test('safe to spend runs until the next money from any restaurant, and says whos
   assert.equal(r.safe, 500);
 });
 
-test('after payday: every check arriving in the window, per restaurant, added up', () => {
+test('after payday: every check arriving in the window, per establishment, added up', () => {
   const r = B.safeToSpendAll(B.emptyBudget(), sources(), TODAY, { cashOnHand: 500 });
   const a = r.after;
   assert.equal(a.periodStart, '2026-10-02');
@@ -92,7 +92,7 @@ test('after payday: every check arriving in the window, per restaurant, added up
   assert.equal(r2.after.projectedCheck, r2.after.checks[0].amount);
 });
 
-test('cash tips from every restaurant count when no balance is entered; spending since the earliest period start comes off', () => {
+test('cash tips from every establishment count when no balance is entered; spending since the earliest period start comes off', () => {
   const s = sources();
   s[1].nights.push(night(5, '2026-10-01', 150, 70)); // Second Spot's new period (Oct 1-15)
   const budget = B.emptyBudget();
@@ -107,7 +107,7 @@ test('cash tips from every restaurant count when no balance is entered; spending
   assert.equal(r.income.spent, 20);
 });
 
-test('goals follow their own restaurant: what it pays, when, and the after window counts only goals with a check in it', () => {
+test('goals follow their own establishment: what it pays, when, and the after window counts only goals with a check in it', () => {
   const budget = B.emptyBudget();
   budget.goals = [
     { id: 'g1', name: 'Fund', target: 1000, saved: 0, perPaycheck: 50, fundedBy: 'A' },
@@ -132,7 +132,7 @@ test('goals follow their own restaurant: what it pays, when, and the after windo
   assert.equal(B.purchasePlan(budget.goals[0], A(), TODAY).payday, '2026-09-21');
 });
 
-test('default restaurant for a goal: the one that pays most often; a tie goes to the first', () => {
+test('default establishment for a goal: the one that pays most often; a tie goes to the first', () => {
   const weekly = { id: 'W', name: 'W', profile: { ...A(), freq: 7 }, nights: [] };
   const s = sources();
   assert.equal(B.paydaysPerYear(A(), TODAY), 26);
@@ -145,7 +145,7 @@ test('default restaurant for a goal: the one that pays most often; a tie goes to
   assert.equal(B.funderOf({}, s, TODAY).id, 'A');
 });
 
-test('what is possible from one restaurant: its check plus the others over the same days, minus everything, capped at what its check brings', () => {
+test('what is possible from one establishment: its check plus the others over the same days, minus everything, capped at what its check brings', () => {
   const budget = B.emptyBudget();
   budget.bills = [{ id: 'b1', name: 'Rent', amount: 1200, dueDay: 1 }];
   budget.goals = [{ id: 'g1', name: 'Fund', target: 5000, saved: 0, perPaycheck: 40, fundedBy: 'A' }];
@@ -166,7 +166,7 @@ test('what is possible from one restaurant: its check plus the others over the s
   assert.equal(
     pb.goals,
     Math.round((4000 * 15) / 14) / 100,
-    "the other restaurant's goal, scaled the same way",
+    "the other establishment's goal, scaled the same way",
   );
   const free = pb.check + pb.otherChecks + pb.other - pb.bills - pb.spending - pb.goals;
   const cap = pb.check + pb.other; // no goal is saved from Second Spot yet

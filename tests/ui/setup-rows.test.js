@@ -31,7 +31,7 @@ const setGross = (page, v) => {
   page.change(g);
 };
 
-test('setup rows: after setup each restaurant is one closed row with a summary; shared sections are rows too', async () => {
+test('setup rows: after setup each establishment is one closed row with a summary; shared sections are rows too', async () => {
   const page = await boot({ seed: two() });
   try {
     page.tab('setup');
@@ -49,7 +49,7 @@ test('setup rows: after setup each restaurant is one closed row with a summary; 
       assert.equal(page.$('#fold-body-' + k).hidden, true, k);
     }
     assert.match(page.text(), /Changes apply right away/);
-    assert.ok(page.$('#wp-add'), '+ Set up another restaurant stays visible');
+    assert.ok(page.$('#wp-add'), '+ Set up another establishment stays visible');
     assert.equal(page.app.lastElementChild.id, 'budget-teaser', 'the Budget card is at the very bottom');
     // Enter/Space work because the row is a real button
     assert.equal(row(page, 'w1').tagName, 'BUTTON');
@@ -117,7 +117,7 @@ test('setup rows: switching tabs with unsaved changes asks Save / Discard / Keep
     setGross(page, '2600');
     page.tab('periods');
     assert.equal(selected(page), 'setup', 'still on Setup');
-    assert.match(page.text(page.$('#draft-bar')), /Save changes to My restaurant\?/);
+    assert.match(page.text(page.$('#draft-bar')), /Save changes to My establishment\?/);
     assert.equal(page.$('#draft-bar').getAttribute('role'), 'group');
     assert.equal(page.doc.activeElement, page.$('#draft-ask-save'));
     page.click(page.$('#draft-ask-keep'));
@@ -146,10 +146,10 @@ test('setup rows: switching tabs with unsaved changes asks Save / Discard / Keep
   }
 });
 
-test('setup rows: opening another restaurant with unsaved changes asks first; only one is open at a time', async () => {
+test('setup rows: opening another establishment with unsaved changes asks first; only one is open at a time', async () => {
   const page = await boot({ seed: two() });
   try {
-    page.openSetup('My restaurant');
+    page.openSetup('My establishment');
     page.click(row(page, 'w2'));
     assert.equal(expanded(page, 'w2'), true, 'nothing typed: it simply switches');
     assert.equal(expanded(page, 'w1'), false);
@@ -167,7 +167,7 @@ test('setup rows: opening another restaurant with unsaved changes asks first; on
     // closing the open row by its heading also asks when something is unsaved
     setGross(page, '2200');
     page.click(row(page, 'w1'));
-    assert.match(page.text(), /Save changes to My restaurant\?/);
+    assert.match(page.text(), /Save changes to My establishment\?/);
     page.click(page.$('#draft-ask-discard'));
     assert.equal(expanded(page, 'w1'), false);
     assert.equal(page.state().workplaces[0].profile.gross, 2000);
@@ -188,7 +188,7 @@ test('setup rows: Save is disabled with plain reasons while the basics are missi
     page.type(page.$('#pr-p1'), '0');
     assert.match(page.$('#draft-reasons').textContent, /Enter your main job’s rate\./);
     page.type(page.$('#wp-name'), '');
-    assert.match(page.$('#draft-reasons').textContent, /Give the restaurant a name\./);
+    assert.match(page.$('#draft-reasons').textContent, /Give the establishment a name\./);
     page.click(save);
     assert.equal(expanded(page, 'w1'), true, 'nothing saved, still open');
     page.type(page.$('#wp-name'), 'Voodoo Bayou');

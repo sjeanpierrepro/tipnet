@@ -189,7 +189,7 @@ function makePage(win, doc, app) {
       const rows = page.$$('button.fold-head[id^="wp-row-"]');
       const row = page.must(
         name ? rows.find((b) => b.querySelector('.fold-title').textContent === name) : rows[0],
-        'restaurant row ' + (name || '(first)'),
+        'establishment row ' + (name || '(first)'),
       );
       if (row.getAttribute('aria-expanded') !== 'true') page.click(row);
       return page.$('#' + row.id);

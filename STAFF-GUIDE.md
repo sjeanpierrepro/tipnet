@@ -51,9 +51,9 @@ Gross pay:   $2,000              Health ins.:      $60
 
 Enter: start Sep 1, end Sep 14, shifts 10, every two weeks, gross $2,000, the four deductions, and your job (Bartender) at $12 per hour.
 
-Something changed (raise, new insurance)? Update it in **Setup**. Once you are set up, Setup shows each restaurant as one line (for example "Bartender $12/h · every two weeks · payday Fri"). Tap it to open everything for that restaurant, make your changes, then tap **Save** (or **Cancel** to throw them away). Nothing changes until you save; if you leave with changes not saved, TipNet asks **Save changes?** first. The shared settings below (Late nights, Appearance, Import nights, Install TipNet, Backups) are one line each too; tap to open them. Those apply right away.
+Something changed (raise, new insurance)? Update it in **Setup**. Once you are set up, Setup shows each establishment as one line (for example "Bartender $12/h · every two weeks · payday Fri"). Tap it to open everything for that establishment, make your changes, then tap **Save** (or **Cancel** to throw them away). Nothing changes until you save; if you leave with changes not saved, TipNet asks **Save changes?** first. The shared settings below (Late nights, Appearance, Import nights, Install TipNet, Backups) are one line each too; tap to open them. Those apply right away.
 
-**Work at a second restaurant?** In **Setup**, tap **+ Set up another restaurant**, type its name, and do the same three steps with a paystub from there. Its pay schedule, jobs and tip-out are kept apart from the first one. To rename or remove a restaurant, open its line in Setup (removing one also removes its nights; **Undo** brings them back).
+**Work at a second establishment?** In **Setup**, tap **+ Set up another establishment**, type its name, and do the same three steps with a paystub from there. Its pay schedule, jobs and tip-out are kept apart from the first one. To rename or remove an establishment, open its line in Setup (removing one also removes its nights; **Undo** brings them back).
 
 ## 4. Every night
 
@@ -64,13 +64,13 @@ Something changed (raise, new insurance)? Update it in **Setup**. Once you are s
 - **Cash:** if you tip anyone out of your cash, type all the cash tips you collected, before paying them (TipNet takes their cash out). Otherwise type the cash you are taking home.
 - Hours are typed every night, because shifts are never quite the same length.
 - Tap **Save night**.
-- **Two restaurants?** The buttons at the top of Tonight pick the restaurant. One tap switches the jobs, rates and pay period; what you half-typed at the other one is still there when you switch back. The message says where it was saved ("Saved to Second Spot: ...").
+- **Two establishments?** The buttons at the top of Tonight pick the establishment. One tap switches the jobs, rates and pay period; what you half-typed at the other one is still there when you switch back. The message says where it was saved ("Saved to Second Spot: ...").
 
 You see your estimated take-home, the cash you keep, and what should land on your check. If the same date already has a night, TipNet asks whether to add to it, replace it, or save a separate night.
 
 ## 5. After a pay period ends (optional)
 
-**Pay periods** > **Check my accuracy**. With two restaurants, pick the restaurant first. Pick a pay period that has already ended. Enter the **take-home amount on your check** (the amount actually deposited, not gross). Tap **Compare and adjust**.
+**Pay periods** > **Check my accuracy**. With two establishments, pick the establishment first. Pick a pay period that has already ended. Enter the **take-home amount on your check** (the amount actually deposited, not gross). Tap **Compare and adjust**.
 
 The estimate usually gets closer after a check or two. Changing gross pay or a deduction that changes with your pay in Setup clears this adjustment (Setup says so); fixed amounts and names do not.
 
@@ -85,6 +85,6 @@ The estimate usually gets closer after a check or two. Changing gross pay or a d
 - **Tax questions?** Ask payroll or a tax professional. TipNet is not tax advice.
 
 ## 6. Budget (optional, paid)
-The Budget tab shows how much you can spend before your next payday, after bills and savings. With two restaurants it counts both paychecks and shows whose check comes next; each goal asks **Save from which paycheck?** Add your bills (name, amount, day of the month), spending categories (like groceries) and goals. A new bill counts from the day you add it; if its due day already passed this month, TipNet asks **Already paid this month?** (ticked unless you untick it). Tick "Paid" when a bill is paid, and use "Log spending" when you buy something. Everything is an estimate. Budget is not part of the free app.
+The Budget tab shows how much you can spend before your next payday, after bills and savings. With two establishments it counts both paychecks and shows whose check comes next; each goal asks **Save from which paycheck?** Add your bills (name, amount, day of the month), spending categories (like groceries) and goals. A new bill counts from the day you add it; if its due day already passed this month, TipNet asks **Already paid this month?** (ticked unless you untick it). Tick "Paid" when a bill is paid, and use "Log spending" when you buy something. Everything is an estimate. Budget is not part of the free app.
 
 **Where to find it:** at the very bottom of **Tonight**, **Pay periods** and **Setup** there is a **TipNet Budget** card ($1.99 a month or $20 a year). Tap **See what's inside** for a preview, or buy it there. Already have a key? Tap **I have a license key**. Until payments are switched on, the card says **Coming soon**. Once Budget is unlocked on your phone, the card goes away.

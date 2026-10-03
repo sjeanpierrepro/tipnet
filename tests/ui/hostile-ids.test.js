@@ -88,8 +88,8 @@ test('ids: a restored backup with hostile ids renders and works on every tab', a
     }
     // switching restaurants on Tonight (focus is found by key) and renaming in Setup (buttons found by id) still work
     page.tab('tonight');
-    const first = page.$$('[data-workplace]').find((b) => b.textContent.includes('My restaurant'));
-    page.click(page.must(first, 'restaurant switch'));
+    const first = page.$$('[data-workplace]').find((b) => b.textContent.includes('My establishment'));
+    page.click(page.must(first, 'establishment switch'));
     assert.equal(page.state().settings.activeWorkplaceId, S.workplaces[0].id);
     assert.doesNotMatch(page.text(), /Something went wrong/);
   } finally {

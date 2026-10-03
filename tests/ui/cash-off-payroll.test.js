@@ -48,7 +48,7 @@ test('tonight: the cash box shows only once cash is typed; ticking it raises tak
   }
 });
 
-test('tonight: the restaurant default pre-ticks the box; Setup saves the default', async () => {
+test('tonight: the establishment default pre-ticks the box; Setup saves the default', async () => {
   const page = await boot({ seed: seed((S) => (S.workplaces[0].profile.cashOffPayroll = true)) });
   try {
     fill(page, '585', '8', '210');
@@ -71,7 +71,7 @@ test('tonight: the restaurant default pre-ticks the box; Setup saves the default
   }
 });
 
-test('tonight: each restaurant has its own default and keeps its own tick', async () => {
+test('tonight: each establishment has its own default and keeps its own tick', async () => {
   const page = await boot({
     seed: seed((S) => {
       const p = exampleProfile(today);
@@ -86,7 +86,7 @@ test('tonight: each restaurant has its own default and keeps its own tick', asyn
     assert.equal(key(page, 'night-cashoff').checked, true);
     page.click(radios()[1]);
     fill(page, '300', '6', '80');
-    assert.equal(key(page, 'night-cashoff').checked, false, 'second restaurant default is off');
+    assert.equal(key(page, 'night-cashoff').checked, false, 'second establishment default is off');
     const cb2 = key(page, 'night-cashoff');
     cb2.checked = true;
     page.change(cb2);

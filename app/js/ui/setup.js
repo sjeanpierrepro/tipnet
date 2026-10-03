@@ -78,7 +78,7 @@ let guidedFor = null;
 // nothing of the example ever becomes the user's profile by accident. The real profile is replaced only when Finish passes.
 let gProfile = null;
 let noDeductions = false; // "My paystub has no deductions" ticked (on the blank copy)
-let adding = null; // "+ Set up another restaurant" is open: {name, error}
+let adding = null; // "+ Set up another establishment" is open: {name, error}
 /**
  * The full Setup page shows each restaurant as one row. The open one is edited as a draft (a copy), applied by Save:
  * open = {wid, base, draft}, where base and draft are {name, noDeductions, profile} (base: as it was when opened).
@@ -1619,9 +1619,9 @@ function pickWorkplace(S, id) {
 const sameName = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
 /** What is wrong with a name for restaurant w ('' when it is fine). */
 function nameProblem(S, w, n) {
-  if (!n) return 'Give the restaurant a name.';
+  if (!n) return 'Give the establishment a name.';
   if (S.workplaces.some((x) => x !== w && sameName(x.name, n)))
-    return 'You already have a restaurant called ' + n + '.';
+    return 'You already have an establishment called ' + n + '.';
   return '';
 }
 /** A new restaurant with a blank paystub; its guided setup starts right away (setupDone false until Finish or Skip). */
@@ -1649,7 +1649,7 @@ function addWorkplaceCard(S) {
     const addBtn = el(
       'button',
       { type: 'button', class: 'btn btn-secondary btn-small', id: 'wp-add' },
-      '+ Set up another restaurant',
+      '+ Set up another establishment',
     );
     const start = () => {
       adding = { name: '', error: '' };
@@ -1670,7 +1670,7 @@ function addWorkplaceCard(S) {
     autocomplete: 'off',
     placeholder: 'e.g. Second Spot',
   });
-  const f = field('Name of the restaurant', name, {
+  const f = field('Name of the establishment', name, {
     hint: 'Its paystub, pay schedule, jobs and tip-out are set up on their own. Your budget counts both paychecks.',
   });
   if (adding.error) f.setError(adding.error);
@@ -1696,7 +1696,7 @@ function addWorkplaceCard(S) {
   const form = el(
     'form',
     { class: 'card stack', novalidate: true, 'aria-labelledby': 'wp-new-heading' },
-    el('h2', { id: 'wp-new-heading' }, 'Set up another restaurant'),
+    el('h2', { id: 'wp-new-heading' }, 'Set up another establishment'),
     f,
     el('div', { class: 'cluster' }, go, cancel),
   );
@@ -1704,9 +1704,9 @@ function addWorkplaceCard(S) {
     e.preventDefault();
     const n = name.value.trim().slice(0, 40);
     let err = '';
-    if (!n) err = 'Give the restaurant a name, so you can tell your paychecks apart.';
+    if (!n) err = 'Give the establishment a name, so you can tell your paychecks apart.';
     else if (S.workplaces.some((x) => sameName(x.name, n)))
-      err = 'You already have a restaurant called ' + n + '.';
+      err = 'You already have an establishment called ' + n + '.';
     if (err) {
       adding.error = err;
       f.setError(err);
@@ -1786,7 +1786,7 @@ function showName(w) {
     hint.textContent =
       'The paystub, jobs and tip-out below are for ' +
       w.name +
-      '. Late nights, appearance and backups are shared by all your restaurants.';
+      '. Late nights, appearance and backups are shared by all your establishments.';
   const rm = document.getElementById('wp-remove');
   if (rm && !rm.hasAttribute('data-armed')) rm.textContent = 'Remove ' + w.name;
 }
@@ -1800,11 +1800,11 @@ function workplaceCard(ctx) {
     maxlength: '40',
     autocomplete: 'off',
   });
-  const f = field('Restaurant name', name, {
+  const f = field('Establishment name', name, {
     hint:
       S.workplaces.length > 1
         ? 'Shown on Tonight, Pay periods and Budget.'
-        : 'Shown if you add another restaurant.',
+        : 'Shown if you add another establishment.',
   });
   if (ctx.draft) name.value = ctx.draft.name;
   name.addEventListener('input', () => {
@@ -1816,9 +1816,9 @@ function workplaceCard(ctx) {
       ctx.touch(false);
       return;
     }
-    if (!n) return f.setError('Give the restaurant a name.');
+    if (!n) return f.setError('Give the establishment a name.');
     if (S.workplaces.some((x) => x !== w && sameName(x.name, n)))
-      return f.setError('You already have a restaurant called ' + n + '.');
+      return f.setError('You already have an establishment called ' + n + '.');
     f.setError('');
     w.name = n;
     showName(w);
@@ -1846,7 +1846,7 @@ function workplaceCard(ctx) {
   return el(
     'section',
     { class: 'card stack', 'aria-labelledby': 'wp-card-heading' },
-    el('h2', { id: 'wp-card-heading' }, 'Restaurant'),
+    el('h2', { id: 'wp-card-heading' }, 'Establishment'),
     f,
     rm ? el('div', null, rm) : null,
   );
@@ -2042,7 +2042,7 @@ function guided(root, ctx) {
   }
   const switcher = workplaceSwitcher(S, w.id, (id) => pickWorkplace(S, id), {
     key: 'setup-wp',
-    label: 'Restaurant to set up',
+    label: 'Establishment to set up',
   });
   root.append(
     el(
@@ -2057,7 +2057,7 @@ function guided(root, ctx) {
           ? 'Set up with one recent paystub (about 3 minutes) so TipNet can estimate your real take-home.'
           : 'Use one recent paystub from ' +
               w.name +
-              ' (about 3 minutes). Its pay schedule, jobs and tip-out are kept apart from your other restaurant' +
+              ' (about 3 minutes). Its pay schedule, jobs and tip-out are kept apart from your other establishment' +
               (S.workplaces.length > 2 ? 's' : '') +
               '.',
       ),
@@ -2601,7 +2601,7 @@ function fullPage(root, S, active) {
       el(
         'p',
         { class: 'hint', id: 'setup-wp-hint' },
-        (many ? 'Open a restaurant' : 'Open your restaurant') +
+        (many ? 'Open an establishment' : 'Open your establishment') +
           ' to change its paystub, pay schedule, jobs or tip-out, then tap Save.',
       ),
       S.workplaces.map((w) => restaurantRow(S, w)),
@@ -2610,7 +2610,7 @@ function fullPage(root, S, active) {
         'p',
         { class: 'label fold-group' },
         many
-          ? 'For all your restaurants. Changes apply right away.'
+          ? 'For all your establishments. Changes apply right away.'
           : 'More settings. Changes apply right away.',
       ),
       foldRow('cutoff', 'Late nights', cutoffText, inner(cutoffCard(ctx))),

@@ -36,7 +36,7 @@ const STATE_KEY = 'state';
  * 'total' (tips plus that pay). Either way a stored night's `total` is everything made, so the math never reads entryMode.
  */
 export const ENTRY_MODES = ['tips', 'total'];
-export const FIRST_WORKPLACE_NAME = 'My restaurant';
+export const FIRST_WORKPLACE_NAME = 'My establishment';
 export const MAX_WORKPLACES = 12;
 export function seedState() {
   return {
@@ -582,7 +582,7 @@ function migrateUnsafe(input, today) {
     const name = typeof w.name === 'string' ? w.name.trim().slice(0, 40) : '';
     const out = {
       id: ids[i],
-      name: name || (i === 0 ? FIRST_WORKPLACE_NAME : 'Restaurant ' + (i + 1)),
+      name: name || (i === 0 ? FIRST_WORKPLACE_NAME : 'Establishment ' + (i + 1)),
       // A missing or broken start date: the example gets today (its dates are made up anyway). A real profile keeps it
       // blank, so Setup asks for it instead of inventing a pay schedule; it does not count as set up until it is in.
       profile: cleanProfile(p, {

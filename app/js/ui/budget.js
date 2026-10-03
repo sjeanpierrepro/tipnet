@@ -781,7 +781,7 @@ function heroCard(S, r0, src) {
               'p',
               { class: 'hint' },
               many
-                ? 'This counts only your cash tips from this pay period at each restaurant. Enter what you have in the bank and in cash above for a truer number.'
+                ? 'This counts only your cash tips from this pay period at each establishment. Enter what you have in the bank and in cash above for a truer number.'
                 : 'This counts only your cash tips from this pay period. Enter what you have in the bank and in cash above for a truer number.',
             )
           : null,
@@ -983,13 +983,13 @@ function nextCheckCard(S, r0, src) {
       many
         ? 'These dates run from the ' +
             r0.paydaySource.name +
-            ' payday to the day before its next one. Checks from your other restaurants that arrive in between are counted too. '
+            ' payday to the day before its next one. Checks from your other establishments that arrive in between are counted too. '
         : 'These dates are the days you will be spending this check, from payday to the next payday. They are not the pay period the check is for. ',
       known
         ? many
           ? (a.unknownChecks
               ? 'A check marked “Not known yet” is left out until TipNet can estimate it. '
-              : '') + 'Each check is worked out from that restaurant’s own nights.'
+              : '') + 'Each check is worked out from that establishment’s own nights.'
           : CHECK_HINT[a.checkFrom] || CHECK_HINT.current
         : cashLoggedNow(src)
           ? 'This check pays for a pay period with no nights with cash entered, so TipNet can’t estimate it yet. The check is what is left after the cash you already took home.'
@@ -1713,7 +1713,7 @@ function asideBreakdown(pa, many = false) {
   }
   if (many) {
     rows.push(
-      row('Your other restaurants over the same ' + pa.periodDays + ' days', '+' + money(pa.otherChecks)),
+      row('Your other establishments over the same ' + pa.periodDays + ' days', '+' + money(pa.otherChecks)),
     );
     pa.otherChecksList.forEach((o) =>
       rows.push(row('   ' + o.name, o.known ? '+' + money(o.amount) : 'Not known yet', 'hint')),
@@ -1728,7 +1728,7 @@ function asideBreakdown(pa, many = false) {
   if (many)
     rows.push(
       row(
-        'Bills, spending and goals are spread over every restaurant’s pay. One check never puts aside more than it brings in.',
+        'Bills, spending and goals are spread over every establishment’s pay. One check never puts aside more than it brings in.',
         '',
         'hint',
       ),
@@ -1829,7 +1829,7 @@ function goalForm(item, kind = 'plan') {
     fSaved = field('Already saved', saved, { optional: true }),
     fFunder = funderSel
       ? field('Save from which paycheck?', funderSel, {
-          hint: 'The paydays and the typical take-home of that restaurant set the plan.',
+          hint: 'The paydays and the typical take-home of that establishment set the plan.',
         })
       : null,
     fDate = field('Date you want it by', byDate),

@@ -1161,7 +1161,7 @@ export function render(root) {
   // More than one restaurant: one tap at the very top switches everything below (jobs, rates, tip-out, pay period, preview).
   const switcher = workplaceSwitcher(S, w.id, (id) => pickWorkplace(S, id), {
     key: 'tonight-wp',
-    label: 'Restaurant for tonight',
+    label: 'Establishment for tonight',
   });
   if (!isWorkplaceSetUp(S, w)) {
     // This restaurant was added but its setup isn't finished: no estimate here yet; the others still work.

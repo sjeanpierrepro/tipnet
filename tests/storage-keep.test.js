@@ -57,7 +57,7 @@ test('migrate keeps settings.guidedDraft, cleaned like a profile, with blank dat
   const g = migrate(S).settings.guidedDraft;
   assert.equal(g.step, 2);
   assert.equal(g.noDeductions, true);
-  assert.equal(g.workplaceId, 'w1', 'an old draft is about the first restaurant');
+  assert.equal(g.workplaceId, 'w1', 'an old draft is about the first establishment');
   assert.equal(g.profile.periodStart, '', 'never defaults to today');
   assert.equal(g.profile.periodEnd, '');
   assert.equal(g.profile.gross, 1500);

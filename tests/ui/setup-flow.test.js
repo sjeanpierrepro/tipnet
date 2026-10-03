@@ -168,7 +168,7 @@ test('guided setup: Skip swaps the example paystub for a blank one, and Tonight 
     assert.equal(page.state().workplaces[0].noDeductions, undefined, 'a draft until Save');
     // leaving with unsaved changes asks first; Save there saves and carries on to Tonight
     page.tab('tonight');
-    assert.match(page.text(), /Save changes to My restaurant\?/);
+    assert.match(page.text(), /Save changes to My establishment\?/);
     assert.equal(page.doc.activeElement, page.$('#draft-ask-save'));
     page.click(page.$('#draft-ask-save'));
     await page.settle();
@@ -198,7 +198,7 @@ test('Skip: without a pay period start date TipNet is not set up, Setup asks for
     assert.equal(page.$('#draft-save').disabled, true);
     assert.match(page.$('#draft-reasons').textContent, /Pick the day your pay period started\./);
     page.tab('tonight');
-    assert.match(page.text(), /Save changes to My restaurant\?/, 'unsaved changes: it asks');
+    assert.match(page.text(), /Save changes to My establishment\?/, 'unsaved changes: it asks');
     assert.equal(page.$('#draft-ask-save').disabled, true, 'they cannot be saved yet');
     page.click(page.$('#draft-ask-discard'));
     assert.match(page.text(), /Finish setup/, 'locked: no start date');

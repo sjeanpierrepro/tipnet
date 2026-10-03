@@ -32,19 +32,19 @@ const radios = (page, label) =>
 const checked = (page, label) => radios(page, label).find((b) => b.getAttribute('aria-checked') === 'true');
 
 /* ---------- Setup ---------- */
-test('setup: + Set up another restaurant asks the name, then runs the guided setup for that restaurant', async () => {
+test('setup: + Set up another establishment asks the name, then runs the guided setup for that establishment', async () => {
   const page = await boot({ seed: oneState() });
   try {
     page.tab('setup');
-    assert.equal(page.$('[role=radiogroup]', page.app), null, 'one restaurant: no switcher');
-    page.click(page.button('+ Set up another restaurant'));
+    assert.equal(page.$('[role=radiogroup]', page.app), null, 'one establishment: no switcher');
+    page.click(page.button('+ Set up another establishment'));
     const name = page.$('#wp-new-name');
     assert.equal(page.doc.activeElement, name, 'focus goes to the name');
     page.click(page.button('Start setup'));
-    assert.match(page.text(), /Give the restaurant a name/);
+    assert.match(page.text(), /Give the establishment a name/);
     page.type(name, 'voodoo bayou');
     page.click(page.button('Start setup'));
-    assert.match(page.text(), /You already have a restaurant called voodoo bayou/);
+    assert.match(page.text(), /You already have an establishment called voodoo bayou/);
     page.type(page.$('#wp-new-name'), 'Second Spot');
     page.click(page.button('Start setup'));
     const S = page.state();
@@ -59,13 +59,13 @@ test('setup: + Set up another restaurant asks the name, then runs the guided set
     assert.equal(page.$('[aria-current="step"]').textContent, '1. Pay period and gross');
     // the switcher is there, so the other restaurant is one tap away
     assert.deepEqual(
-      radios(page, 'Restaurant to set up').map((b) => b.textContent),
+      radios(page, 'Establishment to set up').map((b) => b.textContent),
       ['Voodoo Bayou', 'Second Spot'],
     );
     // Tonight: only this restaurant shows "Finish setup"; the first one still works
     page.tab('tonight');
     assert.match(page.text(), /Finish setting up Second Spot/);
-    page.click(radios(page, 'Restaurant for tonight')[0]);
+    page.click(radios(page, 'Establishment for tonight')[0]);
     assert.ok(page.$('form button[type=submit]', page.app), 'Voodoo Bayou has its entry form');
     assert.doesNotMatch(page.text(), /Finish setting up/);
   } finally {
@@ -73,11 +73,11 @@ test('setup: + Set up another restaurant asks the name, then runs the guided set
   }
 });
 
-test('setup: the guided flow for a second restaurant fills in its own paystub and Finish lands on its Tonight', async () => {
+test('setup: the guided flow for a second establishment fills in its own paystub and Finish lands on its Tonight', async () => {
   const page = await boot({ seed: oneState() });
   try {
     page.tab('setup');
-    page.click(page.button('+ Set up another restaurant'));
+    page.click(page.button('+ Set up another establishment'));
     page.type(page.$('#wp-new-name'), 'Second Spot');
     page.click(page.button('Start setup'));
     const first = JSON.stringify(page.state().workplaces[0].profile);
@@ -103,10 +103,10 @@ test('setup: the guided flow for a second restaurant fills in its own paystub an
     );
     assert.equal(w.profile.payTypes[0].rate, 8);
     assert.equal(w.profile.entryMode, 'tips');
-    assert.equal(JSON.stringify(S.workplaces[0].profile), first, 'the first restaurant is untouched');
+    assert.equal(JSON.stringify(S.workplaces[0].profile), first, 'the first establishment is untouched');
     assert.equal(S.settings.guidedDraft, undefined);
     assert.match(page.text(), /Tonight/);
-    assert.equal(checked(page, 'Restaurant for tonight').textContent, 'Second Spot');
+    assert.equal(checked(page, 'Establishment for tonight').textContent, 'Second Spot');
     assert.match(page.text(), /Tips you made tonight/);
   } finally {
     await page.close();
@@ -136,9 +136,12 @@ test('setup: rename and remove (two taps, says how many nights go, Undo brings b
     page.type(page.$('#wp-name'), 'Spot 2');
     assert.equal(page.state().workplaces[1].name, 'Second Spot', 'a draft until Save');
     page.type(page.$('#wp-name'), 'Voodoo Bayou');
-    assert.match(page.text(), /You already have a restaurant called Voodoo Bayou/);
+    assert.match(page.text(), /You already have an establishment called Voodoo Bayou/);
     assert.equal(page.$('#draft-save').disabled, true, 'a repeated name cannot be saved');
-    assert.match(page.$('#draft-reasons').textContent, /You already have a restaurant called Voodoo Bayou/);
+    assert.match(
+      page.$('#draft-reasons').textContent,
+      /You already have an establishment called Voodoo Bayou/,
+    );
     page.type(page.$('#wp-name'), 'Spot 2');
     await page.saveSetup();
     assert.equal(page.state().workplaces[1].name, 'Spot 2');
@@ -154,7 +157,7 @@ test('setup: rename and remove (two taps, says how many nights go, Undo brings b
     assert.equal(S.nights.length, 1);
     assert.equal(S.settings.activeWorkplaceId, 'w1');
     page.openSetup();
-    assert.equal(page.$('#wp-remove'), null, 'the last restaurant cannot be removed');
+    assert.equal(page.$('#wp-remove'), null, 'the last establishment cannot be removed');
     page.click(page.button('Undo', page.doc.getElementById('toast')));
     S = page.state();
     assert.equal(S.workplaces.length, 2);
@@ -165,11 +168,11 @@ test('setup: rename and remove (two taps, says how many nights go, Undo brings b
   }
 });
 
-test('setup: shared settings (late nights, theme, backup) stay global; the importer asks which restaurant', async () => {
+test('setup: shared settings (late nights, theme, backup) stay global; the importer asks which establishment', async () => {
   const page = await boot({ seed: twoState() });
   try {
     page.tab('setup');
-    assert.match(page.text(), /For all your restaurants\. Changes apply right away\./);
+    assert.match(page.text(), /For all your establishments\. Changes apply right away\./);
     page.click(page.$('#fold-cutoff'));
     const sel = page.$('#day-cutoff');
     sel.value = '4';
@@ -192,7 +195,7 @@ test('setup: shared settings (late nights, theme, backup) stay global; the impor
 });
 
 /* ---------- Tonight ---------- */
-test('tonight: one restaurant has no switcher; two get a radio group at the top that switches everything', async () => {
+test('tonight: one establishment has no switcher; two get a radio group at the top that switches everything', async () => {
   const one = await boot({ seed: oneState() });
   try {
     assert.equal(one.$('[role=radiogroup]', one.app), null);
@@ -205,7 +208,7 @@ test('tonight: one restaurant has no switcher; two get a radio group at the top 
     const group = page.$('[role=radiogroup]', page.app);
     assert.ok(group);
     assert.equal(page.app.querySelector('.stack').firstElementChild, group, 'at the very top');
-    const [a, b] = radios(page, 'Restaurant for tonight');
+    const [a, b] = radios(page, 'Establishment for tonight');
     assert.equal(a.getAttribute('aria-checked'), 'true');
     assert.equal(a.tabIndex, 0);
     assert.equal(b.tabIndex, -1);
@@ -213,13 +216,13 @@ test('tonight: one restaurant has no switcher; two get a radio group at the top 
     assert.match(page.text(), /Bartender/);
     page.click(b);
     assert.equal(page.state().settings.activeWorkplaceId, 'w2');
-    assert.equal(checked(page, 'Restaurant for tonight').textContent, 'Second Spot');
+    assert.equal(checked(page, 'Establishment for tonight').textContent, 'Second Spot');
     assert.match(page.text(), /Tips you made tonight/, 'Second Spot types tips');
     assert.match(page.text(), /Server/);
     assert.doesNotMatch(page.text(), /Barback tip-out tonight/, 'no tip-out at Second Spot');
     assert.match(page.text(), /\$8\.00\/h/);
     // keyboard: arrows move the pick and keep focus on it
-    const b2 = checked(page, 'Restaurant for tonight');
+    const b2 = checked(page, 'Establishment for tonight');
     b2.focus();
     page.key(b2, 'ArrowRight');
     assert.equal(page.state().settings.activeWorkplaceId, 'w1', 'wraps around');
@@ -232,28 +235,28 @@ test('tonight: one restaurant has no switcher; two get a radio group at the top 
   }
 });
 
-test('tonight: each restaurant keeps its own half-typed entry; saving says where; same date at two places is two nights', async () => {
+test('tonight: each establishment keeps its own half-typed entry; saving says where; same date at two places is two nights', async () => {
   const page = await boot({ seed: twoState() });
   try {
     const total = () => key(page, 'night-total');
     page.type(total(), '400');
     page.type(page.must(page.$('[data-focus-key^="night-pay-"]', page.app), 'hours'), '8');
-    page.click(radios(page, 'Restaurant for tonight')[1]);
+    page.click(radios(page, 'Establishment for tonight')[1]);
     assert.equal(total().value, '', 'Second Spot starts blank');
     page.type(total(), '150');
     page.type(page.must(page.$('[data-focus-key^="night-pay-"]', page.app), 'hours'), '5');
-    page.click(radios(page, 'Restaurant for tonight')[0]);
+    page.click(radios(page, 'Establishment for tonight')[0]);
     assert.equal(total().value, '400', 'Voodoo Bayou entry is back');
     page.click(page.button('Save night at Voodoo Bayou'));
     assert.match(page.text(), /Saved to Voodoo Bayou: \$[\d,.]+ take-home for /);
-    page.click(radios(page, 'Restaurant for tonight')[1]);
+    page.click(radios(page, 'Establishment for tonight')[1]);
     assert.equal(total().value, '150', 'Second Spot entry is still there');
     page.click(page.button('Save night at Second Spot'));
     assert.match(page.text(), /Saved to Second Spot: /);
     assert.doesNotMatch(
       page.text(),
       /You already saved/,
-      'a night at the other restaurant is not a duplicate',
+      'a night at the other establishment is not a duplicate',
     );
     const S = page.state();
     assert.equal(S.nights.length, 2);
@@ -271,10 +274,10 @@ test('tonight: each restaurant keeps its own half-typed entry; saving says where
   }
 });
 
-test('tonight: the restaurant picked last is the one shown on open', async () => {
+test('tonight: the establishment picked last is the one shown on open', async () => {
   const page = await boot({ seed: twoState((S) => (S.settings.activeWorkplaceId = 'w2')) });
   try {
-    assert.equal(checked(page, 'Restaurant for tonight').textContent, 'Second Spot');
+    assert.equal(checked(page, 'Establishment for tonight').textContent, 'Second Spot');
     assert.match(page.text(), /Tips you made tonight/);
   } finally {
     await page.close();
@@ -282,7 +285,7 @@ test('tonight: the restaurant picked last is the one shown on open', async () =>
 });
 
 /* ---------- Pay periods ---------- */
-test('pay periods: All / one restaurant filter (remembered), names under All, editor and accuracy per restaurant', async () => {
+test('pay periods: All / one establishment filter (remembered), names under All, editor and accuracy per establishment', async () => {
   const seed = twoState((S) => {
     S.nights = [
       { id: 'n1', date: today, total: 300, cash: 50, pay: { p1: 6 }, barback: true, workplaceId: 'w1' },
@@ -304,7 +307,7 @@ test('pay periods: All / one restaurant filter (remembered), names under All, ed
     page.click(radios(page, 'Show pay periods for')[2]);
     assert.equal(page.state().settings.periodsFilter, 'w2');
     assert.equal(labels().length, 1);
-    assert.ok(!labels()[0].startsWith('Second Spot'), 'one restaurant: no name needed');
+    assert.ok(!labels()[0].startsWith('Second Spot'), 'one establishment: no name needed');
     // the editor works inside its restaurant: Second Spot types tips
     page.click(page.must(page.$('[data-period] button[aria-label^="Edit night"]', page.app), 'edit'));
     assert.match(page.text(), /Tips you made/);
@@ -321,7 +324,7 @@ test('pay periods: All / one restaurant filter (remembered), names under All, ed
 });
 
 /* ---------- Spreadsheet import ---------- */
-test('import: with two restaurants it asks which one; duplicate dates are looked for at that restaurant only', async () => {
+test('import: with two establishments it asks which one; duplicate dates are looked for at that establishment only', async () => {
   const seed = twoState((S) => {
     S.nights = [
       {
@@ -348,13 +351,13 @@ test('import: with two restaurants it asks which one; duplicate dates are looked
     });
     page.change(input);
     await page.settle();
-    const sel = page.must(page.$('#map-workplace'), 'restaurant select');
-    assert.match(page.text(), /Which restaurant are these nights from\?/);
-    assert.match(page.text(), /Choose the restaurant above to see a preview/);
+    const sel = page.must(page.$('#map-workplace'), 'establishment select');
+    assert.match(page.text(), /Which establishment are these nights from\?/);
+    assert.match(page.text(), /Choose the establishment above to see a preview/);
     assert.equal(
       page.byText('button', 'Import 2 nights'),
       null,
-      'nothing to import until a restaurant is picked',
+      'nothing to import until an establishment is picked',
     );
     sel.value = 'w2';
     page.change(sel);
@@ -399,7 +402,7 @@ const budgetState = () =>
     });
   });
 
-test('budget: safe to spend runs until the next money from either restaurant and lists both checks', async () => {
+test('budget: safe to spend runs until the next money from either establishment and lists both checks', async () => {
   const page = await boot({ url: DEV, seed: budgetState() });
   try {
     page.tab('budget');
@@ -419,7 +422,7 @@ test('budget: safe to spend runs until the next money from either restaurant and
   }
 });
 
-test('budget: a goal asks which paycheck it is saved from, uses that restaurant, and says so', async () => {
+test('budget: a goal asks which paycheck it is saved from, uses that establishment, and says so', async () => {
   const page = await boot({ url: DEV, seed: budgetState() });
   try {
     page.tab('budget');
@@ -452,7 +455,7 @@ test('budget: a goal asks which paycheck it is saved from, uses that restaurant,
   }
 });
 
-test('setup: a renamed restaurant shows its new name on its row, its Remove button and Tonight once saved', async () => {
+test('setup: a renamed establishment shows its new name on its row, its Remove button and Tonight once saved', async () => {
   const page = await boot({ seed: twoState((S) => (S.settings.activeWorkplaceId = 'w2')) });
   try {
     page.openSetup('Second Spot');

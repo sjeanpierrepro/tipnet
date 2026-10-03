@@ -1066,7 +1066,7 @@ function calibCard(S, today) {
       { class: 'note' },
       'When a paycheck lands, enter its amount. TipNet compares it with what it predicted for that pay period and suggests a tax rate adjustment so the next estimate is closer. Nothing changes until you apply it. Every night in the period needs a cash amount, and every shift you worked should be logged.',
     ),
-    wsel ? field('Restaurant', wsel) : null,
+    wsel ? field('Establishment', wsel) : null,
     field('Pay period', sel),
     field('Actual paycheck amount (take-home on the stub)', actual),
     el('div', { class: 'cluster' }, run, undo),

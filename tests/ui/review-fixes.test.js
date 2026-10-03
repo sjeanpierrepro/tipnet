@@ -70,7 +70,7 @@ test('setup: a percentage deduction or gross pay change clears it and says so; p
   }
 });
 
-test('setup: the adjustment is per restaurant; another restaurant’s edit leaves it alone', async () => {
+test('setup: the adjustment is per establishment; another establishment’s edit leaves it alone', async () => {
   const page = await boot({
     seed: seed((S) => {
       const w2 = JSON.parse(JSON.stringify(S.workplaces[0]));
@@ -87,7 +87,7 @@ test('setup: the adjustment is per restaurant; another restaurant’s edit leave
     await page.saveSetup();
     const [a, b] = page.state().workplaces;
     assert.equal(b.profile.rateOverride, null, 'Second Spot cleared');
-    assert.equal(a.profile.rateOverride, 0.2, 'the first restaurant keeps its own');
+    assert.equal(a.profile.rateOverride, 0.2, 'the first establishment keeps its own');
   } finally {
     await page.close();
   }

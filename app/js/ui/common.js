@@ -400,7 +400,12 @@ export function setupFirstCard({ title = 'Finish setup first', text, example } =
  * the picked button, the arrow keys (and Home/End) pick the next one right away. onPick(id) does the switching.
  * Each button keeps a stable data-focus-key ('<key>-<restaurant id>') so focus survives the redraw that follows.
  */
-export function workplaceSwitcher(S, current, onPick, { key = 'wp', label = 'Restaurant', all = null } = {}) {
+export function workplaceSwitcher(
+  S,
+  current,
+  onPick,
+  { key = 'wp', label = 'Establishment', all = null } = {},
+) {
   const ws = (S && S.workplaces) || [];
   if (ws.length < 2) return null;
   // all: a label for an extra first choice that stands for every restaurant (id 'all'), e.g. the Pay periods filter.

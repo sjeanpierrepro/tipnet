@@ -91,7 +91,7 @@ test('check my accuracy: cash that skipped payroll does not distort the rate', (
   near(withNo.rNew, noExtra.rNew, 0.01);
 });
 
-test('migrate: old data keeps the restaurant default and nights false', () => {
+test('migrate: old data keeps the establishment default and nights false', () => {
   const S = migrate({
     profile: { gross: 2000, freq: 14, periodStart: '2026-09-21', deductions: [], payTypes: [] },
     nights: [{ id: 1, date: '2026-09-22', total: 100, cash: 20, pay: {}, barback: true }],
@@ -107,7 +107,7 @@ test('migrate: old data keeps the restaurant default and nights false', () => {
   assert.equal(T.nights[0].cashOffPayroll, true);
 });
 
-test('budget: safe to spend sets aside the taxes on cash, per restaurant', () => {
+test('budget: safe to spend sets aside the taxes on cash, per establishment', () => {
   const p = M.exampleProfile(TODAY);
   const nights = M.exampleNights(TODAY).map((n) => ({ ...n, cashOffPayroll: true }));
   const plain = M.exampleNights(TODAY);

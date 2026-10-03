@@ -237,7 +237,7 @@ test('slider: saving makes the plan with that amount; the date link switches to 
     assert.equal(g.kind, 'purchase');
     assert.equal(g.perPaycheck, 150);
     assert.equal('targetDate' in g, false);
-    assert.equal('fundedBy' in g, false, 'one restaurant: nothing to pick');
+    assert.equal('fundedBy' in g, false, 'one establishment: nothing to pick');
     assert.equal(g.createdAt, todayISO());
     // A second plan, by date.
     fill(page, 'ef-plan-new-name', 'Trip');

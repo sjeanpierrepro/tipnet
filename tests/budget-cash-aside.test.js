@@ -65,7 +65,7 @@ test('cash that skipped payroll: the taxes to set aside on it come off the take-
   assert.equal(B.possibleAside(B.emptyBudget(), p, nights, TODAY).possible, th.amount);
 });
 
-test('several restaurants: a mostly-cash second job counts its cash too, scaled to the same days', () => {
+test('several establishments: a mostly-cash second job counts its cash too, scaled to the same days', () => {
   const A = { ...P(), id: 'A' };
   const second = { ...P(), freq: 'semimonthly', periodStart: '2026-09-01', periodEnd: '2026-09-15' };
   const sNights = [];

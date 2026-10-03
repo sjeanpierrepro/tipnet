@@ -70,7 +70,7 @@ const two = () => {
   return migrate(S, { today: TODAY });
 };
 
-test('v2 -> v3: the profile and accuracy history become the first restaurant; every night belongs to it', () => {
+test('v2 -> v3: the profile and accuracy history become the first establishment; every night belongs to it', () => {
   const S = migrate(v2(), { today: TODAY });
   assert.equal(S.schemaVersion, 3);
   assert.equal(SCHEMA_VERSION, 3);
@@ -98,7 +98,7 @@ test('v2 -> v3: the profile and accuracy history become the first restaurant; ev
   assert.deepEqual(migrate(S, { today: TODAY }), S);
 });
 
-test('the seed state has one restaurant and example nights that belong to it', () => {
+test('the seed state has one establishment and example nights that belong to it', () => {
   const S = seedState();
   assert.equal(S.workplaces.length, 1);
   assert.ok(S.nights.every((n) => n.workplaceId === 'w1'));
@@ -134,7 +134,7 @@ test('helpers: activeWorkplace, workplaceOf, findWorkplace, nightsOf', () => {
   );
 });
 
-test('migrate v3: ids unique, names cleaned, unknown night restaurants go to the first, fundedBy checked', () => {
+test('migrate v3: ids unique, names cleaned, unknown night establishments go to the first, fundedBy checked', () => {
   const S = two();
   const raw = JSON.parse(JSON.stringify(S));
   raw.workplaces.push({ id: 'w2', name: '  ', profile: prof() }); // repeated id, blank name
@@ -146,7 +146,7 @@ test('migrate v3: ids unique, names cleaned, unknown night restaurants go to the
   const M = migrate(raw, { today: TODAY });
   assert.equal(M.workplaces.length, 3);
   assert.equal(new Set(M.workplaces.map((w) => w.id)).size, 3);
-  assert.equal(M.workplaces[2].name, 'Restaurant 3');
+  assert.equal(M.workplaces[2].name, 'Establishment 3');
   assert.equal(M.nights.find((n) => n.id === 'z').workplaceId, 'w1');
   assert.equal(M.budget.goals.find((g) => g.id === 'g2').fundedBy, 'w2');
   assert.equal('fundedBy' in M.budget.goals.find((g) => g.id === 'g3'), false);
@@ -158,7 +158,7 @@ test('migrate v3: ids unique, names cleaned, unknown night restaurants go to the
   }
 });
 
-test('set up: per restaurant; a restaurant added later is not set up until its guided setup is finished', () => {
+test('set up: per establishment; an establishment added later is not set up until its guided setup is finished', () => {
   const S = two();
   assert.equal(isSetUp(S), true);
   assert.equal(isWorkplaceSetUp(S, S.workplaces[1]), true);
@@ -172,7 +172,7 @@ test('set up: per restaurant; a restaurant added later is not set up until its g
   assert.equal(isSetUp(M), true, 'the app as a whole is set up');
 });
 
-test('locking: each restaurant locks its nights on its own pay schedule', () => {
+test('locking: each establishment locks its nights on its own pay schedule', () => {
   const S = two();
   // w1: every two weeks from Sep 7 (Sep 7-20 finished on Oct 1); w2: twice a month from Sep 1 (Sep 1-15 finished)
   const wp = [
@@ -201,7 +201,7 @@ test('locking: each restaurant locks its nights on its own pay schedule', () => 
   assert.equal(none.stamped, 0);
 });
 
-test('backups: v3 carries every restaurant; v2 codes and files restore as the first restaurant', () => {
+test('backups: v3 carries every establishment; v2 codes and files restore as the first establishment', () => {
   const S = two();
   const back = decodeBackup(encodeBackup(S));
   assert.equal(back.workplaces.length, 2);
@@ -222,7 +222,7 @@ test('backups: v3 carries every restaurant; v2 codes and files restore as the fi
   assert.equal(back.settings.guidedDraft, undefined);
 });
 
-test('two open copies: restaurants merge by id', () => {
+test('two open copies: establishments merge by id', () => {
   const base = two();
   const mine = JSON.parse(JSON.stringify(base));
   const theirs = JSON.parse(JSON.stringify(base));
