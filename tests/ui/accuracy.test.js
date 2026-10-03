@@ -296,7 +296,14 @@ test('check my accuracy: a mistyped check applied, then the right one (matching 
     assert.doesNotMatch(page.text(), /Your estimate matched/);
     assert.match(page.text(), /You already compared this pay period/);
     assert.match(page.$('#cal-apply').textContent, /Replace my earlier comparison for this pay period/);
+    // the change is shown from the rate in use now (the typo's), back to the paystub rate
+    const typoPct = (typoRate * 100).toFixed(2).replace('.', '\\.');
+    assert.match(
+      page.$('#cal-pending').textContent,
+      new RegExp('Tax rate: ' + typoPct + '% → 16\\.65% \\(−'),
+    );
     page.click(page.$('#cal-apply'));
+    assert.match(page.text(), new RegExp('Tax rate adjusted from ' + typoPct + '% to 16\\.65%'));
     const W = page.state().workplaces[0];
     assert.ok(Math.abs(rate(W.profile) - r0) < 1e-9, 'back to the paystub rate: ' + rate(W.profile));
     assert.equal(W.calib.length, 1, 'the history row was replaced, not added');

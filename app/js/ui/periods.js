@@ -21,6 +21,7 @@ import {
   hasTips,
   round2,
   num,
+  rate as currentRate,
 } from '../math.js';
 import { businessDate, cutoffFromSettings } from '../inputs.js';
 import { isSetUp, workplaceOf, findWorkplace, nightsOf, activeWorkplace, lockFinished } from '../storage.js';
@@ -704,6 +705,8 @@ function pendingBox(S, w, r, idx, prev) {
   const p = w.profile;
   const warnMissing = r.missingNights > 0;
   const warn = warnMissing || r.suspect;
+  // Replacing: the change is shown from the rate in use now (the earlier adjustment's), not the rate before it.
+  const from = prev ? currentRate(p) : r.rOld;
   const lines = [];
   if (prev)
     lines.push(
@@ -735,7 +738,13 @@ function pendingBox(S, w, r, idx, prev) {
     el(
       'p',
       null,
-      'Tax rate: ' + pct(r.rOld, 2) + ' → ' + pct(r.rateOverride, 2) + ' (' + points(r.change) + ').',
+      'Tax rate: ' +
+        pct(from, 2) +
+        ' → ' +
+        pct(r.rateOverride, 2) +
+        ' (' +
+        points(r.rateOverride - from) +
+        ').',
     ),
   );
   if (r.capped)
@@ -814,7 +823,7 @@ function pendingBox(S, w, r, idx, prev) {
     calMsg = {
       text:
         'Tax rate adjusted from ' +
-        pct(r.rOld, 2) +
+        pct(from, 2) +
         ' to ' +
         pct(r.rateOverride, 2) +
         '. Nights in finished pay periods keep the numbers they were saved with.',
