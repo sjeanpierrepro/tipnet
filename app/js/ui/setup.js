@@ -2090,6 +2090,9 @@ function saveOpen() {
   const mine = { wid: w.id, text: 'Saving…' + note };
   lastSaved = mine;
   const n = ++saveSeq;
+  // A new schedule can finish a pay period mid-day: it locks now, with the Setup it is shown with from here on, so a
+  // later Setup change (even the same day) can't rewrite it.
+  lockFinished({ force: true });
   // Written right away (an explicit Save); "Saved." only once the write really worked.
   save();
   flush().then((ok) => {

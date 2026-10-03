@@ -22,7 +22,7 @@ import {
   num,
 } from '../math.js';
 import { businessDate, cutoffFromSettings } from '../inputs.js';
-import { isSetUp, workplaceOf, findWorkplace, nightsOf, activeWorkplace } from '../storage.js';
+import { isSetUp, workplaceOf, findWorkplace, nightsOf, activeWorkplace, lockFinished } from '../storage.js';
 import {
   el,
   field,
@@ -492,6 +492,7 @@ function editor(S, n) {
     const out = { ...build(), workplaceId: w.id };
     S.nights[i] = out;
     save();
+    lockFinished({ force: true }); // e.g. a pick into a period that has ended: locked before anything is drawn
     bus.rerender();
     // Says what was saved: the pay period it counts toward when that is not its date's, or when the edit changed it.
     const k = nightPeriodIndex(p, out);

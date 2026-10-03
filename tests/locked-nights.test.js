@@ -202,3 +202,23 @@ test('a night locked into a finished period that has locked nights copies that p
   const fresh = M.lockFinishedNights(p, N(), AFTER);
   assert.equal(fresh.nights[0].snap.fixed, M.snapshotFor(p, 10).fixed);
 });
+
+test('locking is not cached for the day once something changed: a mid-day schedule change locks on the next look', async () => {
+  const S = await import('../app/js/storage.js');
+  const st = S.setState({ profile: P(), nights: N() }, { today: TODAY });
+  assert.equal(S.lockFinished({ force: true, today: TODAY }), 0, 'nothing has finished yet');
+  assert.equal(S.lockFinished({ today: TODAY }), 0, 'looked already today, nothing changed: skipped');
+  // a schedule change that makes the nights' period end before today (same day)
+  const p = st.workplaces[0].profile;
+  p.periodStart = '2026-09-10';
+  p.periodEnd = '2026-09-23';
+  assert.ok(M.isFinal(p, M.periodIndex(p, st.nights[0].date), TODAY), 'their period has now ended');
+  S.scheduleSave(); // the change is saved
+  const n = S.lockFinished({ today: TODAY }); // e.g. the next render or input, the same day
+  assert.ok(n > 0, 'locked right away, not tomorrow');
+  const was = JSON.stringify(st.nights.filter((x) => x.snap));
+  raise(p); // a second Setup save the same day
+  S.scheduleSave();
+  S.lockFinished({ today: TODAY });
+  assert.equal(JSON.stringify(st.nights.filter((x) => x.snap)), was, 'the locked nights keep their numbers');
+});

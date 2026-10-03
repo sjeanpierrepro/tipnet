@@ -1044,18 +1044,21 @@ export function getState() {
   if (!cache) cache = seedState();
   return cache;
 }
-let lockedOn = null;
+let lockedOn = null; // the day the state was last looked at, while nothing has changed since (see scheduleSave)
 /**
  * Lock the nights of every pay period that has ended (see lockFinishedNights) in the cached state, and save if any got
  * stamped. Call it before anything applies a changed Setup, so an edit can never rewrite a finished period.
- * Unless force is set, it only looks once per calendar day (boundaries only pass at midnight).
+ * Unless force is set, it skips the work when it already looked today AND nothing was saved since: any change (a new
+ * schedule that finishes a period mid-day, a night saved, an import, a restore) makes the next call look again.
  */
 export function lockFinished({ force = false, today = todayISO() } = {}) {
   if (!force && lockedOn === today) return 0;
-  lockedOn = today;
   const S = getState();
   const r = lockAll(S.workplaces, S.nights, today); // each restaurant locks on its own pay schedule
-  if (!r.stamped) return 0;
+  if (!r.stamped) {
+    lockedOn = today;
+    return 0;
+  }
   // Stamp in place: the same night objects (and the same array) get their snapshot, so a screen that still holds a night
   // (a duplicate-date prompt, an open editor, an Undo) keeps a live reference across a period-ending midnight.
   r.nights.forEach((n, i) => {
@@ -1063,6 +1066,7 @@ export function lockFinished({ force = false, today = todayISO() } = {}) {
     if (n !== old) Object.assign(old, n); // lockAll keeps the order, so index i is the same night
   });
   scheduleSave();
+  lockedOn = today; // after scheduleSave (which marks the state changed): this save is the lock itself
   return r.stamped;
 }
 /** Replace the whole state (e.g. after restore or erase) and schedule a save. today: for tests (default: the real date). */
@@ -1080,6 +1084,7 @@ let timer = null;
 let pending = null; // {promise, resolve} shared by every scheduleSave until the next flush
 /** Save soon (changes close together are written once). Resolves with the result of that write (true = saved). */
 export function scheduleSave(delay = 400) {
+  lockedOn = null; // the state changed: the next lockFinished looks again (a Setup change can finish a period mid-day)
   if (!pending) {
     let resolve;
     const promise = new Promise((r) => {
