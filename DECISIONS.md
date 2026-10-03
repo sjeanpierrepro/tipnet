@@ -192,3 +192,6 @@ This file is a log: later entries supersede earlier ones where they disagree. Th
 - Locks on a move: moved INTO a finished period, the night is locked at once (it keeps its own snapshot, or gets one with the current Setup, as locking would; a tips night's stored total becomes tips + pay at those rates). Moved into a period that has not ended, it has no snapshot and follows the current Setup until that period ends (so a night moved out of a finished week into the running one loses its lock). Date edits without a new pick behave as before.
 - Rows say "counted in pay week of Sep 14" when a night counts elsewhere, and "pay week no longer matches your schedule, counted by its date" when a Setup schedule change left the pick off the schedule (saving the editor with its own week clears it).
 - sw.js VERSION stays tipnet-v36 for this branch (not bumped here, per instructions); bump it when this ships.
+
+## Independent review fixes (pay period branch)
+- Check my accuracy: the rate a paycheck implies is kept within 0-100% (MAX_RATE, the cap every rate uses), not 2-45%, so a paystub rate above 45% is no longer pulled down by an exact check. When the prediction is within 0.5% of the check (MATCH_ERROR), nothing is proposed or recorded: "Your estimate matched — no change needed."

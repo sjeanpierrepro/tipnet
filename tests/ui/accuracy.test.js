@@ -256,3 +256,22 @@ test('check my accuracy: matched by the period dates, so moving the start date i
     await page.close();
   }
 });
+
+test('check my accuracy: a check that matches the estimate (within 0.5%) says so and proposes nothing', async () => {
+  const page = await boot({ seed: seed(2) });
+  try {
+    page.tab('periods');
+    const sel = page.$('#cal-period');
+    sel.value = '1';
+    page.change(sel);
+    const pred = calibrate(page.state().workplaces[0].profile, page.state().nights, 1, 1, today).pred;
+    page.type(page.$('#cal-actual'), pred.toFixed(2));
+    page.click(page.$('#cal-run'));
+    assert.equal(page.$('#cal-pending'), null, 'nothing to apply, so nothing is asked');
+    assert.match(page.text(), /Your estimate matched — no change needed\./);
+    assert.equal(page.state().workplaces[0].profile.rateOverride, null);
+    assert.equal(page.state().workplaces[0].calib.length, 0);
+  } finally {
+    await page.close();
+  }
+});

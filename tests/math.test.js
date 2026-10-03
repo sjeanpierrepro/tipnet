@@ -251,13 +251,13 @@ test('calibration math', () => {
   near(same.rNew, M.rate(p), 1e-3);
 });
 
-test('calibration clamps r_new at 0.02 and 0.45', () => {
+test('calibration clamps r_new to 0..100% (the same cap every rate uses)', () => {
   const p = P();
   const hi = M.calibrate(p, N(), 0, 100000, AFTER); // huge check -> rate would be negative
-  assert.equal(hi.rNew, 0.02);
-  const lo = M.calibrate(p, N(), 0, 1, AFTER); // tiny check -> rate would exceed 100%
-  assert.equal(lo.rNew, 0.45);
-  near(lo.uncapped, (M.rate(p) + 0.45) / 2, 1e-9);
+  assert.equal(hi.rNew, 0);
+  const lo = M.calibrate(p, N(), 0, 1, AFTER); // tiny check -> a very high implied rate, no longer cut at 45%
+  assert.ok(lo.rNew > 0.45 && lo.rNew <= M.MAX_RATE, String(lo.rNew));
+  near(lo.uncapped, (M.rate(p) + lo.rNew) / 2, 1e-9);
   // one adjustment never moves the rate more than 3 points
   near(lo.rateOverride, M.rate(p) + 0.03, 1e-12);
   assert.equal(lo.capped, true);
@@ -663,4 +663,48 @@ test('rates are never above 100%, and the Setup checks flag a tiny gross and ver
   // a night is never taxed more than it made
   const c = M.computeNight({ date: '2026-09-28', total: 300, cash: 0, pay: {}, barback: false }, p, 10);
   assert.ok(c.net >= -M.fixedTotal(p), 'take-home only goes below zero by fixed deductions');
+});
+
+test('calibration: an exact check at a high (50%) paystub rate proposes no change (no 45% ceiling)', () => {
+  const today = '2026-10-02';
+  const p = M.exampleProfile(today);
+  p.periodStart = '2026-09-06';
+  p.periodEnd = '2026-09-19';
+  p.shifts = 2;
+  p.tipout = { on: false };
+  p.deductions = [
+    { id: 'd1', k: 'fed', name: 'Fed', amount: 400, mode: 'pct' },
+    { id: 'd2', k: 'k401', name: '401k', amount: 600, mode: 'pct' },
+  ];
+  const nights = [
+    { id: 'a', date: '2026-09-10', total: 400, cash: 100, pay: { p1: 6 }, barback: false },
+    { id: 'b', date: '2026-09-12', total: 300, cash: 50, pay: { p1: 5 }, barback: false },
+  ];
+  near(M.rate(p), 0.5, 1e-12);
+  const k = M.periodIndex(p, '2026-09-10');
+  const t = M.periodTotals(p, nights, k, today);
+  const r = M.calibrate(p, nights, k, t.chk, today);
+  assert.equal(r.ok, true);
+  assert.equal(r.matched, true);
+  near(r.err, 0, 1e-9);
+  assert.equal(r.rateOverride, 0.5, 'was 47.50% with the old 45% ceiling');
+  assert.equal(r.change, 0);
+  // a real miss at that rate is measured against the true rate, not pulled toward 45%
+  const miss = M.calibrate(p, nights, k, t.chk * 0.9, today);
+  assert.equal(miss.matched, false);
+  assert.ok(miss.rNew > 0.5, 'a smaller check than predicted implies a HIGHER rate: ' + miss.rNew);
+  assert.ok(miss.rateOverride > 0.5);
+});
+
+test('calibration: an error under 0.5% is a match (no adjustment); 0.5% or more still adjusts', () => {
+  const p = P();
+  const pred = M.calibrate(p, N(), 0, 800, AFTER).pred;
+  const tiny = M.calibrate(p, N(), 0, pred * 1.004, AFTER);
+  assert.equal(tiny.matched, true);
+  assert.equal(tiny.rateOverride, M.rate(p));
+  assert.equal(tiny.change, 0);
+  assert.equal(tiny.capped, false);
+  const off = M.calibrate(p, N(), 0, pred * 1.02, AFTER);
+  assert.equal(off.matched, false);
+  assert.ok(off.change < 0);
 });

@@ -545,11 +545,15 @@ export function periodTotals(p, nights, idx, today = todayISO(), shifts, index) 
 export const MAX_RATE_STEP = 0.03;
 /** An error bigger than this (25%) usually means a missing night or a mistyped check amount. */
 export const SUSPECT_ERROR = 0.25;
+/** A prediction within this (0.5%) of the check already matches: calibrate proposes no change. */
+export const MATCH_ERROR = 0.005;
 /**
  * calibrate(profile, nights, idx, actual, today?, shifts?)
  * Does not mutate. Returns {ok:false, reason:'nonights'|'noactual'|'notFinal'|'missingCash', missingCash}
  * or {ok:true, pred, actual, err, rNew, rOld, rateOverride, uncapped, capped, change,
  *     nightsLogged, expectedShifts, expectedSource, missingNights, suspect, T, C, F}.
+ *   rNew: the rate the check implies, within 0..MAX_RATE. matched: |err| < MATCH_ERROR, and then nothing moves
+ *   (rNew = uncapped = rateOverride = rOld, change 0).
  *   rOld: the current rate. uncapped: (rOld + rNew) / 2. rateOverride: that, kept within MAX_RATE_STEP of rOld (capped says so).
  *   expectedShifts: the entered shift count if set, else the period's expected count (shiftsPerPeriod); missingNights is
  *   how many fewer nights were logged than that (0 if none). suspect: |err| > SUSPECT_ERROR.
@@ -590,21 +594,22 @@ export function calibrate(p, nights, idx, actual, today = todayISO(), shifts, ra
   const pred = fromCents(predC);
   const err = (pred - A) / A;
   const rOld = typeof rateBase === 'number' && Number.isFinite(rateBase) ? rateBase : rate(p); // rateBase: the rate in effect before this period was first adjusted (Replace)
+  const matched = Math.abs(err) < MATCH_ERROR; // the estimate already matches: nothing to adjust
   const rNew =
-    Tt > 0
-      ? Math.min(
-          0.45,
-          Math.max(0.02, (fromCents(T) - (A + fromCents(F) + fromCents(C) - fromCents(N))) / fromCents(Tt)),
-        )
+    Tt > 0 && !matched
+      ? clampRate((fromCents(T) - (A + fromCents(F) + fromCents(C) - fromCents(N))) / fromCents(Tt))
       : rOld;
-  const uncapped = (rOld + rNew) / 2; // blend to avoid overreacting to one check
-  const rateOverride = Math.min(rOld + MAX_RATE_STEP, Math.max(rOld - MAX_RATE_STEP, uncapped));
+  const uncapped = matched ? rOld : (rOld + rNew) / 2; // blend to avoid overreacting to one check
+  const rateOverride = matched
+    ? rOld
+    : clampRate(Math.min(rOld + MAX_RATE_STEP, Math.max(rOld - MAX_RATE_STEP, uncapped)));
   const expectedShifts = Math.max(1, Math.round(n));
   return {
     ok: true,
     pred,
     actual: A,
     err,
+    matched,
     rNew,
     rOld,
     rateOverride,

@@ -569,6 +569,7 @@ export function defaultCalibPeriod(idxs, finished) {
 }
 const NOT_FINAL_TEXT =
   'This pay period is still in progress, so there is no paycheck to compare yet. Come back once it ends and the check lands.';
+const MATCHED_TEXT = 'Your estimate matched — no change needed.';
 const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
 const points = (x) => (x > 0 ? '+' : x < 0 ? '−' : '') + Math.abs(x * 100).toFixed(2) + ' points';
 function focusId(id) {
@@ -850,6 +851,8 @@ function calibCard(S, today) {
       }
       return show('Pick a pay period with nights in it and enter the check amount.');
     }
+    // Within 0.5% of the check: nothing to adjust, so nothing to ask (and nothing is recorded).
+    if (r.matched) return show(MATCHED_TEXT);
     // Nothing changes yet: show old -> new and ask.
     calMsg = null;
     calPending = { idx, r, prev, wid: w.id };
