@@ -455,3 +455,36 @@ for (const first of ['n2', 'n1']) {
     },
   );
 }
+
+test('a recalculated night moved alone into an empty finished pay period leaves its old period’s numbers behind', async () => {
+  // recalculated earlier in PREV: its own Setup has $80 fixed, PREV's check kept $50 and $7 non-taxable (snap.period)
+  const snap = {
+    v: 1,
+    r: 0.2,
+    rf: 0.1,
+    fixed: 80,
+    n: 5,
+    pay: [{ id: 'p1', rate: 9, unit: 'hr', usual: 6 }],
+    tipout: { on: false, mode: 'pct', value: 0, basis: 'before', from: 'cash' },
+    period: { fixed: 50, nontax: 7 },
+  };
+  const from = addDays(today, -6),
+    to = addDays(today, -20); // PREV2: finished, no nights
+  const page = await boot({ seed: seed([{ date: from, snap }]) });
+  try {
+    page.tab('periods');
+    await editDate(page, from, to);
+    await save(page);
+    await move(page);
+    const n = night(page);
+    assert.equal(n.date, to);
+    assert.ok(n.snap, 'still locked');
+    assert.equal('period' in n.snap, false, 'the old period’s numbers are not carried along');
+    assert.equal(n.snap.fixed, 80);
+    const p = page.state().workplaces[0].profile;
+    const ns = nightsInPeriod(p, page.state().nights, periodIndex(p, to));
+    assert.deepEqual([periodFixed(p, ns), periodNontax(p, ns)], [80, 0], 'the night’s own numbers');
+  } finally {
+    await page.close();
+  }
+});

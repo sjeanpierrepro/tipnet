@@ -224,6 +224,12 @@ function editor(S, n) {
         if (!(k in out.pay)) out.pay[k] = n.pay[k];
       });
       out.snap = keepSnap === n.snap ? n.snap : JSON.parse(JSON.stringify(keepSnap));
+      // A night recalculated earlier carries ITS OLD period's fixed deductions and non-taxable money (snap.period).
+      // Moved alone into an empty finished period, that period's check is the night's own snapshot: drop them.
+      if (mv && out.snap === n.snap && n.snap.period) {
+        out.snap = JSON.parse(JSON.stringify(n.snap));
+        delete out.snap.period;
+      }
     } else if (mv ? intoFinished : n.snap && recalc) {
       out.snap = snapshotFor(p, shiftsFor(out));
       // Recalculated in (or into) a finished pay period that already has a snapshot: the night uses today's Setup,
