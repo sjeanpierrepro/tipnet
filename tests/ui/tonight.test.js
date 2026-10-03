@@ -328,3 +328,25 @@ test('tonight: the result card says estimates use one tax rate, and Check my acc
     await page.close();
   }
 });
+
+test('tonight: clearing the Date field falls back to the Late-nights business date, not the calendar date', async () => {
+  mock.timers.enable({ apis: ['Date'], now: new Date(2026, 8, 30, 3, 15) }); // Sep 30, 3:15 a.m.: still Sep 29's night
+  try {
+    const page = await boot({ seed: seed() });
+    try {
+      const date = page.must(page.$('[data-focus-key="night-date"]'), 'date field');
+      page.type(date, '2026-09-20');
+      page.type(date, ''); // cleared
+      page.type(totalInput(page), '100');
+      page.type(hoursInput(page), '6');
+      submit(page);
+      await page.settle();
+      assert.equal(page.state().nights.length, 1);
+      assert.equal(page.state().nights[0].date, '2026-09-29');
+    } finally {
+      await page.close();
+    }
+  } finally {
+    mock.timers.reset();
+  }
+});

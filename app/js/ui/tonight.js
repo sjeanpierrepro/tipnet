@@ -723,7 +723,7 @@ export function nightFields(
     'data-focus-key': key + '-date',
   });
   date.addEventListener('input', () => {
-    d.date = date.value || todayISO();
+    d.date = date.value || tonightOf(getState()); // cleared: the Late-nights business date, like a new night
     d.dateTouched = true;
     onInput();
   });
