@@ -100,6 +100,10 @@ test('importer: Replace overwrites the night on a duplicate date and keeps its i
     page.tab('setup');
     await pickFile(page, 'tips.csv', CSV);
     await chooseEmployee(page, 'Sam');
+    // the two choices are one named group (fieldset + legend)
+    const group = page.must(page.$('input[name="dup-choice"]').closest('fieldset'), 'fieldset');
+    assert.equal(page.text(group.querySelector('legend')), 'Dates you already have');
+    assert.equal(group.querySelectorAll('input[type=radio]').length, 2);
     const replace = page.$$('input[name="dup-choice"]')[1];
     replace.checked = true;
     page.change(replace);

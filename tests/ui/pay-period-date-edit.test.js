@@ -272,3 +272,34 @@ test('joining a finished pay period that has locked nights copies that period’
     await page.close();
   }
 });
+
+test('the editor estimate updates as typed but is spoken only after a pause (no live region on every keystroke)', async () => {
+  const page = await boot({ seed: seed([{ date: addDays(today, -1) }]) });
+  try {
+    page.tab('periods');
+    page.click(page.byLabel('Edit night ' + long(addDays(today, -1))));
+    const form = page.must(page.$('form', page.app), 'editor');
+    const shown = page.must(
+      [...form.querySelectorAll('p.hint')].find((x) => /Estimated take-home/.test(x.textContent)),
+      'estimate',
+    );
+    assert.equal(shown.getAttribute('aria-live'), null, 'the visible line is not a live region');
+    const live = page.must(form.querySelector('[role=status][aria-live=polite].sr-only'), 'spoken estimate');
+    assert.equal(live.textContent, '', 'nothing spoken on opening');
+    const before = shown.textContent;
+    page.type(page.must(form.querySelector('[data-focus-key$="-total"]'), 'total'), '450');
+    assert.notEqual(shown.textContent, before, 'the visible estimate follows the typing');
+    assert.equal(live.textContent, '', 'not spoken yet');
+    // (the harness unrefs timers: an interval keeps the process alive while waiting)
+    await new Promise((r) => {
+      const keep = setInterval(() => {}, 50);
+      setTimeout(() => {
+        clearInterval(keep);
+        r();
+      }, 900);
+    });
+    assert.equal(live.textContent, shown.textContent, 'spoken after the pause');
+  } finally {
+    await page.close();
+  }
+});

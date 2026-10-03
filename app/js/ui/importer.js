@@ -326,8 +326,14 @@ export function renderImporter(host) {
                 (duplicates.length === 1 ? ' of these dates already has' : ' of these dates already have') +
                 ' a night saved.',
             ),
-            mk(false, 'Keep what I have and skip those dates'),
-            mk(true, 'Replace my nights on those dates'),
+            // one named group, so a screen reader says what the two choices are about
+            el(
+              'fieldset',
+              { class: 'field stack-sm' },
+              el('legend', null, 'Dates you already have'),
+              mk(false, 'Keep what I have and skip those dates'),
+              mk(true, 'Replace my nights on those dates'),
+            ),
             ...duplicates
               .filter((d) => d.existingAll.length > 1)
               .map((d) =>
