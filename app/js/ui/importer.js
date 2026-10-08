@@ -12,6 +12,7 @@ import {
 import { num, computeNight, todayISO, shiftsPerPeriod, nightPeriodIndex } from '../math.js';
 import { el, clear, select, money, fmtDate, toast, save, bus, getState } from './common.js';
 import { lockFinished, isWorkplaceSetUp, nightsOf } from '../storage.js';
+import { salesMissing, tipoutHow } from './tonight.js';
 
 const FIELDS = [
   ['date', 'Date', true],
@@ -349,6 +350,37 @@ export function renderImporter(host) {
                     ' with one.',
                 ),
               ),
+          ),
+        );
+      }
+      // A % of sales tip-out counts $0 on a night with no sales (no Sales column, or a blank cell): said before importing,
+      // with who isn't counted and where to add the sales afterwards. Not a block.
+      const short = new Map(); // who isn't counted: recipient id -> tip-out line
+      const noSales = nights.filter((n) => {
+        const miss = salesMissing(computeNight(n, p, 1)); // the shift count doesn't change who needs sales
+        miss.forEach((l) => short.set(l.id, l));
+        return miss.length > 0;
+      });
+      if (noSales.length) {
+        const who = Array.from(short.values()).map((l) => l.who + ' (' + tipoutHow(l) + ')');
+        const names = who.length > 1 ? who.slice(0, -1).join(', ') + ' and ' + who[who.length - 1] : who[0];
+        const k = noSales.length;
+        preview.append(
+          el(
+            'p',
+            { class: 'note', id: 'import-sales-warning' },
+            m.sales == null
+              ? 'No Sales column is chosen, so ' +
+                  names +
+                  ' won’t be counted on ' +
+                  (k === nights.length ? 'these nights' : k + ' of these nights') +
+                  '. Choose your Sales column above, or after importing add each night’s sales in Pay periods (Edit on the night).'
+              : (k === 1 ? '1 night has no sales' : k + ' nights have no sales') +
+                  ', so ' +
+                  names +
+                  ' won’t be counted on ' +
+                  (k === 1 ? 'it. Add its' : 'them. Add their') +
+                  ' sales in Pay periods after importing (Edit on the night).',
           ),
         );
       }

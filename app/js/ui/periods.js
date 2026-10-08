@@ -69,6 +69,8 @@ import {
   typoProblem,
   alignNight,
   peopleOf,
+  salesMissing,
+  tipoutHow,
 } from './tonight.js';
 
 /** Pay periods shown at first; "Show older" adds this many more each time. */
@@ -290,7 +292,11 @@ function editor(S, n) {
     }
     const night = build();
     const c = computeNight(night, p, shiftsFor(night));
-    preview.textContent = 'Estimated take-home for this night: ' + money(c.net) + '.';
+    // a % of sales tip-out with no sales counts $0: said here too (Save asks for the sales, as Tonight does)
+    const missing = salesMissing(c)
+      .map((l) => ' ' + l.who + ' (' + tipoutHow(l) + ') isn’t counted until you enter the night’s sales.')
+      .join('');
+    preview.textContent = 'Estimated take-home for this night: ' + money(c.net) + '.' + missing;
     if (quiet !== true) speak();
   };
   // A locked night shows the rates it keeps, unless "Recalculate with current Setup" is ticked.
@@ -582,6 +588,17 @@ function editor(S, n) {
   return form;
 }
 
+/**
+ * A row's line when someone ticked that night gets a % of sales and the night has no sales: their tip-out counts $0
+ * until the sales are added (Edit asks for them). Else null.
+ */
+function salesNote(c) {
+  const who = salesMissing(c).map((l) => l.who);
+  return who.length
+    ? el('div', { class: 'hint night-sales-missing' }, 'sales missing: ' + who.join(', ') + ' not counted')
+    : null;
+}
+
 /** A row's line about its pay period: counted in another one, or a picked one the schedule no longer has. Else null. */
 function weekNote(n, p) {
   if (nightPeriodStale(p, n))
@@ -638,6 +655,7 @@ function nightRow(S, w, n, shifts) {
       { class: 'main' },
       el('div', null, fmtDate(n.date)),
       el('div', { class: 'hint' }, nightSub(n, c, p)),
+      salesNote(c),
       weekNote(n, p),
       n.note
         ? el(

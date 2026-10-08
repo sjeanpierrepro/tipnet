@@ -24,6 +24,7 @@ import {
   tippedOut,
   alignTicks,
   nightTicks,
+  salesCents,
 } from '../math.js';
 import {
   businessDate,
@@ -109,6 +110,18 @@ const ticked = (d, r) => !(d.tipouts && d.tipouts[r.id] === false);
 /** True when someone ticked tonight is tipped out a % of sales: the entry then needs tonight's sales. */
 export const salesNeeded = (d, p) => draftTipouts(d, p).some((r) => r.mode === 'pctSales' && ticked(d, r));
 export const SALES_MSG = 'Enter tonight’s sales for the % of sales tip-out.';
+/** when: 'tonight' | 'that night'. */
+const salesMsg = (when) =>
+  when === 'tonight' ? SALES_MSG : 'Enter ' + when + '’s sales for the % of sales tip-out.';
+/**
+ * The people ticked on a night (a computeNight result) who get a % of sales while it has no sales: their line counts $0
+ * until the sales are entered, so the screens say so instead of leaving them out silently.
+ */
+export const salesMissing = (c) =>
+  c && c.tipoutNeedsSales ? (c.tipouts || []).filter((l) => l.mode === 'pctSales') : [];
+/** Saved nights at restaurant wid that follow Setup (not locked) where person r is ticked and no sales were entered. */
+export const nightsWithoutSales = (S, wid, r) =>
+  S.nightsExample ? [] : nightsOf(S, wid).filter((n) => !n.snap && tippedOut(n, r) && salesCents(n) == null);
 /** "15%" / "1.25%": a tip-out percentage as typed. */
 const pctText = (v) => String(Math.round(num(v) * 1000) / 1000) + '%';
 /** "15% of tips", "1.25% of sales", "$20 flat": what one person gets. */
@@ -439,7 +452,7 @@ export function entryCheck(p, d, { when = 'tonight', today = todayISO() } = {}) 
     return { where: 'total', msg: 'Enter your tips or your hours first.' };
   if (salesNeeded(d, p)) {
     const s = typedAmount(d.sales);
-    if (s == null) return { where: 'sales', msg: SALES_MSG };
+    if (s == null) return { where: 'sales', msg: salesMsg(when) };
     if (s < 0) return { where: 'sales', msg: 'Sales can’t be a negative number.' };
   }
   const dp = dateProblem(d.date, today);
@@ -1020,6 +1033,16 @@ export function resultCard(c, w, note, hoursMissing = false) {
     ),
     el('dl', { class: 'breakdown' }, rows),
   ];
+  // A % of sales tip-out counts $0 until tonight's sales are typed: said, never left out silently (Save asks for them).
+  salesMissing(c).forEach((l) =>
+    kids.push(
+      el(
+        'p',
+        { class: 'note', 'data-tipout-needs-sales': String(l.id) },
+        l.who + ' (' + tipoutHow(l) + '): enter tonight’s sales to count it.',
+      ),
+    ),
+  );
   if (c.tipoutScaled)
     kids.push(
       el(
