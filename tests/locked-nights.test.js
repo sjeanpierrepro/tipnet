@@ -26,7 +26,8 @@ test('snapshotFor keeps the rates, pay types, tip-out, fixed total and shift bas
   assert.equal(s.n, 9);
   assert.deepEqual(s.pay[0], { id: 'p1', rate: 12, unit: 'hr', usual: 7 });
   assert.deepEqual(s.pay[2], { id: 'p3', rate: 0, unit: 'amt', supp: 1 });
-  assert.deepEqual(s.tipout, { on: true, basis: 'before' });
+  // the one Barback also in the old single shape, for v37 (savedTipout)
+  assert.deepEqual(s.tipout, { on: true, basis: 'before', mode: 'pct', value: 15, from: 'cash' });
   assert.deepEqual(s.tipouts, [
     { id: 't1', k: 'barback', who: 'Barback', mode: 'pctTips', value: 15, from: 'cash' },
   ]);

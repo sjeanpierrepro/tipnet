@@ -9,6 +9,7 @@ import {
   lockFinishedNights,
   legacyTipouts,
   tipoutSetup,
+  savedTipout,
   TIPOUT_PRESETS,
   TIPOUT_MODES,
 } from './math.js';
@@ -244,6 +245,7 @@ function cleanNontax(list) {
 /**
  * Tip-outs of a profile or a snapshot, cleaned: {tipout: {on, basis}, tipouts: [{id, k, who, mode, value, from}]}.
  * The old single {on, mode, value, basis, from} (no tipouts list) becomes one Barback when on, else an empty list.
+ * A list of one person on % of tips or flat also keeps that old shape in tipout (savedTipout), for v37.
  */
 const TIPOUT_KEYS = TIPOUT_PRESETS.map((x) => x.k);
 function cleanTipoutSetup(src) {
@@ -266,7 +268,7 @@ function cleanTipoutSetup(src) {
         from: x.from === 'payroll' || x.from === 'check' ? 'payroll' : 'cash',
       };
     });
-  return { tipout: { on: !!to.on, basis: to.basis === 'after' ? 'after' : 'before' }, tipouts };
+  return { tipout: savedTipout(to.on, to.basis, tipouts), tipouts };
 }
 function cleanDeductions(list) {
   const seen = new Set();
@@ -1246,6 +1248,23 @@ export function scheduleSave(delay = 400) {
 }
 const stamped = (json, at) => ({ ...JSON.parse(json), _savedAt: at, _writer: writerId });
 /**
+ * Setup edits the tip-out switch and the list of people directly, so before every write the old single-shape fields in
+ * each profile.tipout (savedTipout, for v37) are brought back in step with its list: in place (Setup's boxes hold the
+ * object), and only those three fields. The guided setup's profile too.
+ */
+function syncSavedTipouts(S) {
+  const profiles = (Array.isArray(S.workplaces) ? S.workplaces : []).map((w) => w && w.profile);
+  if (isObj(S.settings) && isObj(S.settings.guidedDraft)) profiles.push(S.settings.guidedDraft.profile);
+  profiles.forEach((p) => {
+    if (!isObj(p) || !isObj(p.tipout) || !Array.isArray(p.tipouts)) return;
+    const want = savedTipout(p.tipout.on, p.tipout.basis, p.tipouts);
+    ['mode', 'value', 'from'].forEach((k) => {
+      if (k in want) p.tipout[k] = want[k];
+      else delete p.tipout[k];
+    });
+  });
+}
+/**
  * Write now. Resolves true if something durable was written. The quick localStorage copy is written first and
  * synchronously (so it lands even while the page is closing), then IndexedDB. If another window saved since this copy
  * last loaded or saved, that data is merged in first instead of being overwritten.
@@ -1263,6 +1282,7 @@ export async function flush() {
       // 1. localStorage: take in a newer copy from another window, then write. Nothing before this is asynchronous.
       // The screen is redrawn right away, so nothing typed from here on lands in the replaced state.
       notify(absorb(lsGet(LS_KEY)));
+      syncSavedTipouts(cache);
       let at = Math.max(Date.now(), lastKnown + 1);
       let json = JSON.stringify(cache);
       // Nothing changed since the last write (a page hidden, closed or reloaded without edits): write and announce

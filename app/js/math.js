@@ -255,7 +255,8 @@ export const SHIFT_SOURCE_TEXT = {
  *   r: tax rate used (paystub rate or the calibrated one), rf: federal share, fixed: fixed deductions per period,
  *   n: shifts the fixed deductions were spread over, pay: pay types (usual only matters for the first), tipout/tipouts:
  *   the tip-out switch, basis and the people tipped out. Older snapshots carry the single tip-out
- *   {on, mode, value, basis, from}; tipoutSetup() reads both shapes.
+ *   {on, mode, value, basis, from}; tipoutSetup() reads both shapes. A list of one person on % of tips or flat is also
+ *   written in that old shape (savedTipout), for v37.
  */
 /**
  * snapshotFor(profile, shifts?) -> a snapshot to store on a night as `night.snap`.
@@ -277,7 +278,7 @@ export function snapshotFor(p, shifts) {
       if (t.k === 'diff' || t.diff) o.diff = 1;
       return o;
     }),
-    tipout: { on: ts.on, basis: ts.basis },
+    tipout: savedTipout(ts.on, ts.basis, ts.list), // with the old single shape too when that fits (for v37)
     tipouts: ts.list.map((x) => ({ ...x })),
   };
   // recurring non-taxable money per check (only written when there is some, so older snapshots look the same)
@@ -391,8 +392,9 @@ export function periodNontax(p, ns) {
  *   mode: 'pctTips' (value % of tonight's tips), 'pctSales' (value % of tonight's sales) or 'flat' ($ value a night).
  *   from: 'cash' (paid out of the cash tips) or 'payroll'.
  * Older data has one tip-out {on, mode: 'pct'|'flat', value, basis, from: 'cash'|'check'}: that is one Barback (or nobody
- * when it was off). A night says who was tipped out with night.tipouts = {recipientId: true|false}; older nights only have
- * night.barback (true: everyone, false: nobody). night.sales: tonight's sales, for the % of sales tip-outs.
+ * when it was off); those fields are still written next to a list of one that fits them (savedTipout). A night says who
+ * was tipped out with night.tipouts = {recipientId: true|false}; older nights only have night.barback (true: everyone,
+ * false: nobody). night.sales: tonight's sales, for the % of sales tip-outs.
  */
 export const TIPOUT_PRESETS = [
   { k: 'barback', name: 'Barback' },
@@ -423,6 +425,22 @@ export function tipoutSetup(src) {
   const to = (src && src.tipout) || {};
   const list = Array.isArray(src && src.tipouts) ? src.tipouts : legacyTipouts(to);
   return { on: !!to.on, basis: to.basis === 'after' ? 'after' : 'before', list };
+}
+/**
+ * profile.tipout / snap.tipout as saved: {on, basis}, plus, when the list is exactly one person on % of tips or flat,
+ * that tip-out in the old single shape too (mode 'pct' | 'flat', value, from 'cash' | 'check'). v37 reads only those and
+ * rewrites the whole state when it saves, so a v37 page still open after the update keeps the tip-out (as one Barback)
+ * instead of saving it as $0. TipNet never reads them while the list is there (tipoutSetup).
+ */
+export function savedTipout(on, basis, list) {
+  const to = { on: !!on, basis: basis === 'after' ? 'after' : 'before' };
+  const r = list.length === 1 ? list[0] : null;
+  if (r && (r.mode === 'pctTips' || r.mode === 'flat')) {
+    to.mode = r.mode === 'flat' ? 'flat' : 'pct';
+    to.value = num(r.value);
+    to.from = r.from === 'payroll' ? 'check' : 'cash';
+  }
+  return to;
 }
 /** True when this person was tipped out on this night (night.tipouts, else the old all-or-nothing night.barback). */
 export function tippedOut(night, rec) {

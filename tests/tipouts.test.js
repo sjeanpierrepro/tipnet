@@ -171,12 +171,19 @@ test('migration: an old tip-out that was on becomes one Barback; off becomes an 
     today,
   });
   const p = on.workplaces[0].profile;
-  assert.deepEqual(p.tipout, { on: true, basis: 'before' });
+  // a list of one on % of tips or flat keeps the old fields too (for v37, see savedTipout)
+  assert.deepEqual(p.tipout, { on: true, basis: 'before', mode: 'pct', value: 15, from: 'cash' });
   assert.deepEqual(p.tipouts, [BARBACK]);
   const flat = migrate(oldState({ on: true, mode: 'flat', value: 20, basis: 'after', from: 'check' }), {
     today,
   });
-  assert.deepEqual(flat.workplaces[0].profile.tipout, { on: true, basis: 'after' });
+  assert.deepEqual(flat.workplaces[0].profile.tipout, {
+    on: true,
+    basis: 'after',
+    mode: 'flat',
+    value: 20,
+    from: 'check',
+  });
   assert.deepEqual(flat.workplaces[0].profile.tipouts, [
     { id: 't1', k: 'barback', who: 'Barback', mode: 'flat', value: 20, from: 'payroll' },
   ]);
@@ -255,7 +262,7 @@ test('locked periods never change: an old single-tip-out snapshot keeps working 
   const before = M.computeNight(S.nights[0], S.workplaces[0].profile, 10);
   const out = migrate(S, { today });
   const n = out.nights[0];
-  assert.deepEqual(n.snap.tipout, { on: true, basis: 'before' });
+  assert.deepEqual(n.snap.tipout, { on: true, basis: 'before', mode: 'pct', value: 15, from: 'cash' });
   assert.deepEqual(n.snap.tipouts, [BARBACK]);
   const p = out.workplaces[0].profile;
   p.tipouts.push({ ...RUNNER, mode: 'flat', value: 50 });
