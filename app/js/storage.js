@@ -506,6 +506,11 @@ function cleanProfile(p, { startFallback, entryDefault }) {
   return out;
 }
 
+let migrator = migrateUnsafe;
+/** Test helper: replace the function migrate() runs (to make loading fail on purpose). No argument puts the real one back. */
+export function _setMigrator(fn) {
+  migrator = fn || migrateUnsafe;
+}
 /**
  * Accepts anything (null, prototype v1 shapes both old and new, v2). Returns a fresh, valid v2 state.
  * Never throws for missing or garbage input; returns the seed state instead. Every field is coerced to a
@@ -513,7 +518,7 @@ function cleanProfile(p, { startFallback, entryDefault }) {
  */
 export function migrate(input, { today = todayISO() } = {}) {
   try {
-    return migrateUnsafe(input, today);
+    return migrator(input, today);
   } catch (e) {
     return seedState();
   }
@@ -1100,7 +1105,7 @@ const withoutTab = (S) => ({
  */
 function absorb(copy) {
   const none = { changed: false, conflict: false, visible: false };
-  if (!cache || !copy || savedAtOf(copy) <= lastKnown || copy._writer === writerId) return none;
+  if (recovery || !cache || !copy || savedAtOf(copy) <= lastKnown || copy._writer === writerId) return none;
   const theirs = migrate(copy);
   const mine = cache;
   const hadChanges = !base || !same(mine, base);
@@ -1167,6 +1172,17 @@ export async function syncFromStorage() {
   return true;
 }
 
+const RECOVERY_KEY = 'tipnet.recovery';
+let recovery = null; // {at, text}: the stored data load() could not read, while nothing may be saved over it
+function keepRecovery(raw) {
+  const rec = { at: Date.now(), text: JSON.stringify(raw) };
+  lsSet(RECOVERY_KEY, { at: rec.at, data: raw }); // a separate key: the normal copies are never touched
+  return rec;
+}
+/** null normally; {at, text} when the saved data could not be read: the raw copy to download (app.js shows it). */
+export function recoveryInfo() {
+  return recovery;
+}
 /**
  * load(): reads IndexedDB (then localStorage v2, then legacy 'tipnet.v1'), migrates, fills the
  * in-memory cache and returns it. Never throws; falls back to the example state. If IndexedDB does not answer within
@@ -1174,6 +1190,7 @@ export async function syncFromStorage() {
  */
 export async function load() {
   ensureChannel();
+  recovery = null;
   let idbRaw = null;
   try {
     const d = await openDB();
@@ -1183,7 +1200,16 @@ export async function load() {
   }
   let raw = pickNewest(idbRaw, lsGet(LS_KEY));
   if (!raw) raw = lsGet(LEGACY_KEY);
-  cache = migrate(raw);
+  if (raw && typeof raw === 'object') {
+    try {
+      cache = migrator(raw, todayISO());
+    } catch (e) {
+      // Stored data that cannot be read must never be replaced by the example: keep a copy, show the recovery screen,
+      // and write nothing until the person restores or erases (see flush and setState).
+      cache = seedState();
+      recovery = keepRecovery(raw);
+    }
+  } else cache = migrate(raw);
   base = clone(cache);
   lastKnown = savedAtOf(raw);
   written = null;
@@ -1239,6 +1265,7 @@ export function lockFinished({ force = false, today = todayISO() } = {}) {
 /** Replace the whole state (e.g. after restore or erase) and schedule a save. today: for tests (default: the real date). */
 export function setState(next, { today } = {}) {
   const fresh = migrate(next, today ? { today } : undefined);
+  recovery = null; // a restore or an erase is the person's choice: saving may start again
   if (cache && fresh !== cache)
     intoPlace(cache, fresh); // the same state object, so no screen holds a stale one
   else cache = fresh;
@@ -1301,6 +1328,11 @@ export async function flush() {
   }
   const waiters = pending;
   pending = null;
+  if (recovery) {
+    // The stored data could not be read: never write the example over it (see load).
+    if (waiters) waiters.resolve(false);
+    return false;
+  }
   let ok = false;
   if (cache) {
     try {

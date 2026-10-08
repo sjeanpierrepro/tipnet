@@ -16,7 +16,13 @@ import {
   updateAction,
 } from './ui/common.js';
 import { budgetVisible, reloadConfig } from './billing.js';
-import { restoreFromCode, eraseEverything, backupReminder, nightsBackupCard } from './ui/backup.js';
+import {
+  restoreFromCode,
+  eraseEverything,
+  backupReminder,
+  nightsBackupCard,
+  fileSaver,
+} from './ui/backup.js';
 import * as tonight from './ui/tonight.js';
 import * as periods from './ui/periods.js';
 import * as setup from './ui/setup.js';
@@ -68,6 +74,12 @@ function errorScreen(root) {
       msg.textContent = 'That code did not work. Copy the whole code and try again.';
     }
   });
+  // Saved data that could not be read (storage.load kept a copy and saves nothing): a way to get the raw data out first.
+  const rec = storage.recoveryInfo();
+  const download = el('button', { type: 'button', class: 'btn btn-secondary' }, 'Download my saved data');
+  download.addEventListener('click', () => {
+    fileSaver.save('tipnet-saved-data-' + new Date(rec.at).toISOString().slice(0, 10) + '.json', rec.text);
+  });
   const erase = el('button', { type: 'button', class: 'btn btn-danger' });
   arm(erase, {
     label: 'Erase everything',
@@ -82,7 +94,13 @@ function errorScreen(root) {
     el(
       'section',
       { class: 'card stack' },
-      el('h2', { tabindex: '-1' }, 'Something went wrong'),
+      el('h2', { tabindex: '-1' }, rec ? 'We could not read your saved data' : 'Something went wrong'),
+      rec &&
+        el(
+          'p',
+          { class: 'note' },
+          'Your saved data is still on this device and nothing has been changed or saved over it. Download it first, so you can keep a copy or send it to get help. Erasing or restoring replaces it.',
+        ),
       el(
         'p',
         { class: 'note' },
@@ -90,7 +108,7 @@ function errorScreen(root) {
       ),
       el('div', { class: 'field' }, el('label', { for: 'err-code' }, 'Backup code'), box),
       msg,
-      el('div', { class: 'cluster' }, restore, erase),
+      el('div', { class: 'cluster' }, rec && download, restore, erase),
     ),
   );
 }
@@ -107,6 +125,7 @@ function render() {
   keepFocus(root, () => {
     clear(root);
     try {
+      if (storage.recoveryInfo()) throw new Error('saved data could not be read'); // errorScreen explains and offers the copy
       SCREENS[current].render(root);
       if (current === 'tonight' || current === 'setup') {
         // Tonight: "You've logged 10 nights since your last backup" first; never both reminders at once.
