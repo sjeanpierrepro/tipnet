@@ -1030,7 +1030,7 @@ export function nightFields(
   kids.push(dateField);
   const salesLater = typoLater((m) => salesField.setError(m));
   const cashLater = typoLater((m) => cashField.setError(m));
-  /** now: show every message at once (the fields were just drawn); else typos wait for a pause in typing. */
+  /** now: show every message at once; else typos wait for a pause in typing. */
   refresh = (now = false) => {
     // the sales box shows only while someone ticked tonight gets a % of sales (then it is needed)
     const needSales = salesNeeded(d, p);
@@ -1050,8 +1050,9 @@ export function nightFields(
     hoursLater(hp.msg, now || !hoursTypoIn(p, d, hp));
     dateField.setError(dateProblem(d.date, today));
   };
-  refresh(true);
-  totalLater(moneyTypo(d.total), true);
+  // Drawn (again) with a typo in a box, e.g. back from another tab or redrawn while typing: its message waits too.
+  refresh();
+  totalLater(moneyTypo(d.total));
   if (into) {
     // drawn again in place: the date box never leaves the page
     [...into.children].forEach((c) => {
