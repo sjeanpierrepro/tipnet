@@ -106,7 +106,11 @@ test('loading: example nights keep following Setup; the flag is cleaned; backups
   });
   assert.equal(S.nights[0].tipoutOn, true, 'not a boolean: read as unknown, then Setup’s');
   assert.equal(S.nights[1].tipoutOn, false);
-  assert.deepEqual(decodeBackup(encodeBackup(S)).nights, S.nights);
+  // a backup keeps it (restoring loads with the real date, which may lock these nights: only the flag is compared)
+  assert.deepEqual(
+    decodeBackup(encodeBackup(S)).nights.map((n) => n.tipoutOn),
+    [true, false],
+  );
   assert.deepEqual(Object.keys(S.nights[1]).slice(0, 9), [
     'id',
     'date',
