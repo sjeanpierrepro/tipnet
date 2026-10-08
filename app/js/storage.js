@@ -15,7 +15,9 @@ import {
 } from './math.js';
 import { emptyBudget, migrateBudget } from './budget.js';
 
-export const SCHEMA_VERSION = 3;
+// 4 = v38 (establishments' tip-out people, pinned nights). migrate() reads every older version; data from a NEWER version
+// is never opened or saved over (see newerSchema and load).
+export const SCHEMA_VERSION = 4;
 export const LEGACY_KEY = 'tipnet.v1';
 const LS_KEY = 'tipnet.v2';
 const DB_NAME = 'tipnet';
@@ -952,6 +954,37 @@ function lsGet(key) {
     return null;
   }
 }
+/** The stored text of a key when it holds something that is not valid JSON (cut off, damaged), else ''. */
+function lsUnreadable(key) {
+  try {
+    const v = localStorage.getItem(key);
+    if (!v || !v.trim()) return '';
+    JSON.parse(v);
+    return '';
+  } catch (e) {
+    try {
+      return localStorage.getItem(key) || '';
+    } catch (e2) {
+      return '';
+    }
+  }
+}
+/** True when a stored copy was written by a newer TipNet than this one (see SCHEMA_VERSION). */
+const newerSchema = (c) =>
+  isObj(c) && typeof c.schemaVersion === 'number' && c.schemaVersion > SCHEMA_VERSION;
+/**
+ * True when migrate() can make a state of this stored copy, i.e. it is not the example in disguise: an object with a
+ * restaurant that has a profile, or a v2 / prototype profile. Anything else (an array, a string, an object with neither)
+ * is data TipNet does not recognize and must never write over.
+ */
+function recognizedShape(c) {
+  if (!isObj(c)) return false;
+  if (Array.isArray(c.workplaces) && c.workplaces.some((w) => isObj(w) && isObj(w.profile))) return true;
+  return isObj(c.profile);
+}
+/** Stored but empty ({} or []): nothing to protect, the same as no data. */
+const emptyCopy = (c) =>
+  !c || (typeof c === 'object' && Object.keys(c).filter((k) => k[0] !== '_').length === 0);
 function lsSet(key, value) {
   try {
     localStorage.setItem(key, JSON.stringify(value));
@@ -1105,7 +1138,14 @@ const withoutTab = (S) => ({
  */
 function absorb(copy) {
   const none = { changed: false, conflict: false, visible: false };
-  if (recovery || !cache || !copy || savedAtOf(copy) <= lastKnown || copy._writer === writerId) return none;
+  if (recovery || !cache || !copy || copy._writer === writerId) return none;
+  // Another window already runs a newer TipNet: its data is never merged, and this window stops saving (see flush).
+  if (newerSchema(copy)) {
+    recovery = keepRecovery(copy, true);
+    return { ...none, changed: true, visible: true };
+  }
+  // A copy TipNet cannot read as its own is left alone: taking it in would replace this window's data with the example.
+  if (savedAtOf(copy) <= lastKnown || !recognizedShape(copy)) return none;
   const theirs = migrate(copy);
   const mine = cache;
   const hadChanges = !base || !same(mine, base);
@@ -1174,12 +1214,14 @@ export async function syncFromStorage() {
 
 const RECOVERY_KEY = 'tipnet.recovery';
 let recovery = null; // {at, text}: the stored data load() could not read, while nothing may be saved over it
-function keepRecovery(raw) {
-  const rec = { at: Date.now(), text: JSON.stringify(raw) };
-  lsSet(RECOVERY_KEY, { at: rec.at, data: raw }); // a separate key: the normal copies are never touched
+// newer: the data is fine, it was only saved by a newer TipNet (nothing to copy aside; the screen says to reload).
+function keepRecovery(raw, newer = false) {
+  const rec = { at: Date.now(), text: typeof raw === 'string' ? raw : JSON.stringify(raw) };
+  if (newer) rec.newer = true;
+  else lsSet(RECOVERY_KEY, { at: rec.at, data: raw }); // a separate key: the normal copies are never touched
   return rec;
 }
-/** null normally; {at, text} when the saved data could not be read: the raw copy to download (app.js shows it). */
+/** null normally; {at, text, [newer]} when the saved data could not be read (or came from a newer TipNet): the raw copy to download (app.js shows it). */
 export function recoveryInfo() {
   return recovery;
 }
@@ -1198,10 +1240,20 @@ export async function load() {
   } catch (e) {
     idbRaw = null;
   }
-  let raw = pickNewest(idbRaw, lsGet(LS_KEY));
+  const lsCopy = lsGet(LS_KEY);
+  let raw = pickNewest(idbRaw, lsCopy);
   if (!raw) raw = lsGet(LEGACY_KEY);
-  if (raw && typeof raw === 'object') {
+  // Text that is there but not valid JSON (cut off by a full disk, damaged) is stored data too, not "no data".
+  const unreadable = lsUnreadable(LS_KEY) || (raw ? '' : lsUnreadable(LEGACY_KEY));
+  if (!raw && unreadable) {
+    cache = seedState();
+    recovery = keepRecovery(unreadable);
+  } else if (newerSchema(idbRaw) || newerSchema(lsCopy) || newerSchema(raw)) {
+    cache = seedState();
+    recovery = keepRecovery(newerSchema(raw) ? raw : newerSchema(idbRaw) ? idbRaw : lsCopy, true);
+  } else if (raw && typeof raw === 'object' && !emptyCopy(raw)) {
     try {
+      if (!recognizedShape(raw)) throw new Error('saved data is not in a shape TipNet knows');
       cache = migrator(raw, todayISO());
     } catch (e) {
       // Stored data that cannot be read must never be replaced by the example: keep a copy, show the recovery screen,
@@ -1209,6 +1261,10 @@ export async function load() {
       cache = seedState();
       recovery = keepRecovery(raw);
     }
+  } else if (raw && !emptyCopy(raw)) {
+    // A stored value that is not even an object (a number, a string) is unrecognized data as well.
+    cache = seedState();
+    recovery = keepRecovery(raw);
   } else cache = migrate(raw);
   base = clone(cache);
   lastKnown = savedAtOf(raw);
@@ -1339,6 +1395,11 @@ export async function flush() {
       // 1. localStorage: take in a newer copy from another window, then write. Nothing before this is asynchronous.
       // The screen is redrawn right away, so nothing typed from here on lands in the replaced state.
       notify(absorb(lsGet(LS_KEY)));
+      if (recovery) {
+        // another window runs a newer TipNet: its data stays as it is
+        if (waiters) waiters.resolve(false);
+        return false;
+      }
       syncSavedTipouts(cache);
       let at = Math.max(Date.now(), lastKnown + 1);
       let json = JSON.stringify(cache);
@@ -1366,6 +1427,11 @@ export async function flush() {
       const d = await openDB();
       if (d) {
         const r = absorb(await idbGet(d)); // newer only when localStorage could not be written (full)
+        if (recovery) {
+          notify(r);
+          if (waiters) waiters.resolve(false);
+          return false;
+        }
         if (r.changed) {
           notify(r);
           at = Math.max(Date.now(), lastKnown + 1);

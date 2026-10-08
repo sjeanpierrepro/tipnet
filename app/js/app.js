@@ -90,6 +90,25 @@ function errorScreen(root) {
       afterFix();
     },
   });
+  if (rec && rec.newer) {
+    // Saved by a newer TipNet (this tab is an older copy): nothing is read or written until this one is updated.
+    const reload = el('button', { type: 'button', class: 'btn btn-primary' }, 'Reload');
+    reload.addEventListener('click', () => location.reload());
+    root.append(
+      el(
+        'section',
+        { class: 'card stack' },
+        el('h2', { tabindex: '-1' }, 'This data was saved by a newer version of TipNet. Reload to update.'),
+        el(
+          'p',
+          { class: 'note' },
+          'Your saved data is still on this device and nothing has been changed or saved over it. If Reload does not fix it, download your data first so you have a copy.',
+        ),
+        el('div', { class: 'cluster' }, reload, download),
+      ),
+    );
+    return;
+  }
   root.append(
     el(
       'section',
