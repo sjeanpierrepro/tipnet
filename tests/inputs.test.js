@@ -8,6 +8,7 @@ import {
   readMoney,
   moneyTypo,
   hoursTypo,
+  percentTypo,
 } from '../app/js/inputs.js';
 import { computeNight } from '../app/js/math.js';
 
@@ -121,6 +122,12 @@ test('readMoney: accepted shapes', () => {
     '-5': -5,
     '−5': -5,
     '-$5.25': -5.25,
+    '$ 12.50': 12.5,
+    '12.50$': 12.5,
+    '12.50 $': 12.5,
+    '+12': 12,
+    '+$12.50': 12.5,
+    '-$ 5': -5,
     0: 0,
     1.23456: 1.23456,
   };
@@ -139,16 +146,18 @@ test('readMoney: blank is null, everything else odd is NaN', () => {
     '-',
     '.',
     '12 50',
-    '$ 5',
     '1..2',
     'abc',
     '--5',
     '1,25,000',
-    '5$',
+    '$5$',
+    '$ $5',
+    '15%',
+    '+-5',
+    '- 12',
     '1,250,',
     '12,5,5',
     '1e3',
-    '+5',
     '$$5',
     '1,2345',
   ];
@@ -157,6 +166,29 @@ test('readMoney: blank is null, everything else odd is NaN', () => {
 test('moneyTypo: empty for blank and readable, a plain message for typos', () => {
   for (const t of ['', ' ', '12.50', '1,250.50', '-5', '$3']) assert.equal(moneyTypo(t), '', t);
   for (const t of ['1.2.3', '12abc', '$', '.']) assert.match(moneyTypo(t), /^That isn’t an amount\./, t);
+});
+test('readMoney percent: a trailing % is fine, money signs are not', () => {
+  const ok = { 15: 15, '15%': 15, '1.25 %': 1.25, ' 12,5% ': 12.5, '+15%': 15, '.5%': 0.5, '-5%': -5 };
+  for (const [t, n] of Object.entries(ok)) assert.equal(readMoney(t, { percent: true }), n, t);
+  for (const t of ['%', '15%%', '1.2.3%', '15abc', '$15', '15$', '% 15'])
+    assert.ok(Number.isNaN(readMoney(t, { percent: true })), t);
+  assert.equal(readMoney('', { percent: true }), null);
+  // a money box still refuses the % sign
+  assert.ok(Number.isNaN(readMoney('15%')));
+  assert.match(moneyTypo('15%'), /^That isn’t an amount\./);
+});
+test('percentTypo: percent wording, blank and readable are fine', () => {
+  for (const t of ['', ' ', '15', '15%', '1.25 %']) assert.equal(percentTypo(t), '', t);
+  for (const t of ['1.2.3', '15abc', '$15', '%'])
+    assert.equal(percentTypo(t), 'That isn’t a percent. Use something like 15 or 1.25.', t);
+});
+test('hoursTypo: a period after the unit is fine and reads the same hours', () => {
+  const ok = { '8hrs.': 8, '8 hrs.': 8, '7h 30m.': 7.5, '7 hours 30 min.': 7.5, '7.5h.': 7.5, '8h': 8 };
+  for (const [t, n] of Object.entries(ok)) {
+    assert.equal(hoursTypo(t), '', t);
+    assert.equal(parseHoursInput(t), n, t);
+  }
+  for (const t of ['7..', '8abc.', '7.5.', 'h.', '8 hrs..']) assert.notEqual(hoursTypo(t), '', t);
 });
 test('hoursTypo: every shape parseHoursInput reads is fine, junk is not', () => {
   const ok = [

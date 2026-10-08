@@ -87,6 +87,7 @@ export function parseHoursInput(v, { strict = false } = {}) {
   let s = String(v == null ? '' : v).trim();
   const neg = /^[-−]/.test(s);
   if (neg) s = s.slice(1).trim();
+  if (/^\d.*[a-z]\.$/i.test(s)) s = s.slice(0, -1); // a period after the unit: "8hrs." / "7h 30m."
   const sign = neg ? -1 : 1;
   let x;
   if (/^\d*,\d{1,2}$/.test(s)) s = s.replace(',', '.');
@@ -106,16 +107,17 @@ export const hoursReadable = (v) => /\d/.test(String(v == null ? '' : v));
 /**
  * Read a money box strictly. Blank -> null (nothing typed), a typo -> NaN, else the number as typed (full precision;
  * the screens round). Accepted after trimming: 123, 123., 123.45, .5, thousands groups (1,250 / 12,500.75), a lone
- * decimal comma (12,5 / 12,50), an optional "$" right before the digits and an optional leading minus, which stays
- * negative so each screen can keep its own "can't be negative" message. Anything else is a typo: "1.2.3", "12abc",
- * "1,2,3", "$", "12 50".
+ * decimal comma (12,5 / 12,50), an optional "$" before ("$ 12.50") or after ("12.50$") the digits, a leading "+" and an
+ * optional leading minus, which stays negative so each screen can keep its own "can't be negative" message. A percent
+ * box ({ percent: true }) takes a trailing "%" instead of "$" ("15%", "1.25 %"). Anything else is a typo: "1.2.3",
+ * "12abc", "1,2,3", "$", "12 50".
  */
-export function readMoney(text) {
+export function readMoney(text, { percent = false } = {}) {
   let s = String(text == null ? '' : text).trim();
   if (s === '') return null;
   const neg = /^[-−]/.test(s);
-  if (neg) s = s.slice(1);
-  s = s.replace(/^\$/, '');
+  if (neg || s[0] === '+') s = s.slice(1);
+  s = percent ? s.replace(/\s*%$/, '') : s.replace(/^\$\s*|\s*\$$/, '');
   if (/^\d{1,3}(?:,\d{3})+(?:\.\d*)?$/.test(s)) s = s.replace(/,/g, '');
   else if (/^\d*,\d{1,2}$/.test(s)) s = s.replace(',', '.');
   if (!/^(?:\d+\.?\d*|\.\d+)$/.test(s)) return NaN;
@@ -129,11 +131,17 @@ export function moneyTypo(text) {
     ? 'That isn’t an amount. Use numbers and one decimal point, like 12.50.'
     : '';
 }
+/** Same as moneyTypo for a percent box ("15", "1.25", "15%"), with percent wording. */
+export function percentTypo(text) {
+  const n = readMoney(text, { percent: true });
+  return n !== null && Number.isNaN(n) ? 'That isn’t a percent. Use something like 15 or 1.25.' : '';
+}
 /** True when parseHoursInput reads this text as it was meant (blank counts: nothing typed is not a typo). */
 function hoursShape(text) {
   let s = String(text == null ? '' : text).trim();
   if (s === '') return true;
   if (/^[-−]/.test(s)) s = s.slice(1).trim();
+  if (/^\d.*[a-z]\.$/i.test(s)) s = s.slice(0, -1); // a period after the unit: "8hrs." / "7h 30m."
   if (/^\d*,\d{1,2}$/.test(s)) s = s.replace(',', '.');
   return (
     /^\d+:\d{1,2}(?::\d{1,2})?$/.test(s) ||

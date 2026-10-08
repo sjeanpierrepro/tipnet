@@ -81,8 +81,11 @@ const moneyOf = (v) => {
   const n = readMoney(v);
   return Number.isFinite(n) ? n : 0;
 };
-/** A day-of-month box ("1 to 31"): same reading as money, its own wording. */
-const dayTypo = (v) => (Number.isNaN(readMoney(v)) ? 'That isn’t a day. Use a number from 1 to 31.' : '');
+/** A day-of-month box ("1 to 31"): same reading as money plus "1st" / "2nd" / "3rd" / "15th", its own wording. */
+const dayText = (v) => String(v == null ? '' : v).replace(/^(\s*\d+)(?:st|nd|rd|th)\s*$/i, '$1');
+const dayTypo = (v) =>
+  Number.isNaN(readMoney(dayText(v))) ? 'That isn’t a day. Use a number from 1 to 31.' : '';
+const dayOf = (v) => Math.round(moneyOf(dayText(v)));
 
 const MANAGE_URL = 'https://app.lemonsqueezy.com/my-orders';
 
@@ -528,7 +531,7 @@ function entityForm(kind, item) {
   const paidText = el('span', null, 'Already paid this month?');
   const paidField = paidCb ? el('label', { class: 'check', hidden: true }, paidCb, paidText) : null;
   const passedDue = () => {
-    const d = Math.round(moneyOf(ins.dueDay ? ins.dueDay.value : ''));
+    const d = dayOf(ins.dueDay ? ins.dueDay.value : '');
     if (!(d >= 1 && d <= 31)) return null;
     const today = todayISO();
     const due = billsDue({ bills: [{ id: 'x', dueDay: d }] }, today.slice(0, 8) + '01', today)[0];
@@ -586,7 +589,7 @@ function entityForm(kind, item) {
         out[f.k] = raw.trim();
         if (!out[f.k]) msg = 'Give it a name.';
       } else if (f.type === 'day') {
-        const d = Math.round(moneyOf(raw));
+        const d = dayOf(raw);
         out[f.k] = d;
         msg = dayTypo(raw) || (d >= 1 && d <= 31 ? '' : 'Enter a day from 1 to 31.');
       } else {
@@ -2525,7 +2528,6 @@ function incomeForm(item) {
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     const f = freq.value;
-    const dayOf = (v) => Math.round(moneyOf(v));
     const okDay = (d) => d >= 1 && d <= 31;
     let bad = false;
     const check = (fld, msg) => {

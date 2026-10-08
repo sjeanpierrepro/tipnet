@@ -254,7 +254,7 @@ test('guided setup: a typo in gross pay, a deduction, the main rate or a tip-out
     page.click(byId(page, 'to-on'));
     const tv = page.must(page.$('input[id^="tv-"]'), 'tip-out amount');
     page.type(tv, '1.2.3');
-    assert.match(errOf(page, tv), AMOUNT);
+    assert.match(errOf(page, tv), /That isn’t a percent\./);
     page.click(page.button('Finish setup'));
     assert.notEqual(page.state().workplaces[0].setupDone, true, 'not finished');
     page.type(tv, '15');
@@ -293,7 +293,11 @@ test('Setup draft: typos in gross, a deduction, a job rate and a tip-out amount 
     for (const [input, label] of boxes) {
       const was = input.value;
       page.type(input, '1.2.3');
-      assert.match(errOf(page, input), AMOUNT, label);
+      assert.match(
+        errOf(page, input),
+        label === 'Percent of tips' ? /That isn’t a percent\./ : AMOUNT,
+        label,
+      );
       assert.equal(invalid(input), true, label);
       assert.equal(byId(page, 'draft-save').disabled, true, label + ': Save is off');
       assert.match(reasons(page), /Fix “.+”: that isn’t a number\./, label);

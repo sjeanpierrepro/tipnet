@@ -37,6 +37,7 @@ import {
   field,
   moneyInput,
   watchTypo,
+  flagTypo,
   select,
   money,
   pct,
@@ -53,7 +54,7 @@ import {
   debounce,
   fmtShort,
 } from './common.js';
-import { cutoffFromSettings, readMoney, moneyTypo } from '../inputs.js';
+import { cutoffFromSettings, readMoney, moneyTypo, percentTypo } from '../inputs.js';
 import {
   isSetUp,
   isWorkplaceSetUp,
@@ -210,6 +211,9 @@ const moneyOf = (v) => {
   const n = readMoney(v);
   return Number.isFinite(n) ? n : 0;
 };
+/** A tip-out amount box: a percent for the two "% of" modes (a trailing "%" is fine), dollars for "flat". */
+const readAmt = (v, r) => readMoney(v, { percent: r.mode !== 'flat' });
+const amtTypo = (v, r) => (r.mode === 'flat' ? moneyTypo(v) : percentTypo(v));
 const shiftsTypo = (v) =>
   Number.isNaN(readMoney(v)) ? 'That isn’t a number of shifts. Use a whole number, like 5.' : '';
 /** The boxes on screen (not hidden) whose text is a typo. */
@@ -1376,7 +1380,7 @@ function tipoutCard(ctx) {
           exampleValue && r.mode === 'pctTips' ? eg(exampleValue) : r.mode === 'flat' ? '0.00' : '0',
       });
       const fAmt = field(amountLabel(r), amt);
-      guard(amt, fAmt);
+      guard(amt, fAmt, (v) => amtTypo(v, r));
       const mode = select(
         [
           ['pctTips', '% of my tips'],
@@ -1413,7 +1417,7 @@ function tipoutCard(ctx) {
       });
       // decimals are fine (1.25%); a typed value applies as it is typed
       amt.addEventListener('input', () => {
-        if (!moneyTypo(amt.value)) r.value = Math.max(0, moneyOf(amt.value));
+        if (!amtTypo(amt.value, r)) r.value = Math.max(0, readAmt(amt.value, r) || 0);
         ctx.touch(false);
       });
       amt.addEventListener('blur', () => {
@@ -1423,6 +1427,8 @@ function tipoutCard(ctx) {
       mode.addEventListener('change', () => {
         r.mode = mode.value;
         fAmt.querySelector('label').textContent = amountLabel(r);
+        // "15%" is fine for a percent mode and a typo for dollars: look at the text again
+        if (!flagTypo(amt, fAmt, (v) => amtTypo(v, r))) r.value = Math.max(0, readAmt(amt.value, r) || 0);
         ctx.touch(false);
       });
       from.addEventListener('change', () => {
@@ -1525,7 +1531,7 @@ function tipoutCard(ctx) {
         : 'TipNet takes the tip-outs below out of what you type.';
     if (basisHint.textContent !== bt) basisHint.textContent = bt;
     amountFields.forEach(({ r, f, input }) => {
-      if (!moneyTypo(input.value)) ctx.gate(f, to.on ? rowProblem(r) : '');
+      if (!amtTypo(input.value, r)) ctx.gate(f, to.on ? rowProblem(r) : '');
     });
     const lm = to.on && !p.tipouts.length ? 'Add someone you tip out, or turn tip-outs off.' : '';
     listErr.hidden = !(lm && (ctx.showAll || ctx.seen.has(listErr)));
@@ -1569,12 +1575,12 @@ function tipoutCard(ctx) {
   card.validate = () => {
     ctx.showAll = true;
     sync();
-    return !tipoutProblem(p) && !amountFields.some(({ input }) => moneyTypo(input.value));
+    return !tipoutProblem(p) && !amountFields.some(({ r, input }) => amtTypo(input.value, r));
   };
   card.firstInvalid = () => {
     if (!to.on) return null;
     if (!p.tipouts.length) return add;
-    const bad = amountFields.find(({ r, input }) => rowProblem(r) || moneyTypo(input.value));
+    const bad = amountFields.find(({ r, input }) => rowProblem(r) || amtTypo(input.value, r));
     return bad ? bad.input : null;
   };
   return card;
