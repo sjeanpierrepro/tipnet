@@ -28,6 +28,8 @@ import {
   nontaxOnStub,
   taxableGross,
   TIPOUT_PRESETS,
+  tipoutSetup,
+  carryTicks,
 } from '../math.js';
 import { budgetVisible, isUnlocked, BILLING } from '../billing.js';
 import { subscriptionLine, openPreview } from './budget.js';
@@ -2040,8 +2042,10 @@ function guided(root, ctx) {
     if (gProfile) {
       // the user's own numbers replace the example only now
       tidy(gProfile);
+      const peopleBefore = copyOf(tipoutSetup(w.profile).list);
       w.profile = gProfile;
       gProfile = null;
+      carryTipoutTicks(S, w, peopleBefore);
     } else if (!first) tidy(w.profile); // a restaurant added later: drop the blank rows it started with
     const hadExamples = S.nightsExample;
     if (hadExamples) {
@@ -2269,6 +2273,17 @@ export function render(root) {
 const copyOf = (x) => JSON.parse(JSON.stringify(x));
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const snapOf = (w) => ({ name: w.name, noDeductions: !!w.noDeductions, profile: copyOf(w.profile) });
+/**
+ * w's tip-out list was just replaced (Save, Finish) and was `before` until then: people removed and added again (a new
+ * id) keep their ticks on w's nights that follow Setup (math.carryTicks; locked nights keep their snapshot's people).
+ */
+function carryTipoutTicks(S, w, before) {
+  const mine = S.nights.filter((n) => n.workplaceId === w.id);
+  const r = carryTicks(mine, before, tipoutSetup(w.profile).list);
+  if (!r.changed) return;
+  const byId = new Map(r.nights.map((n) => [n.id, n]));
+  S.nights = S.nights.map((n) => (n.workplaceId === w.id ? byId.get(n.id) || n : n));
+}
 const focusId = (id) => {
   const n = document.getElementById(id);
   if (!n) return;
@@ -2351,11 +2366,13 @@ function saveOpen() {
   const { base, draft } = open;
   const live = w.profile;
   const sigBefore = rateSig(live);
+  const peopleBefore = copyOf(tipoutSetup(live).list);
   new Set([...Object.keys(base.profile), ...Object.keys(draft.profile)]).forEach((k) => {
     if (k === 'rateOverride' || same(draft.profile[k], base.profile[k])) return;
     if (draft.profile[k] === undefined) delete live[k];
     else live[k] = copyOf(draft.profile[k]);
   });
+  carryTipoutTicks(S, w, peopleBefore); // a barback removed and added again keeps the nights' ticks
   if (draft.name !== base.name) w.name = draft.name;
   if (draft.noDeductions !== base.noDeductions) {
     if (draft.noDeductions) w.noDeductions = true;

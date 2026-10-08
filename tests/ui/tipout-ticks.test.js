@@ -328,3 +328,108 @@ test('d) Tonight Replace and Add while tip-outs are off keep the night’s ticks
     await page.close();
   }
 });
+
+test('e) Setup: Remove the barback, add a barback again and Save: the nights logged this pay period keep the tip-out', async () => {
+  // second v38 review: each night went from $360.24 to $410.75 and said "no tip-out" (the new row has a new id)
+  const cur = addDays(today, -5);
+  const nights = [1, 2, 3].map((i) => ({
+    id: 'c' + i,
+    date: addDays(cur, i),
+    total: 500,
+    cash: 200,
+    pay: { p1: 8 },
+    barback: true,
+    tipouts: { t1: i !== 2 }, // the barback wasn't tipped out on the second night
+    workplaceId: 'w1',
+  }));
+  const page = await boot({
+    seed: realState((S) => {
+      S.workplaces[0].setupDone = true;
+      S.workplaces[0].profile = {
+        ...exampleProfile(today),
+        periodStart: cur,
+        periodEnd: addDays(cur, 13),
+        freq: 14,
+        tipout: { on: true, basis: 'before' },
+        tipouts: [{ ...BARBACK }],
+      };
+      S.nights = [...nights, lockedNight()]; // and a locked night of an older pay period
+    }),
+  });
+  try {
+    const net = () => page.state().nights.map((n) => money(page, n).net);
+    assert.deepEqual(net().slice(0, 3), [360.24, 410.75, 360.24]);
+    const lockedBefore = clone(nightOf(page, 'n1'));
+    page.openSetup();
+    page.click(page.byLabel('Remove Barback'));
+    page.click(page.button('+ Add someone you tip out'));
+    const rows = page.$$('select[id^="tw-"]');
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].value, 'barback');
+    page.type(page.$$('input[id^="tv-"]')[0], '15');
+    await page.saveSetup();
+    const list = page.state().workplaces[0].profile.tipouts;
+    assert.equal(list.length, 1);
+    assert.notEqual(list[0].id, 't1', 'a new row');
+    assert.deepEqual(net().slice(0, 3), [360.24, 410.75, 360.24], 'the barback still counts where ticked');
+    assert.deepEqual(
+      page
+        .state()
+        .nights.slice(0, 3)
+        .map((n) => n.tipouts[list[0].id]),
+      [true, false, true],
+    );
+    assert.deepEqual(nightOf(page, 'n1'), lockedBefore, 'a locked night is untouched');
+    page.tab('periods');
+    assert.equal((page.text().match(/no tip-out/g) || []).length, 1, 'only the night without the barback');
+  } finally {
+    await page.close();
+  }
+});
+
+test('e) Setup: two barbacks removed and one added: nothing is guessed', async () => {
+  const cur = addDays(today, -5);
+  const B3 = { ...BARBACK, id: 't3', value: 10 };
+  const page = await boot({
+    seed: realState((S) => {
+      S.workplaces[0].setupDone = true;
+      S.workplaces[0].profile = {
+        ...exampleProfile(today),
+        periodStart: cur,
+        periodEnd: addDays(cur, 13),
+        freq: 14,
+        tipout: { on: true, basis: 'before' },
+        tipouts: [{ ...BARBACK }, { ...B3 }, { ...RUNNER }],
+      };
+      S.nights = [
+        {
+          id: 'a',
+          date: addDays(cur, 1),
+          total: 500,
+          cash: 200,
+          pay: { p1: 8 },
+          barback: true,
+          tipouts: { t1: false, t3: true, t2: true },
+          workplaceId: 'w1',
+        },
+      ];
+    }),
+  });
+  try {
+    page.openSetup();
+    page.click(page.$$('button[aria-label="Remove Barback"]')[0]);
+    page.click(page.$$('button[aria-label="Remove Barback"]')[0]);
+    page.click(page.button('+ Add someone you tip out')); // the next unused preset: Barback
+    const sel = page.$$('select[id^="tw-"]').pop();
+    assert.equal(sel.value, 'barback');
+    page.type(page.$$('input[id^="tv-"]').pop(), '15');
+    await page.saveSetup();
+    const list = page.state().workplaces[0].profile.tipouts;
+    const fresh = list.find((r) => r.k === 'barback');
+    const n = page.state().nights[0];
+    assert.equal(n.tipouts[fresh.id], undefined, 'two barbacks removed for one: nothing is guessed');
+    assert.equal(n.tipouts.t2, true);
+  } finally {
+    await page.close();
+  }
+});

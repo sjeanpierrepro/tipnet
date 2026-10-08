@@ -198,3 +198,49 @@ test('same-date Add with tip-outs off or "after tip-out" (no boxes): the night k
   assert.deepEqual(m2.tipouts, { t1: true, t2: true });
   assert.equal(m2.sales, 850);
 });
+
+/* ---------- Setup Save: a person removed and added again (second v38 review) ---------- */
+test('carryTicks: a removed person’s ticks go to the one added person of the same kind, on unlocked nights only', () => {
+  const OTHER = { id: 'o1', k: 'other', who: 'Sushi bar', mode: 'flat', value: 10, from: 'cash' };
+  const OTHER2 = { ...OTHER, id: 'o2', who: ' sushi BAR ' }; // the same name, typed again
+  const before = [BARBACK, RUNNER, OTHER];
+  const after = [RUNNER, BARBACK2, OTHER2];
+  const ns = [
+    night('a', '2026-10-01', { tipouts: { t1: true, t2: false, o1: true } }),
+    night('b', '2026-10-02', { tipouts: { t1: false, t2: true, o1: false } }),
+    night('c', '2026-10-03', { tipouts: { t2: true } }), // saved before the barback was in Setup: stays unticked
+    night('d', '2026-09-10', { tipouts: { t1: true }, snap: M.snapshotFor(prof([BARBACK]), 10) }), // locked
+    night('e', '2026-10-04', { tipouts: undefined, barback: true }), // no list: left alone
+  ];
+  const r = M.carryTicks(ns, before, after);
+  assert.equal(r.changed, 2);
+  assert.deepEqual(r.nights[0].tipouts, { t1: true, t2: false, o1: true, t9: true, o2: true });
+  assert.equal(r.nights[0].barback, true);
+  assert.deepEqual(r.nights[1].tipouts, { t1: false, t2: true, o1: false, t9: false, o2: false });
+  assert.equal(r.nights[1].barback, true, 'the runner is ticked');
+  assert.equal(r.nights[2], ns[2], 'unchanged nights are the same objects');
+  assert.equal(r.nights[3], ns[3], 'a locked night uses its snapshot: untouched');
+  assert.equal(r.nights[4], ns[4]);
+  assert.deepEqual(ns[0].tipouts, { t1: true, t2: false, o1: true }, 'pure: the input is not changed');
+  // $60.60 for the barback stays on the night (Barback 15% of $404 tips)
+  const p = prof(after);
+  assert.equal(M.computeNight(r.nights[0], p, 10).tipouts.find((l) => l.id === 't9').amount, 60.6);
+});
+
+test('carryTicks: never guesses between two, and a different kind or name is never matched', () => {
+  const ns = [night('a', '2026-10-01', { tipouts: { t1: true, t2: true } })];
+  const B3 = { ...BARBACK, id: 't3' };
+  // two barbacks removed, one added: which one is it? nothing is carried
+  assert.equal(M.carryTicks(ns, [BARBACK, B3], [BARBACK2]).changed, 0);
+  // one removed, two added: nothing is carried
+  assert.equal(M.carryTicks(ns, [BARBACK], [BARBACK2, { ...BARBACK, id: 't8' }]).changed, 0);
+  // a runner removed and a barback added: not the same person
+  assert.equal(M.carryTicks(ns, [RUNNER], [BARBACK2]).changed, 0);
+  // "other" needs the same name
+  const O1 = { id: 'o1', k: 'other', who: 'Sushi bar', mode: 'flat', value: 10, from: 'cash' };
+  const ns2 = [night('a', '2026-10-01', { tipouts: { o1: true } })];
+  assert.equal(M.carryTicks(ns2, [O1], [{ ...O1, id: 'o2', who: 'Kitchen crew' }]).changed, 0);
+  // nobody removed (only added) or nobody added: nothing to do
+  assert.equal(M.carryTicks(ns, [BARBACK], [BARBACK, BARBACK2]).changed, 0);
+  assert.equal(M.carryTicks(ns, [BARBACK, RUNNER], [RUNNER]).changed, 0);
+});

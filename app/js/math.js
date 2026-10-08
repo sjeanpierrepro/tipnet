@@ -501,6 +501,41 @@ export function alignTicks(existing, shown, shownList, targetList) {
   });
   return out;
 }
+/**
+ * Setup's list of people went from `before` to `after` in one Save (rows removed and added): a removed person's ticks
+ * go to the one added person of the same kind (alignTicks's rule: preset k, and the same name for "other"; exactly one
+ * removed and one added of that kind, never a guess between two), on the nights that follow Setup (no snapshot; a
+ * locked night uses its snapshot's people). Without that, a barback whose row was removed and added again (a new id)
+ * would count on no night already logged. Nights with no list (old barback only) are left alone. Pure: returns
+ * {nights, changed}; changed nights are copies, the rest the same objects.
+ */
+export function carryTicks(nights, before, after) {
+  const has = (list, r) => list.some((x) => String(x.id) === String(r.id));
+  const gone = before.filter((r) => !has(after, r));
+  const added = after.filter((r) => !has(before, r));
+  const pairs = [];
+  gone.forEach((r) => {
+    const to = added.filter((a) => sameKind(a, r));
+    if (to.length === 1 && gone.filter((x) => sameKind(x, r)).length === 1) pairs.push([r, to[0]]);
+  });
+  if (!pairs.length) return { nights, changed: 0 };
+  const own = (m, id) => Object.prototype.hasOwnProperty.call(m, id);
+  let changed = 0;
+  const out = nights.map((n) => {
+    if (n.snap || !n.tipouts || typeof n.tipouts !== 'object') return n;
+    const move = pairs.filter(([r, a]) => own(n.tipouts, r.id) && !own(n.tipouts, a.id));
+    if (!move.length) return n;
+    const t = { ...n.tipouts };
+    move.forEach(([r, a]) => {
+      t[a.id] = t[r.id] === true;
+    });
+    changed++;
+    const o = { ...n, tipouts: t };
+    if (after.length) o.barback = after.some((x) => t[x.id] === true); // anyone ticked, for older copies of the app
+    return o;
+  });
+  return { nights: out, changed };
+}
 /** The people TipNet takes a tip-out for on this night (the switch is on and the number typed is before tip-out). */
 export function tipoutsTonight(src, night) {
   const ts = src && Array.isArray(src.list) ? src : tipoutSetup(src);
