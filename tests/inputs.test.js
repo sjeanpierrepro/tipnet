@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { businessDate, cutoffFromSettings, checkCash, negativeCheckReason } from '../app/js/inputs.js';
+import {
+  businessDate,
+  cutoffFromSettings,
+  checkCash,
+  negativeCheckReason,
+  readMoney,
+  moneyTypo,
+  hoursTypo,
+} from '../app/js/inputs.js';
 import { computeNight } from '../app/js/math.js';
 
 test('businessDate: before the cutoff the shift belongs to yesterday', () => {
@@ -31,7 +39,8 @@ test('cutoffFromSettings reads defensively', () => {
 });
 test('checkCash: none, ok, negative, over', () => {
   assert.equal(checkCash('100', '').status, 'none');
-  assert.equal(checkCash('100', '-').status, 'none');
+  assert.equal(checkCash('100', '-').status, 'typo'); // a lone minus is a typo, not blank
+  assert.equal(checkCash('100', '1.2.3').status, 'typo');
   assert.equal(checkCash('100', '40').status, 'ok');
   assert.equal(checkCash('100', '100').status, 'ok');
   assert.equal(checkCash('', '40').status, 'ok'); // no total yet: nothing to compare against
@@ -92,4 +101,84 @@ test('parseHoursInput: decimal commas; ambiguous thousands only rejected in stri
   ])
     assert.equal(parseHours(v), want, v);
   assert.ok(Number.isNaN(parseHours('1,250')));
+});
+
+test('readMoney: accepted shapes', () => {
+  const ok = {
+    123: 123,
+    '123.': 123,
+    123.4: 123.4,
+    123.45: 123.45,
+    '.5': 0.5,
+    ' 12.50 ': 12.5,
+    '$12.50': 12.5,
+    '1,250': 1250,
+    '12,500.75': 12500.75,
+    '1,000,000': 1000000,
+    '1,5': 1.5,
+    '12,50': 12.5,
+    '1,250.50': 1250.5,
+    '-5': -5,
+    '−5': -5,
+    '-$5.25': -5.25,
+    0: 0,
+    1.23456: 1.23456,
+  };
+  for (const [t, n] of Object.entries(ok)) assert.equal(readMoney(t), n, t);
+  assert.equal(Object.is(readMoney('-0'), 0), true, '-0 is plain 0');
+});
+test('readMoney: blank is null, everything else odd is NaN', () => {
+  for (const t of ['', '   ', null, undefined]) assert.equal(readMoney(t), null, String(t));
+  const bad = [
+    '1.2.3',
+    '12abc',
+    '1,2,3',
+    '12,345,6',
+    '1.2,5',
+    '$',
+    '-',
+    '.',
+    '12 50',
+    '$ 5',
+    '1..2',
+    'abc',
+    '--5',
+    '1,25,000',
+    '5$',
+    '1,250,',
+    '12,5,5',
+    '1e3',
+    '+5',
+    '$$5',
+    '1,2345',
+  ];
+  for (const t of bad) assert.ok(Number.isNaN(readMoney(t)), t);
+});
+test('moneyTypo: empty for blank and readable, a plain message for typos', () => {
+  for (const t of ['', ' ', '12.50', '1,250.50', '-5', '$3']) assert.equal(moneyTypo(t), '', t);
+  for (const t of ['1.2.3', '12abc', '$', '.']) assert.match(moneyTypo(t), /^That isn’t an amount\./, t);
+});
+test('hoursTypo: every shape parseHoursInput reads is fine, junk is not', () => {
+  const ok = [
+    '',
+    ' ',
+    '7',
+    '7.',
+    '7.5',
+    '.5',
+    '7,5',
+    '7:30',
+    '7:30:00',
+    '7h',
+    '7h 30m',
+    '7 hours 30 min',
+    '7hrs',
+    '-5',
+    '-7:30',
+    '7.5h',
+  ];
+  for (const t of ok) assert.equal(hoursTypo(t), '', t);
+  for (const t of ['1.2.3', '7..5', '7:3:3:3', 'abc', '7h abc', '-', '7:', '$7', '1,2,3', '7 30'])
+    assert.match(hoursTypo(t), /^That isn’t a number of hours\./, t);
+  assert.match(hoursTypo('x', 'shifts'), /number of shifts/);
 });

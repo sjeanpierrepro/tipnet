@@ -33,20 +33,18 @@ export function businessDate(now = new Date(), cutoffHour = DEFAULT_CUTOFF_HOUR)
  *   tips mode (tips: true): the typed number is the tips (cash + card), so cash can't be more than it, even at $0.
  *   total mode: the typed number is tips + hourly pay, so cash can't be more than the total minus basePay
  *   (tonight's hourly and per-shift pay).
- * Returns {status: 'none'|'ok'|'negative'|'over', message}. Only 'ok' cash is used for the check split and saved.
+ * Returns {status: 'none'|'ok'|'negative'|'over'|'typo', message}. Only 'ok' cash is used for the check split and saved.
  */
 export function checkCash(totalStr, cashStr, { tips = false, basePay = 0 } = {}) {
-  const raw = String(cashStr == null ? '' : cashStr).replace(/[^0-9.-]/g, '');
-  if (raw === '' || raw === '-' || raw === '.') return { status: 'none', message: '' };
-  const cash = parseFloat(raw);
-  if (!Number.isFinite(cash)) return { status: 'none', message: '' };
+  const cash = readMoney(cashStr);
+  if (cash === null) return { status: 'none', message: '' };
+  if (Number.isNaN(cash)) return { status: 'typo', message: moneyTypo(cashStr) };
   if (cash < 0)
     return {
       status: 'negative',
       message: 'Cash can’t be a negative number. It won’t be saved until you fix it.',
     };
-  const typed = String(totalStr == null ? '' : totalStr).replace(/[^0-9.-]/g, '');
-  const total = typed === '' ? NaN : parseFloat(typed);
+  const total = readMoney(totalStr) ?? NaN;
   if (tips) {
     if (Number.isFinite(total) && total >= 0 && cash > total + 0.005)
       return {
@@ -104,6 +102,52 @@ export function parseHoursInput(v, { strict = false } = {}) {
 export const hasHoursText = (v) => String(v == null ? '' : v).trim() !== '';
 /** True when the text holds a number parseHoursInput can read (blank and junk like "abc" do not). */
 export const hoursReadable = (v) => /\d/.test(String(v == null ? '' : v));
+
+/**
+ * Read a money box strictly. Blank -> null (nothing typed), a typo -> NaN, else the number as typed (full precision;
+ * the screens round). Accepted after trimming: 123, 123., 123.45, .5, thousands groups (1,250 / 12,500.75), a lone
+ * decimal comma (12,5 / 12,50), an optional "$" right before the digits and an optional leading minus, which stays
+ * negative so each screen can keep its own "can't be negative" message. Anything else is a typo: "1.2.3", "12abc",
+ * "1,2,3", "$", "12 50".
+ */
+export function readMoney(text) {
+  let s = String(text == null ? '' : text).trim();
+  if (s === '') return null;
+  const neg = /^[-−]/.test(s);
+  if (neg) s = s.slice(1);
+  s = s.replace(/^\$/, '');
+  if (/^\d{1,3}(?:,\d{3})+(?:\.\d*)?$/.test(s)) s = s.replace(/,/g, '');
+  else if (/^\d*,\d{1,2}$/.test(s)) s = s.replace(',', '.');
+  if (!/^(?:\d+\.?\d*|\.\d+)$/.test(s)) return NaN;
+  const n = parseFloat(s);
+  return neg && n !== 0 ? -n : n;
+}
+/** '' when the money text is blank or readable, else a short message to show next to the box. */
+export function moneyTypo(text) {
+  const n = readMoney(text);
+  return n !== null && Number.isNaN(n)
+    ? 'That isn’t an amount. Use numbers and one decimal point, like 12.50.'
+    : '';
+}
+/** True when parseHoursInput reads this text as it was meant (blank counts: nothing typed is not a typo). */
+function hoursShape(text) {
+  let s = String(text == null ? '' : text).trim();
+  if (s === '') return true;
+  if (/^[-−]/.test(s)) s = s.slice(1).trim();
+  if (/^\d*,\d{1,2}$/.test(s)) s = s.replace(',', '.');
+  return (
+    /^\d+:\d{1,2}(?::\d{1,2})?$/.test(s) ||
+    /^\d+(?:\.\d+)?\s*h(?:ours?|rs?)?\s*(?:\d+\s*m(?:in(?:ute)?s?)?)?$/i.test(s) ||
+    /^(?:\d+\.?\d*|\.\d+)$/.test(s)
+  );
+}
+/** '' when an hours/shifts box is blank or readable, else a short message. unit: 'hours' | 'shifts'. */
+export function hoursTypo(text, unit = 'hours') {
+  if (hoursShape(text)) return '';
+  return unit === 'shifts'
+    ? 'That isn’t a number of shifts. Use something like 1 or 1.5.'
+    : 'That isn’t a number of hours. Use something like 7.5 or 7:30.';
+}
 
 /* ---------- night date bounds ---------- */
 /** Earliest night date accepted. */
