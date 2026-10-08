@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { boot, realState } from './harness.js';
-import { fileSaver, nightsBackupDue, countSavedNight } from '../../app/js/ui/backup.js';
+import { fileSaver, nightsBackupDue, countSavedNight, restoreFromFileText } from '../../app/js/ui/backup.js';
 import { migrate, seedState } from '../../app/js/storage.js';
 import { exampleNights } from '../../app/js/math.js';
 import { businessDate } from '../../app/js/inputs.js';
@@ -128,4 +128,29 @@ test('pure: example nights never count; the counts are kept by migrate, junk is 
   assert.equal(m.settings.nightsSinceBackup, 7);
   assert.equal('backupNightsAt' in m.settings, false);
   assert.equal('nightsSinceBackup' in migrate({ ...S, settings: { nightsSinceBackup: -1 } }).settings, false);
+});
+
+test('the saved file carries the reset count: restoring it does not bring the card back', async () => {
+  saved.length = 0;
+  const page = await boot({
+    seed: seed((S) => {
+      S.settings.nightsSinceBackup = 10;
+      S.settings.lastBackupAt = Date.now() - 40 * 86400e3;
+    }),
+  });
+  try {
+    const card = page.must(page.$('#nights-backup'), 'card');
+    page.click(page.button('Save backup file', card));
+    const file = JSON.parse(saved[0].text);
+    assert.equal(file.settings.nightsSinceBackup, 0, 'the file holds the reset count');
+    assert.equal(file.settings.backupNightsAt, undefined);
+    assert.ok(file.settings.lastBackupAt > Date.now() - 60e3, 'and the new backup time');
+    restoreFromFileText(saved[0].text);
+    page.tab('periods');
+    page.tab('tonight');
+    assert.equal(page.state().settings.nightsSinceBackup, 0);
+    assert.equal(page.$('#nights-backup'), null, 'no "10 nights" card right after restoring');
+  } finally {
+    await page.close();
+  }
 });

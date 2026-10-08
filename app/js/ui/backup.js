@@ -200,8 +200,10 @@ const markBackedUp = () => {
 };
 /** Download tipnet-backup-YYYY-MM-DD.json: the same data as a backup code (no license key). */
 export function saveBackupFile() {
-  fileSaver.save(backupFileName(), backupFileText(getState()));
+  // Counted as backed up before the text is built, so the file itself carries the reset count: restoring it later
+  // must not say "You've logged 10 nights since your last backup" again.
   markBackedUp();
+  fileSaver.save(backupFileName(), backupFileText(getState()));
 }
 const FILE_SAVED = 'Backup file saved. Keep a copy somewhere safe, like your email or cloud storage.';
 
@@ -342,9 +344,9 @@ export function renderBackup(host, { restoreOnly = false } = {}) {
 
   const copy = el('button', { type: 'button', class: 'btn btn-secondary btn-small' }, 'Copy backup code');
   copy.addEventListener('click', async () => {
+    backedUp(); // first, so the code itself carries the reset count
     const code = encodeBackup(getState());
     box.value = code;
-    backedUp();
     try {
       await navigator.clipboard.writeText(code);
       say('Backup code copied. Paste it somewhere safe, like a note to yourself.');
@@ -386,8 +388,8 @@ export function renderBackup(host, { restoreOnly = false } = {}) {
     'Save a backup file',
   );
   saveFile.addEventListener('click', () => {
+    backedUp(); // first, so the file itself carries the reset count
     fileSaver.save(backupFileName(), backupFileText(getState()));
-    backedUp();
     say(FILE_SAVED);
   });
   const fileIn = el('input', {
