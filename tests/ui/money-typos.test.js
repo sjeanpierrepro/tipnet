@@ -206,3 +206,147 @@ test('Check my accuracy: a typo in the paycheck amount compares nothing; the fix
     await page.close();
   }
 });
+
+/* ---------- Setup ---------- */
+const byId = (page, id) => page.must(page.$('#' + id), id);
+const reasons = (page) => page.text(page.must(page.$('#draft-reasons'), 'reasons'));
+
+test('guided setup: a typo in gross pay, a deduction, the main rate or a tip-out stops Next/Finish and is never stored', async () => {
+  const page = await boot();
+  try {
+    page.tab('setup');
+    page.type(page.$$('input[type=date]', page.app)[0], '2026-09-01');
+    const gross = page.$('input[placeholder="e.g. 2,000"]', page.app);
+    // step 1: gross pay
+    page.type(gross, '1.2.3');
+    assert.match(errOf(page, gross), AMOUNT);
+    assert.equal(invalid(gross), true);
+    page.click(page.button('Next'));
+    assert.match(page.text(), /1\. Pay period and gross/, 'still on step 1');
+    assert.equal(page.doc.activeElement, gross);
+    assert.notEqual((page.state().settings.guidedDraft.profile || {}).gross, 1.2, 'not stored as 1.2');
+    page.type(gross, '1,500');
+    assert.equal(invalid(gross), false);
+    page.click(page.button('Next'));
+    assert.equal(page.state().settings.guidedDraft.profile.gross, 1500);
+    // step 2: a deduction
+    const ded = page.must(page.$('input[id^="da-"]'), 'deduction');
+    page.type(ded, '12abc');
+    assert.match(errOf(page, ded), AMOUNT);
+    page.click(page.button('Next'));
+    assert.match(page.text(), /Deductions/);
+    assert.equal(page.doc.activeElement, ded);
+    assert.ok(
+      page.state().settings.guidedDraft.profile.deductions.every((d) => d.amount !== 12),
+      'not stored as 12',
+    );
+    page.type(ded, '150,5');
+    assert.equal(invalid(ded), false);
+    page.click(page.button('Next'));
+    // step 3: the main rate, then a tip-out
+    const rate = byId(page, 'pr-p1');
+    page.type(rate, '12.5.0');
+    assert.match(errOf(page, rate), AMOUNT);
+    page.click(page.button('Finish setup'));
+    assert.equal(page.state().workplaces[0].setupDone, undefined, 'not finished');
+    assert.equal(page.doc.activeElement, rate);
+    page.type(rate, '12.50');
+    page.click(byId(page, 'to-on'));
+    const tv = page.must(page.$('input[id^="tv-"]'), 'tip-out amount');
+    page.type(tv, '1.2.3');
+    assert.match(errOf(page, tv), AMOUNT);
+    page.click(page.button('Finish setup'));
+    assert.notEqual(page.state().workplaces[0].setupDone, true, 'not finished');
+    page.type(tv, '15');
+    page.click(page.button('Finish setup'));
+    const w = page.state().workplaces[0];
+    assert.equal(w.setupDone, true);
+    assert.equal(w.profile.payTypes[0].rate, 12.5);
+    assert.equal(w.profile.tipouts[0].value, 15);
+    assert.equal(w.profile.deductions[0].amount, 150.5);
+  } finally {
+    await page.close();
+  }
+});
+
+test('Setup draft: typos in gross, a deduction, a job rate and a tip-out amount disable Save, say why, and are never applied', async () => {
+  const page = await boot({
+    seed: realState((S) => {
+      const p = S.workplaces[0].profile;
+      S.workplaces[0].setupDone = true;
+      p.gross = 2000;
+      p.deductions = [{ id: 'd1', k: 'other', name: 'Health', amount: 100, mode: 'fixed' }];
+      p.tipout = { on: true, basis: 'before' };
+      p.tipouts = [{ id: 't1', k: 'barback', who: 'Barback', mode: 'pctTips', value: 15, from: 'cash' }];
+    }),
+  });
+  try {
+    page.openSetup();
+    const gross = page.byText('.field', 'Gross pay', page.app).querySelector('input');
+    const boxes = [
+      [gross, 'Gross pay'],
+      [byId(page, 'da-d1'), 'Amount this check'],
+      [byId(page, 'pr-p1'), 'Rate'],
+      [byId(page, 'tv-t1'), 'Percent of tips'],
+    ];
+    const good = boxes.map(([i]) => i.value);
+    for (const [input, label] of boxes) {
+      const was = input.value;
+      page.type(input, '1.2.3');
+      assert.match(errOf(page, input), AMOUNT, label);
+      assert.equal(invalid(input), true, label);
+      assert.equal(byId(page, 'draft-save').disabled, true, label + ': Save is off');
+      assert.match(reasons(page), /Fix “.+”: that isn’t a number\./, label);
+      page.type(input, was);
+      assert.equal(invalid(input), false, label + ' fixed');
+    }
+    // after all that, the draft still holds the last good numbers and saves unchanged
+    boxes.forEach(([i], k) => assert.equal(i.value, good[k]));
+    // a typo left in a box next to a good change: Save stays off and nothing is applied
+    page.type(gross, '2,100');
+    page.type(boxes[1][0], '1,2,3');
+    page.click(byId(page, 'draft-save'));
+    const w = () => page.state().workplaces[0].profile;
+    assert.equal(w().gross, 2000, 'nothing saved');
+    assert.equal(w().deductions[0].amount, 100);
+    assert.equal(byId(page, 'draft-save').disabled, true);
+    page.type(boxes[1][0], '125.50');
+    await page.saveSetup();
+    assert.equal(w().gross, 2100);
+    assert.equal(w().deductions[0].amount, 125.5);
+  } finally {
+    await page.close();
+  }
+});
+
+test('Setup draft: the shifts box and a non-taxable amount refuse typos too', async () => {
+  const page = await boot({
+    seed: realState((S) => {
+      S.workplaces[0].setupDone = true;
+      S.workplaces[0].profile.nontaxable = [
+        { id: 'x1', k: 'other', name: 'Mileage', amount: 20, recurring: true },
+      ];
+    }),
+  });
+  try {
+    page.openSetup();
+    const shifts = page.byText('.field', 'Shifts you worked', page.app).querySelector('input');
+    page.type(shifts, '5.5.5');
+    assert.match(errOf(page, shifts), /That isn’t a number of shifts\./);
+    assert.equal(byId(page, 'draft-save').disabled, true);
+    page.type(shifts, '5');
+    assert.equal(invalid(shifts), false);
+    const nt = byId(page, 'na-x1');
+    page.type(nt, '2o');
+    assert.match(errOf(page, nt), AMOUNT);
+    assert.equal(byId(page, 'draft-save').disabled, true);
+    page.type(nt, '25');
+    assert.equal(invalid(nt), false);
+    await page.saveSetup();
+    const p = page.state().workplaces[0].profile;
+    assert.equal(p.shifts, 5);
+    assert.equal(p.nontaxable[0].amount, 25);
+  } finally {
+    await page.close();
+  }
+});

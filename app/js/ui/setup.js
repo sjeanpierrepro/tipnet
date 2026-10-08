@@ -37,7 +37,6 @@ import {
   field,
   moneyInput,
   select,
-  numOf,
   money,
   pct,
   exampleBanner,
@@ -53,7 +52,7 @@ import {
   debounce,
   fmtShort,
 } from './common.js';
-import { cutoffFromSettings } from '../inputs.js';
+import { cutoffFromSettings, readMoney, moneyTypo } from '../inputs.js';
 import {
   isSetUp,
   isWorkplaceSetUp,
@@ -199,6 +198,40 @@ function presetSelect(presets, current, id, fallback = 'other') {
   return s;
 }
 
+/* ============ amounts that are not numbers ============ */
+/*
+ * A money box whose text isn't a number ("1.2.3", "12abc") shows its message as it is typed, is never applied (the last
+ * good value stays in the draft), and stops Save, Next and Finish until it is fixed. guard() registers a box; the list
+ * is reset for every page drawn (see makeCtx).
+ */
+let boxes = [];
+const moneyOf = (v) => {
+  const n = readMoney(v);
+  return Number.isFinite(n) ? n : 0;
+};
+const shiftsTypo = (v) =>
+  Number.isNaN(readMoney(v)) ? 'That isn’t a number of shifts. Use a whole number, like 5.' : '';
+/** The boxes on screen (not hidden) whose text is a typo. */
+const typoBoxes = () =>
+  boxes.filter((b) => b.input.isConnected && !b.input.closest('[hidden]') && b.typo(b.input.value));
+function guard(input, f, typo = moneyTypo) {
+  boxes.push({ input, f, typo });
+  input.addEventListener('input', () => {
+    const m = typo(input.value);
+    if (m) {
+      f.setError(m);
+      input.setAttribute('data-typo', '');
+    } else if (input.hasAttribute('data-typo')) {
+      input.removeAttribute('data-typo');
+      f.setError('');
+    }
+  });
+}
+const labelOf = (f) =>
+  (f.querySelector('label') ? f.querySelector('label').textContent : '')
+    .replace(/\s*\(optional\)\s*$/, '')
+    .trim();
+
 /* ============ numbers that change the paystub rate ============ */
 /**
  * Gross pay and deduction amounts apply after a short pause in typing, when the field is left, or on any click (app.js
@@ -214,6 +247,7 @@ export function flushEdits() {
 function onPause(ctx, input, apply) {
   const run = debounce(() => {
     if (!pendingEdits.delete(run)) return;
+    if (input.hasAttribute('data-typo')) return ctx.touch(false); // a typo is never applied; the last good number stays
     lockFinished(); // a pay period that ended meanwhile locks before the new number reaches it
     apply();
   }, EDIT_PAUSE_MS);
@@ -254,6 +288,7 @@ function makeCtx(w, blank = false, guidedNow = blank, draft = null) {
   const S = getState();
   if (blank && !gProfile) gProfile = blankProfile();
   const live = [];
+  boxes = [];
   const saved = el('p', { class: 'hint', role: 'status', 'aria-live': 'polite' });
   const rateNote = el('p', { class: 'hint', role: 'status', 'aria-live': 'polite' });
   const showRateNote = () => {
@@ -432,8 +467,11 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
       else if (d > 21) de = 'Payday is more than 21 days after the pay period ends. Check the date.';
     }
     fDelay.setError(de);
-    fShifts.setError(numOf(shifts.value) < 0 ? 'Shifts can’t be negative.' : '');
-    ctx.gate(fGross, numOf(gross.value) > 0 ? '' : 'Gross pay is needed to work out your tax rate.');
+    fShifts.setError(
+      shiftsTypo(shifts.value) || (moneyOf(shifts.value) < 0 ? 'Shifts can’t be negative.' : ''),
+    );
+    if (moneyTypo(gross.value)) fGross.setError(moneyTypo(gross.value));
+    else ctx.gate(fGross, moneyOf(gross.value) > 0 ? '' : 'Gross pay is needed to work out your tax rate.');
     // The end date sets the period length when present; say so if it doesn't match the schedule picked.
     const len = lengthFromDates(p) ? dayDiff(p.periodStart, p.periodEnd) + 1 : 0;
     const cal = calendarMode(p);
@@ -475,8 +513,10 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
       ctx.touch(false);
     }
   });
+  guard(shifts, fShifts, shiftsTypo);
+  guard(gross, fGross);
   shifts.addEventListener('input', () => {
-    p.shifts = Math.max(0, Math.round(numOf(shifts.value)));
+    if (!shiftsTypo(shifts.value)) p.shifts = Math.max(0, Math.round(moneyOf(shifts.value)));
     ctx.touch(false);
   });
   freq.addEventListener('change', () => {
@@ -502,7 +542,7 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
     ctx.touch(false);
   });
   onPause(ctx, gross, () => {
-    p.gross = numOf(gross.value);
+    p.gross = moneyOf(gross.value);
     ctx.touch(true);
   });
   [
@@ -539,7 +579,9 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
     validate();
     return !!(
       Number.isFinite(parseISO(start.value)) &&
-      numOf(gross.value) > 0 &&
+      moneyOf(gross.value) > 0 &&
+      !moneyTypo(gross.value) &&
+      !shiftsTypo(shifts.value) &&
       !fEnd.hasAttribute('data-invalid')
     );
   };
@@ -705,6 +747,7 @@ function dedCard(ctx) {
       }
       amt.id = 'da-' + d.id;
       const fAmt = field('Amount this check ($)', amt);
+      guard(amt, fAmt);
       kids.push(el('div', { class: 'grid-2', style: 'grid-column:1/-1' }, fAmt, field('This amount', mode)));
       kids.push(line);
       if (preset && preset.notes)
@@ -724,7 +767,7 @@ function dedCard(ctx) {
         if (f) f.focus();
       });
       onPause(ctx, amt, () => {
-        d.amount = numOf(amt.value);
+        d.amount = moneyOf(amt.value);
         fAmt.setError(d.amount < 0 ? 'Amounts on a stub are positive numbers.' : '');
         ctx.touch(true);
       });
@@ -894,9 +937,9 @@ function nontaxSection(ctx, redrawSummary) {
         x.recurring === false ? 'no' : 'yes',
         { id: 'nr-' + x.id },
       );
-      kids.push(
-        el('div', { class: 'grid-2' }, field('Amount this check ($)', amt), field('How often', every)),
-      );
+      const fAmt = field('Amount this check ($)', amt);
+      guard(amt, fAmt);
+      kids.push(el('div', { class: 'grid-2' }, fAmt, field('How often', every)));
       const rm = el(
         'button',
         { type: 'button', class: 'btn btn-secondary btn-small', 'aria-label': 'Remove ' + x.name },
@@ -913,7 +956,7 @@ function nontaxSection(ctx, redrawSummary) {
         if (f) f.focus();
       });
       onPause(ctx, amt, () => {
-        x.amount = Math.max(0, numOr0Input(amt.value));
+        x.amount = Math.max(0, moneyOf(amt.value));
         changed();
       });
       every.addEventListener('change', () => {
@@ -968,10 +1011,6 @@ function nontaxSection(ctx, redrawSummary) {
     el('div', null, add),
   );
 }
-const numOr0Input = (v) => {
-  const n = numOf(v);
-  return Number.isFinite(n) ? n : 0;
-};
 
 /* ============ 3. pay types ============ */
 /**
@@ -1063,9 +1102,11 @@ function payCard(ctx) {
       id: 'pr-' + t.id,
     });
     const fr = field(label, rt);
+    guard(rt, fr);
     rt.addEventListener('input', () => {
+      if (moneyTypo(rt.value)) return ctx.touch(false); // not applied; the last good rate stays
       const was = num(t.rate);
-      t.rate = numOf(rt.value);
+      t.rate = moneyOf(rt.value);
       if (i === 0) {
         fr.setError(t.rate <= 0 ? 'Enter the rate from your stub.' : '');
         // Overtime follows the main job (1.5x) while it still matches the old main rate or is empty.
@@ -1241,8 +1282,10 @@ function payCard(ctx) {
   card.validate = () => {
     const main = p.payTypes[0];
     const ok = !!main && (main.unit === 'amt' || num(main.rate) > 0);
-    rateFields.forEach(({ fr }) => fr.setError(ok ? '' : 'Enter the rate from your stub.'));
-    return ok;
+    rateFields.forEach(({ fr, rt }) =>
+      fr.setError(moneyTypo(rt.value) || (ok ? '' : 'Enter the rate from your stub.')),
+    );
+    return ok && !rateFields.some(({ rt }) => moneyTypo(rt.value));
   };
   card.firstInvalid = () => {
     const f = rateFields[0];
@@ -1341,6 +1384,7 @@ function tipoutCard(ctx) {
           exampleValue && r.mode === 'pctTips' ? eg(exampleValue) : r.mode === 'flat' ? '0.00' : '0',
       });
       const fAmt = field(amountLabel(r), amt);
+      guard(amt, fAmt);
       const mode = select(
         [
           ['pctTips', '% of my tips'],
@@ -1377,7 +1421,7 @@ function tipoutCard(ctx) {
       });
       // decimals are fine (1.25%); a typed value applies as it is typed
       amt.addEventListener('input', () => {
-        r.value = Math.max(0, numOf(amt.value));
+        if (!moneyTypo(amt.value)) r.value = Math.max(0, moneyOf(amt.value));
         ctx.touch(false);
       });
       amt.addEventListener('blur', () => {
@@ -1488,7 +1532,9 @@ function tipoutCard(ctx) {
         ? 'You type what you made after tipping out, so TipNet doesn’t take the tip-outs out again.'
         : 'TipNet takes the tip-outs below out of what you type.';
     if (basisHint.textContent !== bt) basisHint.textContent = bt;
-    amountFields.forEach(({ r, f }) => ctx.gate(f, to.on ? rowProblem(r) : ''));
+    amountFields.forEach(({ r, f, input }) => {
+      if (!moneyTypo(input.value)) ctx.gate(f, to.on ? rowProblem(r) : '');
+    });
     const lm = to.on && !p.tipouts.length ? 'Add someone you tip out, or turn tip-outs off.' : '';
     listErr.hidden = !(lm && (ctx.showAll || ctx.seen.has(listErr)));
     listErr.textContent = listErr.hidden ? '' : lm;
@@ -1531,12 +1577,12 @@ function tipoutCard(ctx) {
   card.validate = () => {
     ctx.showAll = true;
     sync();
-    return !tipoutProblem(p);
+    return !tipoutProblem(p) && !amountFields.some(({ input }) => moneyTypo(input.value));
   };
   card.firstInvalid = () => {
     if (!to.on) return null;
     if (!p.tipouts.length) return add;
-    const bad = amountFields.find(({ r }) => rowProblem(r));
+    const bad = amountFields.find(({ r, input }) => rowProblem(r) || moneyTypo(input.value));
     return bad ? bad.input : null;
   };
   return card;
@@ -1935,6 +1981,8 @@ function guided(root, ctx) {
       : null;
   const next = el('button', { type: 'button', class: 'btn' }, guidedStep === 2 ? 'Finish setup' : 'Next');
   next.addEventListener('click', () => {
+    const typo = typoBoxes()[0]; // its message is already shown by the box
+    if (typo) return typo.input.focus();
     const bad = body.filter((c) => !c.validate());
     if (bad.length) {
       const i = bad.map((c) => c.firstInvalid()).find(Boolean);
@@ -2225,6 +2273,7 @@ export function confirmLeave(next) {
 function draftProblems(S, w, d) {
   const out = [];
   const p = d.profile;
+  typoBoxes().forEach((b) => out.push('Fix “' + labelOf(b.f) + '”: that isn’t a number.'));
   const np = nameProblem(S, w, d.name);
   if (np) out.push(np);
   if (!Number.isFinite(parseISO(p.periodStart))) out.push('Pick the day your pay period started.');
@@ -2433,7 +2482,12 @@ function saveBar(S, w, ctx) {
   const bar = el('div', { class: 'save-bar stack-sm', id: 'draft-bar' });
   const doSave = (then) => {
     const next = asking && asking.next;
-    if (!saveOpen()) return sync();
+    if (!saveOpen()) {
+      sync();
+      const typo = typoBoxes()[0];
+      if (typo) typo.input.focus();
+      return;
+    }
     if (then && next) next();
     else {
       bus.rerender();
@@ -2492,7 +2546,7 @@ function saveBar(S, w, ctx) {
   const sync = () => {
     if (!open) return;
     // A number still waiting for its typing pause is applied by the click on Save, so Save stays usable meanwhile.
-    const probs = pendingEdits.size ? [] : draftProblems(S, w, open.draft);
+    const probs = pendingEdits.size && !typoBoxes().length ? [] : draftProblems(S, w, open.draft);
     saveB.disabled = probs.length > 0;
     const t = probs.length ? 'To save: ' + probs.join(' ') : '';
     if (reasons.textContent !== t) reasons.textContent = t;
