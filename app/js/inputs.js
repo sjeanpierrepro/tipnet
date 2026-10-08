@@ -83,18 +83,32 @@ export function negativeCheckReason(c) {
  * "1,250" or "1,250.5" is ambiguous (thousands? decimal?): with { strict: true } (CSV import) it returns NaN so the row
  * can be rejected; otherwise the comma is ignored (1250, which the screens refuse as more than 24 hours).
  */
+const HOURS_UNIT = 'h(?:ours?|rs?)?';
+// "7h30", "7h 30", "7h 30m": the minutes after the unit may skip the "m".
+const HM_RE = new RegExp(
+  `^(\\d+(?:\\.\\d+)?)\\s*${HOURS_UNIT}\\s*(?:(\\d+)\\s*(?:m(?:in(?:ute)?s?)?)?)?$`,
+  'i',
+);
+const CLOCK_RE = new RegExp(`^(\\d+):(\\d{1,2})(?::\\d{1,2})?(?:\\s*${HOURS_UNIT})?$`, 'i'); // "7:30", "7:30 hrs"
+const FRACS = { '½': 0.5, '¼': 0.25, '¾': 0.75, '1/2': 0.5, '1/4': 0.25, '3/4': 0.75 };
+const FRAC_RE = /^(?:(\d+)\s*)?(½|¼|¾|1\/2|1\/4|3\/4)$/; // "7½", "7 1/2", "1/2"
+/** A period after the unit ("8hrs.") or after a plain number ("7.5.") is dropped. */
+function dropEndPeriod(s) {
+  if (/^\d.*[a-z]\.$/i.test(s) || /^\d+(?:\.\d+)?\.$/.test(s)) return s.slice(0, -1);
+  return s;
+}
 export function parseHoursInput(v, { strict = false } = {}) {
   let s = String(v == null ? '' : v).trim();
   const neg = /^[-−]/.test(s);
   if (neg) s = s.slice(1).trim();
-  if (/^\d.*[a-z]\.$/i.test(s)) s = s.slice(0, -1); // a period after the unit: "8hrs." / "7h 30m."
+  s = dropEndPeriod(s);
   const sign = neg ? -1 : 1;
   let x;
   if (/^\d*,\d{1,2}$/.test(s)) s = s.replace(',', '.');
   else if (strict && (/^\d*,\d+(?:\.\d+)?$/.test(s) || /^\d+(?:,\d{3})+(?:\.\d+)?$/.test(s))) return NaN;
-  if ((x = /^(\d+):(\d{1,2})(?::\d{1,2})?$/.exec(s))) return sign * (+x[1] + +x[2] / 60);
-  if ((x = /^(\d+(?:\.\d+)?)\s*h(?:ours?|rs?)?\s*(?:(\d+)\s*m(?:in(?:ute)?s?)?)?$/i.exec(s)))
-    return sign * (+x[1] + (x[2] ? +x[2] / 60 : 0));
+  if ((x = CLOCK_RE.exec(s))) return sign * (+x[1] + +x[2] / 60);
+  if ((x = HM_RE.exec(s))) return sign * (+x[1] + (x[2] ? +x[2] / 60 : 0));
+  if ((x = FRAC_RE.exec(s))) return sign * (+(x[1] || 0) + FRACS[x[2]]);
   const n = parseFloat(s.replace(/[^0-9.]/g, ''));
   return Number.isFinite(n) ? sign * n : 0;
 }
@@ -141,13 +155,9 @@ function hoursShape(text) {
   let s = String(text == null ? '' : text).trim();
   if (s === '') return true;
   if (/^[-−]/.test(s)) s = s.slice(1).trim();
-  if (/^\d.*[a-z]\.$/i.test(s)) s = s.slice(0, -1); // a period after the unit: "8hrs." / "7h 30m."
+  s = dropEndPeriod(s);
   if (/^\d*,\d{1,2}$/.test(s)) s = s.replace(',', '.');
-  return (
-    /^\d+:\d{1,2}(?::\d{1,2})?$/.test(s) ||
-    /^\d+(?:\.\d+)?\s*h(?:ours?|rs?)?\s*(?:\d+\s*m(?:in(?:ute)?s?)?)?$/i.test(s) ||
-    /^(?:\d+\.?\d*|\.\d+)$/.test(s)
-  );
+  return CLOCK_RE.test(s) || HM_RE.test(s) || FRAC_RE.test(s) || /^(?:\d+\.?\d*|\.\d+)$/.test(s);
 }
 /** '' when an hours/shifts box is blank or readable, else a short message. unit: 'hours' | 'shifts'. */
 export function hoursTypo(text, unit = 'hours') {

@@ -188,7 +188,7 @@ test('hoursTypo: a period after the unit is fine and reads the same hours', () =
     assert.equal(hoursTypo(t), '', t);
     assert.equal(parseHoursInput(t), n, t);
   }
-  for (const t of ['7..', '8abc.', '7.5.', 'h.', '8 hrs..']) assert.notEqual(hoursTypo(t), '', t);
+  for (const t of ['7..', '8abc.', 'h.', '8 hrs..']) assert.notEqual(hoursTypo(t), '', t);
 });
 test('hoursTypo: every shape parseHoursInput reads is fine, junk is not', () => {
   const ok = [
@@ -213,4 +213,28 @@ test('hoursTypo: every shape parseHoursInput reads is fine, junk is not', () => 
   for (const t of ['1.2.3', '7..5', '7:3:3:3', 'abc', '7h abc', '-', '7:', '$7', '1,2,3', '7 30'])
     assert.match(hoursTypo(t), /^That isn’t a number of hours\./, t);
   assert.match(hoursTypo('x', 'shifts'), /number of shifts/);
+});
+
+test('hours: 7h30, 7:30 hrs, 7.5., fractions are read; typos still refused', () => {
+  const ok = {
+    '7h30': 7.5,
+    '7h 30': 7.5,
+    '7:30 hrs': 7.5,
+    '7.5.': 7.5,
+    '7 1/2': 7.5,
+    '7½': 7.5,
+    '1/2': 0.5,
+    '7h 30m': 7.5,
+    '8hrs.': 8,
+    '7:30': 7.5,
+    7.5: 7.5,
+    '7,5': 7.5,
+    '-7h30': -7.5,
+  };
+  for (const [s, v] of Object.entries(ok)) {
+    assert.equal(parseHoursInput(s), v, s);
+    assert.equal(hoursTypo(s), '', s);
+  }
+  for (const s of ['1.2.3', '7..5', '7:3:3:3', 'abc', '7h abc', '7 1/3'])
+    assert.notEqual(hoursTypo(s), '', s);
 });
