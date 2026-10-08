@@ -466,6 +466,28 @@ const sameKind = (a, b) => a.k === b.k && (a.k !== 'other' || nameKey(a.who) ===
 const sameIds = (a, b) =>
   a.length === b.length && a.every((r) => b.some((x) => String(x.id) === String(r.id)));
 /**
+ * Who each person on screen (shownList) stands for among the people a night is worked out with (targetList): the same
+ * id, else the one person in targetList of the same kind (preset k, and the same name for "other") who is not on screen
+ * himself, when exactly one person on each side fits; never a guess between two. Returns [[shown, target]] pairs in
+ * shownList's order (people with no match are left out). alignTicks and Tonight's boxes use it.
+ */
+export function matchPeople(shownList, targetList) {
+  const list = Array.isArray(shownList) ? shownList : [];
+  const target = Array.isArray(targetList) ? targetList : [];
+  const onScreen = new Set(list.map((r) => String(r.id)));
+  const listed = new Set(target.map((t) => String(t.id)));
+  const away = list.filter((r) => !listed.has(String(r.id))); // on screen, but not someone the night is worked out with
+  const free = target.filter((t) => !onScreen.has(String(t.id)));
+  const pairs = [];
+  list.forEach((r) => {
+    const same = target.find((t) => String(t.id) === String(r.id));
+    if (same) return pairs.push([r, same]);
+    const to = free.filter((t) => sameKind(t, r));
+    if (to.length === 1 && away.filter((x) => sameKind(x, r)).length === 1) pairs.push([r, to[0]]);
+  });
+  return pairs;
+}
+/**
  * Who was tipped out, for the people a night will be worked out with (targetList: its snapshot's people when it is
  * locked, else Setup's), when the choices were made for other people (shownList, the boxes on screen; shown = {id: bool}).
  * Starts from the night's existing map (never rebuilt from scratch). Each choice on screen is written under that person's
@@ -480,21 +502,9 @@ export function alignTicks(existing, shown, shownList, targetList) {
     Object.keys(existing).forEach((k) => {
       out[k] = existing[k] === true;
     });
-  const list = Array.isArray(shownList) ? shownList : [];
   const target = Array.isArray(targetList) ? targetList : [];
-  const onScreen = new Set(list.map((r) => String(r.id)));
-  const listed = new Set(target.map((t) => String(t.id)));
-  const away = list.filter((r) => !listed.has(String(r.id))); // on screen, but not someone the night is worked out with
-  const free = target.filter((t) => !onScreen.has(String(t.id)));
-  list.forEach((r) => {
-    if (!shown || !Object.prototype.hasOwnProperty.call(shown, r.id)) return;
-    const v = shown[r.id] === true;
-    if (listed.has(String(r.id))) {
-      out[r.id] = v;
-      return;
-    }
-    const to = free.filter((t) => sameKind(t, r));
-    if (to.length === 1 && away.filter((x) => sameKind(x, r)).length === 1) out[to[0].id] = v;
+  matchPeople(shownList, target).forEach(([r, t]) => {
+    if (shown && Object.prototype.hasOwnProperty.call(shown, r.id)) out[t.id] = shown[r.id] === true;
   });
   target.forEach((t) => {
     if (!Object.prototype.hasOwnProperty.call(out, t.id)) out[t.id] = false;

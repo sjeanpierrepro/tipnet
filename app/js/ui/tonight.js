@@ -25,6 +25,11 @@ import {
   alignTicks,
   nightTicks,
   salesCents,
+  matchPeople,
+  isFinal,
+  nightsInPeriod,
+  periodSnap,
+  snapshotFor,
 } from '../math.js';
 import {
   businessDate,
@@ -107,6 +112,41 @@ export function draftTipouts(d, p) {
 }
 /** Ticked unless unticked: everyone starts ticked on a new night. */
 const ticked = (d, r) => !(d.tipouts && d.tipouts[r.id] === false);
+/**
+ * The snapshot a night dated `date` at restaurant w is locked with as soon as it is saved: its pay period has ended and
+ * already has locked nights, and lockFinishedNights gives a newcomer a copy of theirs (periodSnap). null when the period
+ * hasn't ended or none of its nights is locked yet (it then locks with today's Setup, which Tonight shows anyway).
+ */
+export function finishedSnap(S, w, date) {
+  if (S.nightsExample) return null; // the first real save clears the example nights
+  const p = w.profile;
+  const idx = periodIndex(p, date);
+  if (!Number.isFinite(idx) || !isFinal(p, idx, todayISO())) return null;
+  return periodSnap(nightsInPeriod(p, nightsOf(S, w.id), idx));
+}
+/** A snapshot works a night out differently from today's Setup (its rates, deductions, tip-out people...). */
+function snapDiffers(snap, p) {
+  const keys = ['r', 'rf', 'fixed', 'n', 'nontax', 'pay', 'tipout', 'tipouts'];
+  const pick = (s) => JSON.stringify(keys.map((k) => (s[k] === undefined ? null : s[k])));
+  return pick(snap) !== pick(snapshotFor(p, snap.n));
+}
+/**
+ * Point Tonight's entry at what its date is worked out with: a finished pay period's snapshot (finishedSnap) or today's
+ * Setup (null). Each choice on screen goes with the person it stands for (matchPeople: the same id, or the same barback's
+ * other row); people who were not on screen keep their own earlier choice, else start ticked like on any new night.
+ * Returns true when that changed (the fields are then drawn again).
+ */
+function useSnap(d, p, snap) {
+  if ((d.tipoutSnap || null) === (snap || null)) return false;
+  const was = draftTipouts(d, p);
+  const next = { ...(d.tipouts || {}) };
+  d.tipoutSnap = snap || null;
+  matchPeople(was, draftTipouts(d, p)).forEach(([r, t]) => {
+    next[t.id] = !(d.tipouts && d.tipouts[r.id] === false);
+  });
+  d.tipouts = next;
+  return true;
+}
 /** True when someone ticked tonight is tipped out a % of sales: the entry then needs tonight's sales. */
 export const salesNeeded = (d, p) => draftTipouts(d, p).some((r) => r.mode === 'pctSales' && ticked(d, r));
 export const SALES_MSG = 'Enter tonight’s sales for the % of sales tip-out.';
@@ -517,15 +557,45 @@ export function jobsText(n, p) {
     .join(' · ');
 }
 
+/** The night's date box {input, field, today, onInput}: a typed date goes to d.date, then box.onInput() runs. */
+export function dateBox(d, key = 'night') {
+  const today = tonightOf(getState());
+  const input = el('input', {
+    type: 'date',
+    value: d.date,
+    min: MIN_NIGHT_DATE,
+    max: maxNightDate(today),
+    'data-focus-key': key + '-date',
+  });
+  const box = { input, field: field('Date', input), today, onInput: () => {} };
+  input.addEventListener('input', () => {
+    d.date = input.value || tonightOf(getState()); // cleared: the Late-nights business date, like a new night
+    d.dateTouched = true;
+    box.onInput();
+  });
+  return box;
+}
 /**
- * nightFields(p, d, {big, onInput, key, rateOf}) builds the entry fields bound to draft d.
+ * nightFields(p, d, {big, onInput, key, rateOf, paySnap, date, into}) builds the entry fields bound to draft d.
  *   rateOf(t): the rate shown for pay type t (default its Setup rate; the editor passes a locked night's own rates).
- * Returns {root, totalInput, totalNode (the tips/total box), setTotalError, setHoursError, setDateError, refresh, focusPay(id)}.
+ *   paySnap(): the snapshot whose rates the cash is checked against (Tonight: a finished pay period's), else null.
+ *   date, into: draw the fields again in place: into is the earlier root, date its dateBox. Everything but the date box
+ *   is replaced, so a date being typed keeps its focus and what is half-typed (a box that leaves the page loses both).
+ * Returns {root, dateBox, totalInput, totalNode (the tips/total box), setTotalError, setHoursError, setDateError,
+ * refresh, focusPay(id)}.
  */
 export function nightFields(
   p,
   d,
-  { big = false, onInput: onInputRaw = () => {}, key = 'night', rateOf = (t) => num(t.rate) } = {},
+  {
+    big = false,
+    onInput: onInputRaw = () => {},
+    key = 'night',
+    rateOf = (t) => num(t.rate),
+    paySnap = () => null,
+    date: dateOpt = null,
+    into = null,
+  } = {},
 ) {
   syncDraft(d, p);
   let refresh = () => {};
@@ -931,20 +1001,9 @@ export function nightFields(
   );
   offField.hidden = true; // only once a cash amount is typed
   kids.push(offField);
-  const today = tonightOf(getState());
-  const date = el('input', {
-    type: 'date',
-    value: d.date,
-    min: MIN_NIGHT_DATE,
-    max: maxNightDate(today),
-    'data-focus-key': key + '-date',
-  });
-  date.addEventListener('input', () => {
-    d.date = date.value || tonightOf(getState()); // cleared: the Late-nights business date, like a new night
-    d.dateTouched = true;
-    onInput();
-  });
-  const dateField = field('Date', date);
+  const db = dateOpt || dateBox(d, key);
+  db.onInput = onInput;
+  const { input: date, field: dateField, today } = db;
   kids.push(dateField);
   refresh = () => {
     // the sales box shows only while someone ticked tonight gets a % of sales (then it is needed)
@@ -952,8 +1011,9 @@ export function nightFields(
     salesField.hidden = !needSales;
     if (needSales && moneyTypo(d.sales)) salesField.setError(moneyTypo(d.sales));
     else if (!needSales || typedAmount(d.sales) != null) salesField.setError('');
-    cashField.setError(cashCheck(d, p).message);
-    offField.hidden = cashCheck(d, p).status !== 'ok';
+    const cc = cashCheck(d, p, paySnap());
+    cashField.setError(cc.message);
+    offField.hidden = cc.status !== 'ok';
     offCb.checked = !!d.cashOffPayroll;
     rateLines.forEach(({ t, line }) => {
       line.textContent = rateText(t, d.pay[t.id]);
@@ -962,9 +1022,19 @@ export function nightFields(
     dateField.setError(dateProblem(d.date, today));
   };
   refresh();
-  rootEl = el('div', { class: 'stack' }, kids);
+  if (into) {
+    // drawn again in place: the date box never leaves the page
+    [...into.children].forEach((c) => {
+      if (c !== dateField) c.remove();
+    });
+    kids.forEach((k) => {
+      if (k !== dateField) into.insertBefore(k, dateField);
+    });
+    rootEl = into;
+  } else rootEl = el('div', { class: 'stack' }, kids);
   return {
     root: rootEl,
+    dateBox: db,
     totalInput,
     totalNode,
     setTotalError,
@@ -1301,6 +1371,8 @@ export function render(root) {
   }
   if (!drafts.has(w.id)) drafts.set(w.id, blankDraft(S, p));
   const d = drafts.get(w.id);
+  // a date in a finished pay period whose nights are locked: worked out with that period's snapshot (see finishedSnap)
+  useSnap(d, p, finishedSnap(S, w, d.date));
   const banner = exampleBanner();
   const resultHost = el('div'); // the full card is not a live region: it changes on every keystroke
   const liveSummary = el('p', {
@@ -1338,7 +1410,10 @@ export function render(root) {
     }
     const hist = historyOf(S, w);
     const shifts = shiftsPerPeriod(p, hist).n;
-    const night = liveNight(d, 'draft', p);
+    // the night as it will be stored: locked with a finished pay period's snapshot when its date is in one
+    const snap = d.tipoutSnap || null;
+    const night = liveNight(d, 'draft', p, { snap });
+    if (snap) night.snap = snap;
     const c = computeNight(night, p, shifts);
     const hoursMissing = missingHoursRow(p, d) != null;
     let ot = null;
@@ -1388,36 +1463,82 @@ export function render(root) {
     } // first fill is silent
     announce(); // only a short summary is announced, after typing pauses
   };
-  const fields = nightFields(p, d, {
+  // A date in a finished pay period whose nights are locked (finishedSnap) is worked out with that period's snapshot:
+  // its tip-out people to tick and its job rates, so the preview is what will be stored. Said under the date.
+  const lockedNote = el('p', { class: 'hint', id: 'night-locked-note', 'aria-live': 'polite' });
+  const showLockedNote = () => {
+    const t =
+      d.tipoutSnap && snapDiffers(d.tipoutSnap, p)
+        ? 'This date is in a finished pay period (' +
+          periodLabel(p, periodIndex(p, d.date)) +
+          '), so it’s worked out with the Setup that period was saved with.'
+        : '';
+    lockedNote.hidden = !t;
+    if (lockedNote.textContent !== t) lockedNote.textContent = t;
+  };
+  let shownDate = d.date;
+  const fieldOpts = {
     big: true,
+    rateOf: (t) => {
+      const s = d.tipoutSnap && (d.tipoutSnap.pay || []).find((x) => same(x.id, t.id));
+      return s ? num(s.rate) : num(t.rate);
+    },
+    paySnap: () => d.tipoutSnap || null,
     onInput: () => {
       savedMsg.textContent = '';
       clear(dupHost);
       fields.setTotalError('');
+      if (d.date !== shownDate) {
+        shownDate = d.date;
+        syncSnap();
+      }
       update();
     },
-  });
+  };
+  let fields = nightFields(p, d, fieldOpts);
+  /** The date's pay period may be finished with locked nights (or not any more): its people and rates are drawn. */
+  const syncSnap = () => {
+    if (useSnap(d, p, finishedSnap(S, w, d.date))) {
+      fields = nightFields(p, d, { ...fieldOpts, date: fields.dateBox, into: fields.root });
+      fields.totalNode.after(quick);
+    }
+    showLockedNote();
+  };
+  showLockedNote();
 
   const form = el(
     'form',
     { class: 'card stack', novalidate: true, 'aria-label': many ? 'Tonight at ' + w.name : null },
     fields.root,
+    lockedNote,
     dupHost,
     el('button', { class: 'btn btn-block', type: 'submit' }, many ? 'Save night at ' + w.name : 'Save night'),
     savedMsg,
   );
   fields.totalNode.after(quick);
-  const finish = (night, net, cashWas, verb) => {
+  /**
+   * verb() stores the night and returns {stored} (the night as stored), plus {part} for "Add to that night" (the part
+   * added). shifts: the shift count the preview used.
+   */
+  const finish = (night, shifts, cashWas, verb) => {
     if (S.nightsExample) {
       S.nights = [];
       S.workplaces[0].calib = [];
       S.nightsExample = false;
     }
     const had = S.nights.length;
-    verb();
+    const kept = verb();
     // every 10th real night since the last backup suggests one; adding to or replacing a saved night isn't a new one
     if (S.nights.length > had) countSavedNight(S);
     lockFinished({ force: true });
+    // The take-home said is what was stored, locked as it now is (a night in a finished pay period gets its snapshot
+    // when saved). "Add to that night": the part added, worked out the way the night it joined is.
+    const st = kept.stored;
+    const net = computeNight(
+      kept.part ? (st.snap ? { ...kept.part, snap: st.snap } : kept.part) : st,
+      p,
+      shifts,
+    ).net;
     save();
     drafts.set(w.id, blankDraft(S, p));
     bus.rerender(); // the whole tab, so the backup reminder and the TipNet Budget card stay
@@ -1435,22 +1556,28 @@ export function render(root) {
   };
   form.addEventListener('submit', (e) => {
     e.preventDefault();
+    syncSnap(); // its pay period may have been locked since (at midnight, in another window)
     const prob = entryCheck(p, d, { today: tonightOf(S) });
     if (prob) return showEntryProblem(fields, prob);
-    const cashWas = cashCheck(d, p).status;
+    const snap = d.tipoutSnap || null; // the snapshot it will be locked with (finishedSnap), else today's Setup
+    const cashWas = cashCheck(d, p, snap).status;
     const night = alignNight(
-      { ...storedNight(d, p, Date.now()), workplaceId: w.id },
+      { ...storedNight(d, p, Date.now(), { snap }), workplaceId: w.id },
       d,
       p,
       null,
-      peopleOf(null, p),
+      peopleOf(snap ? { snap } : null, p),
     );
     // Same inputs as the preview: shift history before this night, never the example nights.
-    const net = computeNight(night, p, shiftsPerPeriod(p, historyOf(S, w)).n).net;
+    const shifts = shiftsPerPeriod(p, historyOf(S, w)).n;
+    const store = () => {
+      S.nights.push(night);
+      return { stored: night };
+    };
     // Only this restaurant's nights: working two places on the same date is two separate nights.
     const dup = S.nightsExample ? null : nightsOf(S, w.id).find((n) => n.date === night.date);
-    if (!dup) return finish(night, net, cashWas, () => S.nights.push(night));
-    const choose = (verb) => () => finish(night, net, cashWas, verb);
+    if (!dup) return finish(night, shifts, cashWas, store);
+    const choose = (verb) => () => finish(night, shifts, cashWas, verb);
     // A locked night keeps its own pay rates: in tips mode the pay added with these tips is worked out with them too,
     // so the base pay is counted once, at the rates that night is shown with. Tonight's boxes are Setup's people; a
     // locked night is worked out with its snapshot's, so the ticks are carried over to those (alignNight).
@@ -1463,8 +1590,8 @@ export function render(root) {
      */
     const overDup = (make) => {
       const at = S.nights.findIndex((x) => x.id === dup.id);
-      if (at < 0) S.nights.push(night);
-      else S.nights[at] = make(S.nights[at]);
+      if (at < 0) return store().stored;
+      return (S.nights[at] = make(S.nights[at]));
     };
     const add = el(
       'button',
@@ -1474,7 +1601,12 @@ export function render(root) {
     add.addEventListener(
       'click',
       choose(() => {
-        overDup((cur) => mergeNights(cur, alignNight(onto(cur), d, p, null, peopleOf(cur, p)), p));
+        let part = night;
+        const stored = overDup((cur) => {
+          part = alignNight(onto(cur), d, p, null, peopleOf(cur, p));
+          return mergeNights(cur, part, p);
+        });
+        return { stored, part };
       }),
     );
     const rep = el(
@@ -1484,8 +1616,8 @@ export function render(root) {
     );
     rep.addEventListener(
       'click',
-      choose(() => {
-        overDup((cur) =>
+      choose(() => ({
+        stored: overDup((cur) =>
           alignNight(
             {
               ...onto(cur),
@@ -1499,18 +1631,15 @@ export function render(root) {
             cur,
             peopleOf(cur, p),
           ),
-        );
-      }),
+        ),
+      })),
     );
     const sep = el(
       'button',
       { type: 'button', class: 'btn btn-secondary', 'data-focus-key': 'dup-separate' },
       'Save as a separate night',
     );
-    sep.addEventListener(
-      'click',
-      choose(() => S.nights.push(night)),
-    );
+    sep.addEventListener('click', choose(store));
     const worked = jobsText(dup, p);
     clear(dupHost).append(
       el(

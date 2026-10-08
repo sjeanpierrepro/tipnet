@@ -108,7 +108,8 @@ test('a) Tonight "Replace it" / "Add to that night" carry the choice to the re-c
     page.type(key(page, 'night-pay-p1'), '8');
     page.type(key(page, 'night-cash'), '200');
     page.type(key(page, 'night-date'), lockedDate);
-    const bb = key(page, 'night-tipout-t9');
+    // a date in that finished pay period: Tonight's boxes are its snapshot's people (the night's own barback row)
+    const bb = key(page, 'night-tipout-t1');
     bb.checked = false;
     page.change(bb);
     page.click(page.button('Save night'));
