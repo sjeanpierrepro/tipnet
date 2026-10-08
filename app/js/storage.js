@@ -521,9 +521,41 @@ export function lockAll(workplaces, nights, today = todayISO()) {
 }
 
 /**
+ * The order loading writes a night's fields in (cleanNights). Copies of TipNet compare nights by their JSON when they
+ * merge, so the same night written in another order would look edited.
+ */
+const NIGHT_KEYS = [
+  'id',
+  'date',
+  'total',
+  'cash',
+  'pay',
+  'barback',
+  'workplaceId',
+  'tipouts',
+  'sales',
+  'cashOffPayroll',
+  'tips',
+  'note',
+  'periodStart',
+  'snap',
+];
+/** Put a night's fields in that order, in place (fields TipNet doesn't know stay last, as they were). Returns it. */
+export function orderNight(n) {
+  const all = Object.keys(n);
+  const order = NIGHT_KEYS.filter((k) => all.includes(k)).concat(all.filter((k) => !NIGHT_KEYS.includes(k)));
+  if (order.every((k, i) => k === all[i])) return n;
+  const vals = all.map((k) => n[k]);
+  all.forEach((k) => delete n[k]);
+  order.forEach((k) => {
+    n[k] = vals[all.indexOf(k)];
+  });
+  return n;
+}
+/**
  * A night with no list of who was tipped out (saved before several tip-outs, or imported from a CSV file) only says
- * everyone or nobody (night.barback). Pin that to the people set up now (its snapshot's people once it is locked), in
- * place, so someone added to Setup later is never counted on it. Returns how many nights got a list.
+ * everyone or nobody (night.barback). Pin that to the people set up now (its snapshot's people once it is locked: call
+ * it after locking), in place, so someone added to Setup later is never counted on it. Returns how many nights got a list.
  */
 export function pinTipouts(workplaces, nights) {
   const lists = new Map(workplaces.map((w) => [w.id, tipoutSetup(w.profile).list]));
@@ -537,6 +569,7 @@ export function pinTipouts(workplaces, nights) {
       t[r.id] = !!n.barback;
     });
     n.tipouts = t;
+    orderNight(n); // where loading puts it (before the snapshot), so the next load writes the same JSON
     pinned++;
   });
   return pinned;
@@ -635,9 +668,10 @@ function migrateUnsafe(input, today) {
     if (w.noDeductions === true) out.noDeductions = true; // "My paystub has no deductions"
     return out;
   });
-  const cleaned = cleanNights(rawNights);
-  pinTipouts(workplaces, cleaned); // older nights' "everyone or nobody" becomes the people set up now
-  const nights = lockAll(workplaces, cleaned, today).nights;
+  // Lock first, then pin: an older night's "everyone or nobody" becomes the people it is worked out with (its snapshot's
+  // once locked, which can be a finished period's older one; else the people set up now).
+  const nights = lockAll(workplaces, cleanNights(rawNights), today).nights;
+  pinTipouts(workplaces, nights);
   // Old states and old backup codes have no budget: they get an empty one. Old "Paid" ticks (keyed by pay period) are
   // converted with the first restaurant's schedule, the only one there was then.
   const budget = migrateBudget(S.budget, workplaces[0].profile, today);
@@ -1156,20 +1190,21 @@ let lockedOn = null; // the day the state was last looked at, while nothing has 
 export function lockFinished({ force = false, today = todayISO() } = {}) {
   if (!force && lockedOn === today) return 0;
   const S = getState();
-  // Imported nights say everyone or nobody: pinned to today's people before a Setup change can add someone.
-  const pinned = pinTipouts(S.workplaces, S.nights);
   const r = lockAll(S.workplaces, S.nights, today); // each restaurant locks on its own pay schedule
-  if (!r.stamped) {
-    if (pinned) scheduleSave();
-    lockedOn = today;
-    return 0;
-  }
   // Stamp in place: the same night objects (and the same array) get their snapshot, so a screen that still holds a night
   // (a duplicate-date prompt, an open editor, an Undo) keeps a live reference across a period-ending midnight.
   r.nights.forEach((n, i) => {
     const old = S.nights[i];
     if (n !== old) Object.assign(old, n); // lockAll keeps the order, so index i is the same night
   });
+  // Imported nights say everyone or nobody: pinned AFTER locking, to the people they are worked out with (a finished
+  // period's snapshot when they were just locked into one, else today's people), before a Setup change can add someone.
+  const pinned = pinTipouts(S.workplaces, S.nights);
+  if (!r.stamped) {
+    if (pinned) scheduleSave();
+    lockedOn = today;
+    return 0;
+  }
   scheduleSave();
   lockedOn = today; // after scheduleSave (which marks the state changed): this save is the lock itself
   return r.stamped;

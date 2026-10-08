@@ -26,7 +26,15 @@ import {
   tipoutSetup,
 } from '../math.js';
 import { businessDate, cutoffFromSettings, moneyTypo } from '../inputs.js';
-import { isSetUp, workplaceOf, findWorkplace, nightsOf, activeWorkplace, lockFinished } from '../storage.js';
+import {
+  isSetUp,
+  workplaceOf,
+  findWorkplace,
+  nightsOf,
+  activeWorkplace,
+  lockFinished,
+  orderNight,
+} from '../storage.js';
 import {
   el,
   field,
@@ -59,6 +67,8 @@ import {
   jobsText,
   moneyNum,
   typoProblem,
+  alignNight,
+  peopleOf,
 } from './tonight.js';
 
 /** Pay periods shown at first; "Show older" adds this many more each time. */
@@ -253,6 +263,10 @@ function editor(S, n) {
         : null;
       if (ref) out.snap.period = periodTerms(ref);
     }
+    // Who was tipped out: the boxes are the night's own people (its snapshot's, or Setup's when it isn't locked). A
+    // recalculation or a move gives it other ones (today's Setup, the period's snapshot, or Setup's when a move unlocks
+    // it): the ticks are carried over to them (alignNight). With no boxes on screen the night keeps its own.
+    alignNight(out, d, p, n, peopleOf(out, p));
     // Tips and hours untouched and no recalculation: the stored total (and typed tips) stay exactly as they were.
     const untouched = !recalc && JSON.stringify([d.total, d.pay]) === typedAtOpen;
     if (untouched && (tipsMode(p) || hasTips(n))) {
@@ -546,7 +560,8 @@ function editor(S, n) {
     }
     n = S.nights[i]; // build() reads the current night (its lock, its stored total)
     const was = nightPeriodIndex(p, n);
-    const out = { ...build(), workplaceId: w.id };
+    // in the order loading writes, so saving a night unchanged writes the same JSON (copies of TipNet merge by it)
+    const out = orderNight({ ...build(), workplaceId: w.id });
     S.nights[i] = out;
     save();
     lockFinished({ force: true }); // e.g. a pick into a period that has ended: locked before anything is drawn

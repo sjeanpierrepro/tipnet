@@ -22,6 +22,8 @@ import {
   exampleNights,
   tipoutSetup,
   tippedOut,
+  alignTicks,
+  nightTicks,
 } from '../math.js';
 import {
   businessDate,
@@ -303,6 +305,36 @@ export function storedNight(d, p, id, { snap } = {}) {
   return out;
 }
 
+/**
+ * Who was tipped out on a night about to be stored (out, from storedNight), for the people it will be worked out with
+ * (target: its snapshot's people when it is or stays locked, else Setup's), when the boxes on screen are someone else's:
+ * Tonight's boxes are always Setup's, the editor's are the night's own until a recalculation or a move changes its
+ * snapshot. cur: the saved night it replaces or edits (null for a new night). See alignTicks: the choices on screen are
+ * carried over to target and the rest of cur's map is kept. No boxes on screen (tip-outs switched off or "after
+ * tip-out"): the night keeps what it had (its map, barback and sales), so nobody's tick changes. Changes out; returns it.
+ */
+export function alignNight(out, d, p, cur, target) {
+  const shownList = draftTipouts(d, p);
+  if (!shownList.length) {
+    if (!cur) return out;
+    if (cur.tipouts && typeof cur.tipouts === 'object') out.tipouts = { ...cur.tipouts };
+    else delete out.tipouts;
+    out.barback = !!cur.barback;
+    if (cur.sales != null) out.sales = cur.sales;
+    else delete out.sales;
+    return out;
+  }
+  const m = alignTicks(cur ? nightTicks(cur, target) : {}, out.tipouts || {}, shownList, target);
+  out.tipouts = m;
+  if (target.length) out.barback = target.some((r) => m[r.id] === true);
+  // someone the night is worked out with (not on screen) still gets a % of sales: keep the sales it had
+  if (out.sales == null && cur && cur.sales != null && target.some((r) => r.mode === 'pctSales' && m[r.id]))
+    out.sales = cur.sales;
+  return out;
+}
+/** The people a saved night is worked out with: its snapshot's when it is locked, else the restaurant's Setup. */
+export const peopleOf = (night, p) => tipoutSetup((night && night.snap) || p).list;
+
 /* ---------- checks shared by Tonight and the night editor ---------- */
 /** Id of the first job row that is hourly with a rate and has no hours typed (0 is fine when typed), else null. */
 export function missingHoursRow(p, d) {
@@ -429,17 +461,19 @@ export function mergeNights(a, b, p) {
   const tb = a.snap ? num(b.total) : nightTotal(b, p);
   const out = { ...a, total: round2(nightTotal(a, p) + tb), cash, pay };
   delete out.tips;
-  // Tip-outs: someone tipped out in either part was tipped out that night; sales add up.
-  if (a.tipouts || b.tipouts) {
+  // Tip-outs: someone tipped out in either part was tipped out that night (b's ticks are already for a's people, see
+  // alignNight); sales add up. An added part with no boxes on screen (tip-outs switched off or "after tip-out") says
+  // nothing about who was tipped out: the night keeps its own choices.
+  if (b.tipouts) {
     const m = {};
-    const ids = new Set([...Object.keys(a.tipouts || {}), ...Object.keys(b.tipouts || {})]);
+    const ids = new Set([...Object.keys(a.tipouts || {}), ...Object.keys(b.tipouts)]);
     ids.forEach((id) => {
       const on = (x) => (x.tipouts ? x.tipouts[id] === true : !!x.barback);
       m[id] = on(a) || on(b);
     });
     out.tipouts = m;
+    out.barback = !!(a.barback || b.barback);
   }
-  out.barback = !!(a.barback || b.barback);
   if (a.sales != null || b.sales != null) out.sales = round2(num(a.sales) + num(b.sales));
   // cash skipped payroll only if every part of the night's cash did (a part with no cash doesn't count)
   const offA = !!a.cashOffPayroll || a.cash == null,
@@ -1360,7 +1394,13 @@ export function render(root) {
     const prob = entryCheck(p, d, { today: tonightOf(S) });
     if (prob) return showEntryProblem(fields, prob);
     const cashWas = cashCheck(d, p).status;
-    const night = { ...storedNight(d, p, Date.now()), workplaceId: w.id };
+    const night = alignNight(
+      { ...storedNight(d, p, Date.now()), workplaceId: w.id },
+      d,
+      p,
+      null,
+      peopleOf(null, p),
+    );
     // Same inputs as the preview: shift history before this night, never the example nights.
     const net = computeNight(night, p, shiftsPerPeriod(p, historyOf(S, w)).n).net;
     // Only this restaurant's nights: working two places on the same date is two separate nights.
@@ -1368,9 +1408,11 @@ export function render(root) {
     if (!dup) return finish(night, net, cashWas, () => S.nights.push(night));
     const choose = (verb) => () => finish(night, net, cashWas, verb);
     // A locked night keeps its own pay rates: in tips mode the pay added with these tips is worked out with them too,
-    // so the base pay is counted once, at the rates that night is shown with.
-    const onto = (target) =>
-      tipsMode(p) && target.snap ? storedNight(d, p, night.id, { snap: target.snap }) : night;
+    // so the base pay is counted once, at the rates that night is shown with. Tonight's boxes are Setup's people; a
+    // locked night is worked out with its snapshot's, so the ticks are carried over to those (alignNight).
+    const onto = (target) => ({
+      ...(tipsMode(p) && target.snap ? storedNight(d, p, night.id, { snap: target.snap }) : night),
+    });
     /**
      * Write over the saved night, looked up by id when the button is clicked (it may have been locked, merged from another
      * window or deleted since the question was shown). If it is gone, tonight is saved on its own instead.
@@ -1388,7 +1430,7 @@ export function render(root) {
     add.addEventListener(
       'click',
       choose(() => {
-        overDup((cur) => mergeNights(cur, onto(cur), p));
+        overDup((cur) => mergeNights(cur, alignNight(onto(cur), d, p, null, peopleOf(cur, p)), p));
       }),
     );
     const rep = el(
@@ -1399,13 +1441,21 @@ export function render(root) {
     rep.addEventListener(
       'click',
       choose(() => {
-        overDup((cur) => ({
-          ...onto(cur),
-          id: cur.id,
-          workplaceId: w.id,
-          ...(cur.snap ? { snap: cur.snap } : {}),
-          ...(cur.periodStart ? { periodStart: cur.periodStart } : {}), // stays in the pay period it was moved to
-        }));
+        overDup((cur) =>
+          alignNight(
+            {
+              ...onto(cur),
+              id: cur.id,
+              workplaceId: w.id,
+              ...(cur.snap ? { snap: cur.snap } : {}),
+              ...(cur.periodStart ? { periodStart: cur.periodStart } : {}), // stays in the pay period it was moved to
+            },
+            d,
+            p,
+            cur,
+            peopleOf(cur, p),
+          ),
+        );
       }),
     );
     const sep = el(

@@ -307,12 +307,22 @@ export function lockFinishedNights(profile, nights, today = todayISO()) {
   });
   if (!snaps.size) return { nights, stamped: 0 };
   let stamped = 0;
+  const now = tipoutSetup(profile).list;
   const out = nights.map((n) => {
     if (n.snap) return n;
     const s = snaps.get(nightPeriodIndex(profile, n)); // a night locks when the period it counts toward ends
     if (!s) return n;
     stamped++;
     const locked = { ...n, snap: JSON.parse(JSON.stringify(s)) };
+    // Who was tipped out was ticked for today's people; a copy of the period's older snapshot may list other ones (a
+    // barback's row added again, someone removed): the ticks are carried over to the snapshot's people (alignTicks).
+    // Only the people the night's map names count as choices.
+    const then = tipoutSetup(s).list;
+    if (n.tipouts && typeof n.tipouts === 'object' && !sameIds(now, then)) {
+      const named = now.filter((r) => Object.prototype.hasOwnProperty.call(n.tipouts, r.id));
+      locked.tipouts = alignTicks(n.tipouts, n.tipouts, named, then);
+      if (then.length) locked.barback = then.some((r) => locked.tipouts[r.id] === true);
+    }
     // Typed tips: the stored total becomes tips + pay at the rates it is now locked with (the rates it was shown with).
     if (hasTips(n)) locked.total = totalFromTips(n.tips, locked, profile);
     return locked;
@@ -418,6 +428,60 @@ export function tipoutSetup(src) {
 export function tippedOut(night, rec) {
   if (night && night.tipouts && typeof night.tipouts === 'object') return night.tipouts[rec.id] === true;
   return !!(night && night.barback);
+}
+/** A copy of who was tipped out on a night; a night with only the old barback choice says it for everyone in list. */
+export function nightTicks(night, list) {
+  if (night && night.tipouts && typeof night.tipouts === 'object') return { ...night.tipouts };
+  const m = {};
+  (list || []).forEach((r) => {
+    m[r.id] = !!(night && night.barback);
+  });
+  return m;
+}
+const nameKey = (s) =>
+  String(s || '')
+    .trim()
+    .toLowerCase();
+/** The same kind of person: the same preset (barback, runner...), and the same name for "other". */
+const sameKind = (a, b) => a.k === b.k && (a.k !== 'other' || nameKey(a.who) === nameKey(b.who));
+/** Two lists of people with the same ids (in any order). */
+const sameIds = (a, b) =>
+  a.length === b.length && a.every((r) => b.some((x) => String(x.id) === String(r.id)));
+/**
+ * Who was tipped out, for the people a night will be worked out with (targetList: its snapshot's people when it is
+ * locked, else Setup's), when the choices were made for other people (shownList, the boxes on screen; shown = {id: bool}).
+ * Starts from the night's existing map (never rebuilt from scratch). Each choice on screen is written under that person's
+ * id when targetList has it, else under the one person in targetList of the same kind (preset k, and the same name for
+ * "other") who is not on screen himself, when exactly one person on each side fits (the same barback, its Setup row
+ * removed and added again). Everyone else in targetList keeps the value the night had, false when it had none (someone
+ * added to Setup later is not ticked). Ids no longer listed are kept as they were. Pure: returns a new map.
+ */
+export function alignTicks(existing, shown, shownList, targetList) {
+  const out = {};
+  if (existing && typeof existing === 'object')
+    Object.keys(existing).forEach((k) => {
+      out[k] = existing[k] === true;
+    });
+  const list = Array.isArray(shownList) ? shownList : [];
+  const target = Array.isArray(targetList) ? targetList : [];
+  const onScreen = new Set(list.map((r) => String(r.id)));
+  const listed = new Set(target.map((t) => String(t.id)));
+  const away = list.filter((r) => !listed.has(String(r.id))); // on screen, but not someone the night is worked out with
+  const free = target.filter((t) => !onScreen.has(String(t.id)));
+  list.forEach((r) => {
+    if (!shown || !Object.prototype.hasOwnProperty.call(shown, r.id)) return;
+    const v = shown[r.id] === true;
+    if (listed.has(String(r.id))) {
+      out[r.id] = v;
+      return;
+    }
+    const to = free.filter((t) => sameKind(t, r));
+    if (to.length === 1 && away.filter((x) => sameKind(x, r)).length === 1) out[to[0].id] = v;
+  });
+  target.forEach((t) => {
+    if (!Object.prototype.hasOwnProperty.call(out, t.id)) out[t.id] = false;
+  });
+  return out;
 }
 /** The people TipNet takes a tip-out for on this night (the switch is on and the number typed is before tip-out). */
 export function tipoutsTonight(src, night) {
