@@ -202,3 +202,33 @@ test('same date: Add keeps the saved night’s switch; Replace takes tonight’s
     }
   }
 });
+
+test('a v37 tip-out switched off: ticking "I tip out" in Setup brings its $20 back; the night saved while off stays', async () => {
+  const page = await boot({
+    seed: realState((S) => {
+      S.workplaces[0].setupDone = true;
+      const p = S.workplaces[0].profile;
+      p.periodStart = addDays(today, -3);
+      p.periodEnd = addDays(today, 10);
+      p.shifts = 10;
+      delete p.tipouts;
+      p.tipout = { on: false, mode: 'flat', value: 20, basis: 'before', from: 'check' };
+      // v37 saved every night with barback true, also while tip-outs were off
+      S.nights = [{ ...savedNight('n1', true), tipouts: undefined, tipoutOn: undefined }];
+    }),
+  });
+  try {
+    await switchTipouts(page, true);
+    const p = page.state().workplaces[0].profile;
+    assert.deepEqual(p.tipouts, [
+      { id: 't1', k: 'barback', who: 'Barback', mode: 'flat', value: 20, from: 'payroll' },
+    ]);
+    assert.equal(p.tipout.on, true);
+    assert.equal(computeNight(nightOf(page, 'n1'), p, 10).tipout, 0, 'saved while off: still no tip-out');
+    page.tab('tonight');
+    enter(page);
+    assert.match(page.text(page.$('.result', page.app)), /Barback \(\$20\.00 flat\)−\$20\.00/);
+  } finally {
+    await page.close();
+  }
+});

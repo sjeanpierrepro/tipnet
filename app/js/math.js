@@ -416,9 +416,9 @@ export function periodNontax(p, ns) {
  *   k: preset (barback, runner, busser, bar, host, kitchen, other); who: the name shown (a custom name for "other").
  *   mode: 'pctTips' (value % of tonight's tips), 'pctSales' (value % of tonight's sales) or 'flat' ($ value a night).
  *   from: 'cash' (paid out of the cash tips) or 'payroll'.
- * Older data has one tip-out {on, mode: 'pct'|'flat', value, basis, from: 'cash'|'check'}: that is one Barback (or nobody
- * when it was off); those fields are still written next to a list of one that fits them (savedTipout). A night says who
- * was tipped out with night.tipouts = {recipientId: true|false}; older nights only have night.barback (true: everyone,
+ * Older data has one tip-out {on, mode: 'pct'|'flat', value, basis, from: 'cash'|'check'}: that is one Barback (also
+ * while it is off, when it has an amount: legacyTipouts); those fields are still written next to a list of one that fits
+ * them (savedTipout). A night says who was tipped out with night.tipouts = {recipientId: true|false}; older nights only have night.barback (true: everyone,
  * false: nobody). night.sales: tonight's sales, for the % of sales tip-outs. night.tipoutOn: whether "I tip out" was on
  * when the night was saved (nightTipout): the switch never changes a night already logged.
  */
@@ -432,9 +432,12 @@ export const TIPOUT_PRESETS = [
   { k: 'other', name: 'Other' },
 ];
 export const TIPOUT_MODES = ['pctTips', 'pctSales', 'flat'];
-/** The people one old single tip-out stood for: one Barback when it was on, else nobody. */
+/**
+ * The people one old single tip-out stood for: one Barback. Switched off it still is (v37 kept the amount while it was
+ * off, so ticking "I tip out" brings it back; nothing is taken out while it is off); off with no amount: nobody.
+ */
 export function legacyTipouts(to) {
-  if (!to || !to.on) return [];
+  if (!to || (!to.on && !(num(to.value) > 0))) return [];
   return [
     {
       id: 't1',

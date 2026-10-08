@@ -259,7 +259,8 @@ function cleanNontax(list) {
 }
 /**
  * Tip-outs of a profile or a snapshot, cleaned: {tipout: {on, basis}, tipouts: [{id, k, who, mode, value, from}]}.
- * The old single {on, mode, value, basis, from} (no tipouts list) becomes one Barback when on, else an empty list.
+ * The old single {on, mode, value, basis, from} (no tipouts list) becomes one Barback (also while it is off, when it
+ * has an amount: legacyTipouts), else an empty list.
  * A list of one person on % of tips or flat also keeps that old shape in tipout (savedTipout), for v37.
  */
 const TIPOUT_KEYS = TIPOUT_PRESETS.map((x) => x.k);
@@ -500,7 +501,8 @@ function cleanProfile(p, { startFallback, entryDefault }) {
   // Non-taxable earnings on the stub (only written once there is one, so older saves look the same)
   const nt = cleanNontax(p.nontaxable);
   if (nt.length) out.nontaxable = nt;
-  // Tip-outs: the switch and basis, and the people tipped out (an old single tip-out becomes one Barback, or nobody when off)
+  // Tip-outs: the switch and basis, and the people tipped out (an old single tip-out becomes one Barback, also while it
+  // is off: legacyTipouts)
   Object.assign(out, cleanTipoutSetup(p));
   // "Cash tips here usually aren't run through payroll": the default for each new night (false for all old data)
   out.cashOffPayroll = p.cashOffPayroll === true;

@@ -141,8 +141,13 @@ test('the old single tip-out still works as one Barback (pct of tips, flat, from
   assert.equal(a.fromCash, 0);
   assert.equal(a.net, b.net);
   assert.equal(a.onCheck, b.onCheck);
-  assert.deepEqual(M.legacyTipouts({ on: false, mode: 'pct', value: 15 }), []);
+  // switched off, it still stands for that Barback (kept for when "I tip out" is ticked again); nothing to keep: nobody
+  assert.deepEqual(M.legacyTipouts({ on: false, mode: 'pct', value: 15 }), [BARBACK]);
+  assert.deepEqual(M.legacyTipouts({ on: false, mode: 'pct', value: 0 }), []);
+  assert.deepEqual(M.legacyTipouts({ on: false }), []);
   assert.equal(M.legacyTipouts({ on: true, mode: 'flat', value: 20, from: 'cash' })[0].mode, 'flat');
+  // switched off, nothing is taken out
+  assert.equal(M.computeNight(n, { ...old, tipout: { ...old.tipout, on: false } }, 10).tipout, 0);
 });
 
 /* ---------- migration ---------- */
@@ -166,7 +171,7 @@ const oldState = (to, extra = {}) => ({
   ...extra,
 });
 
-test('migration: an old tip-out that was on becomes one Barback; off becomes an empty list; basis is kept', () => {
+test('migration: an old tip-out becomes one Barback, switched off too (it keeps its amount); basis is kept', () => {
   const on = migrate(oldState({ on: true, mode: 'pct', value: 15, basis: 'before', from: 'cash' }), {
     today,
   });
@@ -190,8 +195,25 @@ test('migration: an old tip-out that was on becomes one Barback; off becomes an 
   const off = migrate(oldState({ on: false, mode: 'pct', value: 15, basis: 'after', from: 'cash' }), {
     today,
   });
-  assert.deepEqual(off.workplaces[0].profile.tipout, { on: false, basis: 'after' });
-  assert.deepEqual(off.workplaces[0].profile.tipouts, []);
+  // third v38 review: an old tip-out switched off kept its amount in v37; it is now its list of one, still switched off
+  // (ticking "I tip out" brings it back), and the old fields stay as v37 wrote them
+  assert.deepEqual(off.workplaces[0].profile.tipout, {
+    on: false,
+    basis: 'after',
+    mode: 'pct',
+    value: 15,
+    from: 'cash',
+  });
+  assert.deepEqual(off.workplaces[0].profile.tipouts, [BARBACK]);
+  // its night (v37's "everyone" default while off) was saved with tip-outs off: nobody tipped out, $0 tip-out
+  assert.equal(off.nights[0].tipoutOn, false);
+  assert.deepEqual(off.nights[0].tipouts, { t1: false });
+  assert.equal(M.computeNight(off.nights[0], off.workplaces[0].profile, 10).tipout, 0);
+  const none = migrate(oldState({ on: false, mode: 'pct', value: 0, basis: 'before', from: 'cash' }), {
+    today,
+  });
+  assert.deepEqual(none.workplaces[0].profile.tipouts, [], 'switched off with no amount: nobody');
+  assert.deepEqual(none.workplaces[0].profile.tipout, { on: false, basis: 'before' });
   // the night's money is the same before and after the migration
   const before = M.computeNight(
     oldState({ on: true, mode: 'pct', value: 15, from: 'cash' }).nights[0],

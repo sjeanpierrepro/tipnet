@@ -267,3 +267,40 @@ test('a v37 page saving after the update: a night saved while tip-outs were off 
   assert.equal(money(after).nights[0].tipout, 0);
   assert.equal(money(after).nights[1].tipout, 60.6);
 });
+
+test('a v37 tip-out switched off keeps its amount on the update ($20 flat through payroll), and v37 reads it back', async (t) => {
+  // third v38 review (off37): the list became [] and the $20 was gone when "I tip out" was ticked again
+  const raw = state(
+    {
+      ...profile([]),
+      tipouts: undefined,
+      tipout: { on: false, mode: 'flat', value: 20, basis: 'before', from: 'check' },
+    },
+    [
+      { ...night('a', '2026-10-06', true), tipouts: undefined }, // v37's own default while off: barback true
+    ],
+  );
+  const v38 = migrate(raw, { today });
+  const p = v38.workplaces[0].profile;
+  assert.deepEqual(p.tipouts, [
+    { id: 't1', k: 'barback', who: 'Barback', mode: 'flat', value: 20, from: 'payroll' },
+  ]);
+  assert.deepEqual(p.tipout, { on: false, basis: 'before', mode: 'flat', value: 20, from: 'check' });
+  // the night saved while it was off stays without a tip-out, also once it is ticked again
+  assert.equal(v38.nights[0].tipoutOn, false);
+  p.tipout.on = true;
+  assert.equal(M.computeNight(v38.nights[0], p, 10).tipout, 0);
+  // a new night with it on: the $20 is back, through payroll
+  const c = M.computeNight({ ...night('b', '2026-10-07', true), tipoutOn: true }, p, 10);
+  assert.equal(c.tipout, 20);
+  assert.equal(c.fromCash, 0);
+  p.tipout.on = false;
+  const old = await S37();
+  if (!old) return t.skip('git or commit ' + V37 + ' (tipnet-v37) is not available');
+  // v37 itself kept it the same way (its own migrate), and gets it back from v38 as it wrote it
+  assert.deepEqual(old.migrate(clone(raw), { today }).workplaces[0].profile.tipout, p.tipout);
+  assert.deepEqual(old.migrate(clone(v38), { today }).workplaces[0].profile.tipout, p.tipout);
+  const after = migrate(clone(old.migrate(clone(v38), { today })), { today });
+  assert.deepEqual(after.workplaces[0].profile, v38.workplaces[0].profile);
+  assert.deepEqual(money(after), money(v38));
+});
