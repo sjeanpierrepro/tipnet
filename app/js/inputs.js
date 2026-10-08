@@ -115,10 +115,21 @@ function addDaysISO(iso, n) {
 }
 /** Latest night date accepted: the day after today (a shift can run past midnight). */
 export const maxNightDate = (today) => addDaysISO(today, 1);
-/** Plain message when a night's date is out of bounds (before 2000 or more than 1 day after today), else ''. */
+/**
+ * Plain message when a night's date is out of bounds (before 2000 or more than 1 day after today), else ''. It names the
+ * latest date, not "tomorrow": before the late-night cutoff today is still yesterday's date, so "tomorrow" misleads.
+ */
 export function dateProblem(iso, today) {
   const s = String(iso || '');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s) || s < MIN_NIGHT_DATE || s > maxNightDate(today))
-    return 'Pick a date between Jan 1, 2000 and tomorrow.';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s) || s < MIN_NIGHT_DATE || s > maxNightDate(today)) {
+    const [y, m, d] = maxNightDate(today).split('-').map(Number);
+    const last = new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone: 'UTC',
+    });
+    return 'Pick a date between Jan 1, 2000 and ' + last + '.';
+  }
   return '';
 }

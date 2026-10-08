@@ -257,3 +257,17 @@ test('two open copies: establishments merge by id', () => {
   );
   assert.equal(nightsOf(o3, 'w2').length, 0);
 });
+
+test('names v37 gave by itself follow the "establishment" wording; names people typed are kept', () => {
+  const S = two();
+  S.workplaces[0].name = 'My restaurant';
+  S.workplaces[1].name = 'Restaurant 2';
+  S.workplaces.push({ ...S.workplaces[1], id: 'w3', name: 'The Restaurant Bar' });
+  S.workplaces.push({ ...S.workplaces[1], id: 'w4', name: 'my restaurant' });
+  const out = migrate(S, { today: TODAY });
+  assert.deepEqual(
+    out.workplaces.map((w) => w.name),
+    [FIRST_WORKPLACE_NAME, 'Establishment 2', 'The Restaurant Bar', 'my restaurant'],
+  );
+  assert.deepEqual(migrate(out, { today: TODAY }), out);
+});

@@ -435,7 +435,7 @@ test('Tonight: a date far in the future or before 2000 is refused; $0 tips canno
     for (const d of ['2099-01-01', '1999-12-31']) {
       page.type(date, d);
       submit(page);
-      assert.match(page.text(), /Pick a date between Jan 1, 2000 and tomorrow\./);
+      assert.match(page.text(), /Pick a date between Jan 1, 2000 and [A-Z][a-z]{2} \d{1,2}, \d{4}\./);
       assert.equal(page.state().nights.length, 0, d);
     }
     page.type(date, today());

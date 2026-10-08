@@ -1281,8 +1281,10 @@ export function render(root) {
       S.workplaces[0].calib = [];
       S.nightsExample = false;
     }
+    const had = S.nights.length;
     verb();
-    countSavedNight(S); // every 10th real night since the last backup suggests one
+    // every 10th real night since the last backup suggests one; adding to or replacing a saved night isn't a new one
+    if (S.nights.length > had) countSavedNight(S);
     lockFinished({ force: true });
     save();
     drafts.set(w.id, blankDraft(S, p));

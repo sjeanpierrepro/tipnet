@@ -82,6 +82,33 @@ test('never both reminders: Tonight shows the 10-nights card, Setup keeps the 30
     page.tab('setup');
     assert.ok(page.$('#backup-nudge'), 'Setup keeps the 30-day reminder');
     assert.equal(page.$('#nights-backup'), null);
+    // one "Not now" is enough: the 30-day reminder doesn't take the card's place straight away
+    page.tab('tonight');
+    page.click(page.button('Not now', page.must(page.$('#nights-backup'), 'card')));
+    assert.equal(page.$('#nights-backup'), null);
+    assert.equal(page.$('#backup-nudge'), null);
+  } finally {
+    await page.close();
+  }
+});
+
+test('adding to or replacing a night already saved for that date is not a new night', async () => {
+  const page = await boot({ seed: seed((S) => (S.settings.nightsSinceBackup = 5)) });
+  try {
+    logNight(page);
+    assert.equal(page.state().settings.nightsSinceBackup, 6);
+    const nights = page.state().nights.length;
+    page.type(key(page, 'night-total'), '100');
+    page.type(key(page, 'night-pay-p1'), '2');
+    page.click(page.button('Save night'));
+    page.click(page.must(page.byText('button', 'Add to that night'), 'Add'));
+    assert.equal(page.state().nights.length, nights);
+    assert.equal(page.state().settings.nightsSinceBackup, 6);
+    page.type(key(page, 'night-total'), '120');
+    page.type(key(page, 'night-pay-p1'), '2');
+    page.click(page.button('Save night'));
+    page.click(page.must(page.byText('button', 'Replace it'), 'Replace'));
+    assert.equal(page.state().settings.nightsSinceBackup, 6);
   } finally {
     await page.close();
   }

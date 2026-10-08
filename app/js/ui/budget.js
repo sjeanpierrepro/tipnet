@@ -180,6 +180,8 @@ const bar = (pct, label) =>
   );
 const row = (a, b, cls) => el('div', { class: cls || null }, el('dt', null, a), el('dd', null, b));
 const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+/** "the Lobby Bar", but an establishment named "The Lobby Bar" doesn't get a second "the". */
+const theName = (name) => (/^the\s/i.test(name) ? name : 'the ' + name);
 
 /* ---------- LOCKED: preview + upgrade ---------- */
 function sampleCard(S) {
@@ -981,8 +983,8 @@ function nextCheckCard(S, r0, src) {
       'p',
       { class: 'hint' },
       many
-        ? 'These dates run from the ' +
-            r0.paydaySource.name +
+        ? 'These dates run from ' +
+            theName(r0.paydaySource.name) +
             ' payday to the day before its next one. Checks from your other establishments that arrive in between are counted too. '
         : 'These dates are the days you will be spending this check, from payday to the next payday. They are not the pay period the check is for. ',
       known
@@ -1541,7 +1543,7 @@ function goalControls(B, g, p, funder, many = false) {
   if (!p.ready) {
     const input = moneyInput({
       placeholder: plannedNow > 0 ? 'planned ' + money(plannedNow) : 'Amount',
-      'aria-label': 'Amount saved for ' + g.name + ' from the ' + who + ' check',
+      'aria-label': 'Amount saved for ' + g.name + ' from ' + theName(who) + ' check',
       'data-focus-key': 'goal-rec-' + g.id,
       class: 'input',
     });
@@ -1551,7 +1553,7 @@ function goalControls(B, g, p, funder, many = false) {
       {
         type: 'submit',
         class: 'btn btn-secondary btn-small',
-        'aria-label': 'Save amount for ' + g.name + ' from the ' + who + ' check',
+        'aria-label': 'Save amount for ' + g.name + ' from ' + theName(who) + ' check',
         'data-focus-key': 'goal-rec-save-' + g.id,
       },
       'Save',
@@ -1579,8 +1581,8 @@ function goalControls(B, g, p, funder, many = false) {
       bus.rerender();
       toast(
         again
-          ? 'Changed to ' + money(n) + ' from the ' + who + ' check.'
-          : 'Saved ' + money(n) + ' from the ' + who + ' check.',
+          ? 'Changed to ' + money(n) + ' from ' + theName(who) + ' check.'
+          : 'Saved ' + money(n) + ' from ' + theName(who) + ' check.',
       );
     });
     out.push(form);
@@ -1591,8 +1593,8 @@ function goalControls(B, g, p, funder, many = false) {
         p.recorded != null
           ? 'You put ' +
               money(p.recorded) +
-              ' toward this from the ' +
-              who +
+              ' toward this from ' +
+              theName(who) +
               ' check. Enter a new amount to change it. It stays out of the money you have now until your next payday.'
           : 'Enter what you actually put away from this check. It then stops coming out of the money you have now until your next payday, and the plan adjusts so you still reach your goal.',
       ),

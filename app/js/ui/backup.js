@@ -240,6 +240,8 @@ export function nightsBackupCard() {
   later.addEventListener('click', () => {
     const st = getState().settings;
     st.backupNightsAt = (st.nightsSinceBackup || 0) + NIGHTS_PER_BACKUP;
+    // one "Not now" is enough: the "Last backup" reminder doesn't take this card's place straight away
+    st.backupNudgeUntil = Math.max(st.backupNudgeUntil || 0, Date.now() + 30 * DAY);
     save();
     bus.rerender();
     const h = document.querySelector('#app h1');

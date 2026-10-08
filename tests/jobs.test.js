@@ -176,7 +176,9 @@ test('parseHoursInput keeps a minus sign (so it can be refused); readable vs jun
 test('night dates: from Jan 1, 2000 to one day after today', () => {
   assert.equal(dateProblem(TODAY, TODAY), '');
   assert.equal(dateProblem('2026-10-01', TODAY), '');
-  assert.match(dateProblem('2026-10-02', TODAY), /between Jan 1, 2000 and tomorrow/);
+  assert.equal(dateProblem('2026-10-02', TODAY), 'Pick a date between Jan 1, 2000 and Oct 1, 2026.');
+  assert.equal(dateProblem('2027-01-01', '2026-12-31'), '');
+  assert.match(dateProblem('2027-01-02', '2026-12-31'), /and Jan 1, 2027\.$/);
   assert.equal(dateProblem('2000-01-01', TODAY), '');
   assert.match(dateProblem('1999-12-31', TODAY), /between/);
   assert.match(dateProblem('', TODAY), /between/);

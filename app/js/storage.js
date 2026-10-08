@@ -38,6 +38,12 @@ const STATE_KEY = 'state';
  */
 export const ENTRY_MODES = ['tips', 'total'];
 export const FIRST_WORKPLACE_NAME = 'My establishment';
+/** The names v37 and earlier gave by themselves ("My restaurant", "Restaurant 2") follow the "establishment" wording. */
+const OLD_DEFAULT_NAME = /^(?:My restaurant|Restaurant ([1-9]\d?))$/;
+const renameOldDefault = (name) => {
+  const m = OLD_DEFAULT_NAME.exec(name);
+  return !m ? name : m[1] ? 'Establishment ' + m[1] : FIRST_WORKPLACE_NAME;
+};
 /** The most establishments a save or a backup keeps when it loads (earlier versions let people add up to 12). */
 export const MAX_WORKPLACES = 12;
 /** How many establishments can be ADDED: 3 in the free app, 5 with TipNet Budget unlocked. */
@@ -612,7 +618,7 @@ function migrateUnsafe(input, today) {
     const example = i === 0 && !!S.profileExample;
     // Existing users keep the meaning of their nightly number: anyone with real nights or their own profile typed totals.
     const realNights = !S.nightsExample && mine.length > 0;
-    const name = typeof w.name === 'string' ? w.name.trim().slice(0, 40) : '';
+    const name = renameOldDefault(typeof w.name === 'string' ? w.name.trim().slice(0, 40) : '');
     const out = {
       id: ids[i],
       name: name || (i === 0 ? FIRST_WORKPLACE_NAME : 'Establishment ' + (i + 1)),

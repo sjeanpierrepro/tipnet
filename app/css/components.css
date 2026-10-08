@@ -4,6 +4,13 @@
 }
 html {
   -webkit-text-size-adjust: 100%;
+  /* a field reached with Tab scrolls clear of the bottom tab bar instead of stopping behind it */
+  scroll-padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + var(--s-3));
+}
+@media (min-width: 900px) {
+  html {
+    scroll-padding-bottom: 0;
+  }
 }
 body {
   margin: 0;
