@@ -160,6 +160,48 @@ test('b) night editor "Recalculate with current Setup" after the barback row was
   }
 });
 
+test('b) night editor: ticking "Recalculate with current Setup" shows today’s people to tick, and its note only then', async () => {
+  // Setup now: the barback row was added again (t9) and a runner joined; the locked night only knows its barback (t1)
+  const page = await boot({ seed: seedWith([BARBACK2, RUNNER], [lockedNight()]) });
+  try {
+    page.tab('periods');
+    page.click(editBtn(page, 'n1'));
+    assert.ok(page.$('[data-focus-key="edit-n1-tipout-t1"]'), 'the night’s own barback');
+    assert.equal(page.$('[data-focus-key="edit-n1-tipout-t2"]'), null, 'no runner on the locked night');
+    const hint = page.must(page.$('#edit-n1-recalc-hint'), 'hint');
+    assert.equal(hint.hidden, true, 'the "uses today’s Setup" note waits for the box');
+    const cb = page.must(page.$('#edit-n1-recalc'), 'recalc');
+    cb.checked = true;
+    page.change(cb);
+    assert.equal(hint.hidden, false);
+    assert.equal(page.$('[data-focus-key="edit-n1-tipout-t1"]'), null, 'the old row is gone');
+    assert.equal(key(page, 'edit-n1-tipout-t9').checked, true, 'the barback’s tick carried over');
+    assert.equal(key(page, 'edit-n1-tipout-t2').checked, false, 'the runner wasn’t tipped out that night');
+    // tick the runner too and save: both count
+    const runner = key(page, 'edit-n1-tipout-t2');
+    runner.checked = true;
+    page.change(runner);
+    page.click(page.button('Save changes'));
+    const n = nightOf(page, 'n1');
+    assert.deepEqual(
+      money(page, n).tipouts.map((l) => l.who),
+      ['Barback', 'Runner'],
+    );
+    // unticking the box again goes back to the night's own people
+    page.click(editBtn(page, 'n1'));
+    const cb2 = page.must(page.$('#edit-n1-recalc'), 'recalc');
+    assert.ok(page.$('[data-focus-key="edit-n1-tipout-t9"]'));
+    cb2.checked = true;
+    page.change(cb2);
+    cb2.checked = false;
+    page.change(cb2);
+    assert.equal(key(page, 'edit-n1-tipout-t9').checked, true);
+    assert.equal(key(page, 'edit-n1-tipout-t2').checked, true);
+  } finally {
+    await page.close();
+  }
+});
+
 test('b) night editor: a night moved into a finished pay period takes its people from that period’s snapshot', async () => {
   // the night of today-14 (the pay period after, also finished) was locked with the re-created barback t9
   const moved = {

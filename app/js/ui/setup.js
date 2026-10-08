@@ -2307,7 +2307,11 @@ export function confirmLeave(next) {
 function draftProblems(S, w, d) {
   const out = [];
   const p = d.profile;
-  typoBoxes().forEach((b) => out.push('Fix “' + labelOf(b.f) + '”: that isn’t a number.'));
+  // in the box's own words: "that isn’t an amount", "a percent", "a number of shifts"…
+  typoBoxes().forEach((b) => {
+    const said = b.typo(b.input.value).split('. ')[0];
+    out.push('Fix “' + labelOf(b.f) + '”: ' + said.charAt(0).toLowerCase() + said.slice(1) + '.');
+  });
   const np = nameProblem(S, w, d.name);
   if (np) out.push(np);
   if (!Number.isFinite(parseISO(p.periodStart))) out.push('Pick the day your pay period started.');
@@ -2585,7 +2589,9 @@ function saveBar(S, w, ctx) {
     const t = probs.length ? 'To save: ' + probs.join(' ') : '';
     if (reasons.textContent !== t) reasons.textContent = t;
     reasons.hidden = !probs.length;
-    const st = hasUnsaved() ? 'You have changes that aren’t saved yet.' : 'No changes yet.';
+    // a box with a typo is a change in progress, even though nothing was applied: not "No changes yet."
+    const st =
+      hasUnsaved() || typoBoxes().length ? 'You have changes that aren’t saved yet.' : 'No changes yet.';
     if (stateLine.textContent !== st) stateLine.textContent = st;
   };
   ctx.changed = sync;

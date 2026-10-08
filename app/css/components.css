@@ -121,6 +121,10 @@ textarea {
   align-items: center;
   gap: var(--s-2);
 }
+/* an amount like "$285 take-home" stays on one line; the label next to it wraps instead */
+.spread > b.num {
+  white-space: nowrap;
+}
 .app-footer {
   max-width: 560px;
   margin: 0 auto;

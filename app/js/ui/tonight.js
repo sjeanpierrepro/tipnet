@@ -850,10 +850,31 @@ export function nightFields(
   };
   drawOther();
   kids.push(otherHost);
-  const hoursErr = el('p', { class: 'field-error', hidden: true, role: 'alert' });
-  const setHoursError = (m) => {
+  const hoursErr = el('p', { class: 'field-error', hidden: true, role: 'alert', id: uid('hrs-err') });
+  /** The hours message, and the box it is about marked invalid and linked to it (id: its pay type, when known). */
+  const setHoursError = (m, id = m ? hoursProblem(p, d).id : null) => {
     hoursErr.hidden = !m;
     hoursErr.textContent = m || '';
+    // before the fields are put together (the first refresh) the boxes are still in kids
+    const all = (sel) =>
+      rootEl
+        ? [...rootEl.querySelectorAll(sel)]
+        : kids.flatMap((k) => (k && k.querySelectorAll ? [...k.querySelectorAll(sel)] : []));
+    all('[aria-describedby~="' + hoursErr.id + '"]').forEach((x) => {
+      x.removeAttribute('aria-invalid');
+      const rest = (x.getAttribute('aria-describedby') || '')
+        .split(' ')
+        .filter((t) => t && t !== hoursErr.id)
+        .join(' ');
+      if (rest) x.setAttribute('aria-describedby', rest);
+      else x.removeAttribute('aria-describedby');
+    });
+    const box = m && id != null ? all('[data-focus-key="' + key + '-pay-' + id + '"]')[0] : null;
+    if (box) {
+      box.setAttribute('aria-invalid', 'true');
+      const was = box.getAttribute('aria-describedby');
+      box.setAttribute('aria-describedby', (was ? was + ' ' : '') + hoursErr.id);
+    }
   };
   kids.push(hoursErr);
 

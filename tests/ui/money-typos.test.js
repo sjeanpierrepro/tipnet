@@ -84,8 +84,17 @@ test('Tonight: a typo in the total, hours, sales or cash box blocks Save, shows 
       submit(page);
       assert.equal(page.state().nights.length, 0, bad);
       assert.equal(page.doc.activeElement, hours);
+      // the box itself is marked for screen readers and linked to the message
+      const live = key(page, 'night-pay-p1');
+      assert.equal(invalid(live), true, bad);
+      const ids = (live.getAttribute('aria-describedby') || '').split(' ');
+      assert.ok(
+        ids.some((id) => /Hours should be a number/.test(page.doc.getElementById(id)?.textContent || '')),
+        bad,
+      );
     }
     page.type(hours, '7:30');
+    assert.equal(invalid(key(page, 'night-pay-p1')), false, 'fixed: no longer marked');
     submit(page);
     const n = page.state().nights;
     assert.equal(n.length, 1);
@@ -300,7 +309,15 @@ test('Setup draft: typos in gross, a deduction, a job rate and a tip-out amount 
       );
       assert.equal(invalid(input), true, label);
       assert.equal(byId(page, 'draft-save').disabled, true, label + ': Save is off');
-      assert.match(reasons(page), /Fix “.+”: that isn’t a number\./, label);
+      // the Save bar says it in the box's own words
+      assert.match(
+        reasons(page),
+        label === 'Percent of tips'
+          ? /Fix “Percent of tips”: that isn’t a percent\./
+          : new RegExp('Fix “' + label + '[^”]*”: that isn’t an amount\\.'),
+        label,
+      );
+      assert.match(page.text(page.$('.save-bar')), /You have changes that aren’t saved yet\./, label);
       page.type(input, was);
       assert.equal(invalid(input), false, label + ' fixed');
     }

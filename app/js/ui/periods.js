@@ -24,6 +24,7 @@ import {
   rate as currentRate,
   tipoutsTonight,
   tipoutSetup,
+  alignTicks,
 } from '../math.js';
 import { businessDate, cutoffFromSettings, moneyTypo } from '../inputs.js';
 import {
@@ -71,6 +72,7 @@ import {
   peopleOf,
   salesMissing,
   tipoutHow,
+  draftTipouts,
 } from './tonight.js';
 
 /** Pay periods shown at first; "Show older" adds this many more each time. */
@@ -449,7 +451,7 @@ function editor(S, n) {
     moveBtn.focus();
   }
   let lastDate = d.date;
-  const f = nightFields(p, d, {
+  const fieldOpts = {
     key: 'edit-' + n.id,
     rateOf,
     onInput: () => {
@@ -462,7 +464,8 @@ function editor(S, n) {
       syncWeek();
       upd();
     },
-  });
+  };
+  let f = nightFields(p, d, fieldOpts); // drawn again when "Recalculate with current Setup" changes who can be ticked
   const noteInput = el('input', {
     type: 'text',
     maxlength: '500',
@@ -480,9 +483,24 @@ function editor(S, n) {
     // In a finished pay period, the period's check keeps its fixed deductions whatever this night is recalculated with.
     const inFinished = isFinal(p, nightPeriodIndex(p, n), todayISO());
     if (inFinished) cb.setAttribute('aria-describedby', cb.id + '-hint');
+    const recalcHint = inFinished
+      ? el(
+          'p',
+          { class: 'hint', id: cb.id + '-hint', hidden: true },
+          'This night uses today’s Setup; the pay period’s fixed deductions stay as they were.',
+        )
+      : null;
     cb.addEventListener('change', () => {
       recalc = cb.checked;
-      f.refresh();
+      if (recalcHint) recalcHint.hidden = !recalc;
+      // The tip-out boxes are the people the night will be worked out with: today's Setup's when recalculated, else
+      // its own snapshot's. The ticks are carried over to them (alignTicks) and the fields are drawn again.
+      const was = draftTipouts(d, p);
+      d.tipoutSnap = recalc ? null : n.snap;
+      d.tipouts = alignTicks(d.tipouts, d.tipouts, was, draftTipouts(d, p));
+      const fresh = nightFields(p, d, fieldOpts);
+      f.root.replaceWith(fresh.root);
+      f = fresh;
       upd();
     });
     lockNote = el(
@@ -504,13 +522,7 @@ function editor(S, n) {
           el('small', null, 'Uses today’s pay rates, deductions and tip-out for this night.'),
         ),
       ),
-      inFinished
-        ? el(
-            'p',
-            { class: 'hint', id: cb.id + '-hint' },
-            'This night uses today’s Setup; the pay period’s fixed deductions stay as they were.',
-          )
-        : null,
+      recalcHint,
     );
   }
   const saveBtn = el(
