@@ -13,6 +13,7 @@ import {
   isFinal,
   indexNights,
   snapshotFor,
+  snapWithPay,
   periodSnap,
   periodTerms,
   nightsInPeriod,
@@ -268,6 +269,8 @@ function editor(S, n) {
         : null;
       if (ref) out.snap.period = periodTerms(ref);
     }
+    // Hours at a job added to Setup after the night was locked: that job at its Setup rate, the rate shown (snapWithPay).
+    if (out.snap) out.snap = snapWithPay(out.snap, p, out);
     // Who was tipped out: the boxes are the night's own people (its snapshot's, or Setup's when it isn't locked). A
     // recalculation or a move gives it other ones (today's Setup, the period's snapshot, or Setup's when a move unlocks
     // it): the ticks are carried over to them (alignNight). With no boxes on screen the night keeps its own.
@@ -302,7 +305,8 @@ function editor(S, n) {
     preview.textContent = 'Estimated take-home for this night: ' + money(c.net) + '.' + missing;
     if (quiet !== true) speak();
   };
-  // A locked night shows the rates it keeps, unless "Recalculate with current Setup" is ticked.
+  // A locked night shows the rates it keeps, unless "Recalculate with current Setup" is ticked. A job its snapshot doesn't
+  // have (added to Setup since) shows its Setup rate, which the night is then saved with (snapWithPay in build).
   const rateOf = (t) => {
     if (!n.snap || recalc) return num(t.rate);
     const s = (n.snap.pay || []).find((x) => String(x.id) === String(t.id));

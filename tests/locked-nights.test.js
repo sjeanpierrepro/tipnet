@@ -260,3 +260,41 @@ test('a recalculated night keeps the period’s fixed deductions and non-taxable
   });
   assert.deepEqual(S.nights[0].snap.period, { fixed: 60, nontax: 7 });
 });
+
+/* ---------- a job added to Setup after a pay period was locked (third v38 review) ---------- */
+// The period was locked with the Bartender only; Setup now also has a Server job at $10/h. A night entered later in
+// that period, 6 h as Server: $0 wage before (the snapshot had no Server), while Tonight showed "$10.00/h → $60.00".
+const SERVER = { id: 'p9', k: 'server', name: 'Server', rate: 10, unit: 'hr', usual: 0 };
+const withServer = (p) => ({ ...p, payTypes: [...p.payTypes, { ...SERVER }] });
+test('a job added to Setup after its period was locked: a night worked at it there gets that job at its Setup rate', () => {
+  const p = P();
+  const old = lock(N(), p, 10);
+  const now = withServer(p);
+  const late = { id: 'late', date: old[0].date, total: 260, cash: 50, pay: { p1: 0, p9: 6 }, tips: 200 };
+  const r = M.lockFinishedNights(now, [...old, late], AFTER);
+  const got = r.nights.find((x) => x.id === 'late');
+  const ref = old[old.length - 1].snap;
+  assert.deepEqual(got.snap.pay.slice(0, -1), ref.pay, 'the period’s own pay types, unchanged');
+  assert.deepEqual(got.snap.pay[got.snap.pay.length - 1], { id: 'p9', rate: 10, unit: 'hr' });
+  assert.deepEqual({ ...got.snap, pay: ref.pay }, ref, 'everything else is the period’s snapshot');
+  assert.equal(M.basePay(got, now).pay, 60);
+  const c = M.computeNight(got, now, 10);
+  assert.equal(c.basePay, 60);
+  assert.equal(c.tips, 200);
+  assert.equal(got.total, 260, 'typed tips: the stored total is tips + the Server pay');
+  // the period's other nights and its check are exactly as they were
+  old.forEach((n, i) => assert.equal(r.nights[i], n));
+  const ns = M.nightsInPeriod(now, r.nights, 0);
+  assert.equal(M.periodFixed(now, ns), M.periodFixed(p, old));
+  // typed as a total ($260 made): the barback's 15% is of the $200 tips, not of $260
+  const tot = M.lockFinishedNights(now, [...old, { ...late, tips: undefined }], AFTER).nights.pop();
+  const ct = M.computeNight({ ...tot, tipouts: { t1: true } }, now, 10);
+  assert.equal(ct.tips, 200);
+  assert.equal(ct.tipout, 30);
+  // snapWithPay: nothing missing gives the snapshot itself; a 0 amount adds nothing
+  assert.equal(M.snapWithPay(ref, now, old[0]), ref);
+  assert.equal(M.snapWithPay(ref, now, { pay: { p9: 0 } }), ref);
+  assert.equal(M.snapWithPay(null, now, late), null);
+  // pure: the input snapshot is not changed
+  assert.equal(ref.pay.length, p.payTypes.length);
+});

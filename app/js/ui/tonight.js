@@ -30,6 +30,7 @@ import {
   nightsInPeriod,
   periodSnap,
   snapshotFor,
+  snapWithPay,
 } from '../math.js';
 import {
   businessDate,
@@ -290,19 +291,25 @@ function draftPay(d, p) {
   if (main && pay[main.id] === undefined) pay[main.id] = '0';
   return pay;
 }
-/** Cash check for a draft: in total mode the cash is measured against the tips part (total minus tonight's pay). */
+/**
+ * Cash check for a draft: in total mode the cash is measured against the tips part (total minus tonight's pay). snap:
+ * the locked night's (with any job added to Setup since, at its Setup rate: snapWithPay, as the night is stored).
+ */
 function cashCheck(d, p, snap) {
   if (tipsMode(p)) return checkCash(d.total, d.cash, { tips: true });
-  const pay = basePay({ pay: draftPay(d, p), ...(snap ? { snap } : {}) }, p).pay;
-  return checkCash(d.total, d.cash, { basePay: pay });
+  const n = { pay: draftPay(d, p) };
+  if (snap) n.snap = snapWithPay(snap, p, n);
+  return checkCash(d.total, d.cash, { basePay: basePay(n, p).pay });
 }
 /**
  * Draft (strings) -> night with cleaned values, for live math. total is always everything made (tips + hourly/per-shift
  * pay): in tips mode the typed tips are converted here, so the preview and the saved night use the same number, and
- * the tips are kept as `tips` too. snap: work out the pay with this locked night's rates (editing or replacing it).
+ * the tips are kept as `tips` too. snap: work out the pay with this locked night's rates (editing or replacing it), and
+ * a job added to Setup since at its Setup rate (snapWithPay: the night is stored with it).
  */
-export function liveNight(d, id, p, { snap } = {}) {
+export function liveNight(d, id, p, { snap: lockedWith } = {}) {
   const pay = draftPay(d, p);
+  const snap = lockedWith ? snapWithPay(lockedWith, p, { pay }) : null;
   // Cash that is negative or more than the tips is not used (the screen says why); it never blocks the night.
   const cash = cashCheck(d, p, snap).status === 'ok' ? String(typedAmount(d.cash)) : '';
   const night = {
@@ -542,6 +549,12 @@ export function mergeNights(a, b, p) {
   if (hasTips(b) && ta >= 0) {
     out.tips = round2(ta + b.tips);
     if (!a.snap) out.total = totalFromTips(out.tips, out, p);
+  }
+  // A locked night now worked at a job added to Setup since: its snapshot gets that job at its Setup rate (snapWithPay),
+  // as the part added was worked out; with typed tips the total is then the tips + the pay at those rates.
+  if (a.snap) {
+    out.snap = snapWithPay(a.snap, p, out);
+    if (out.snap !== a.snap && hasTips(out)) out.total = totalFromTips(out.tips, out, p);
   }
   return out;
 }
@@ -1457,7 +1470,7 @@ export function render(root) {
     // the night as it will be stored: locked with a finished pay period's snapshot when its date is in one
     const snap = d.tipoutSnap || null;
     const night = liveNight(d, 'draft', p, { snap });
-    if (snap) night.snap = snap;
+    if (snap) night.snap = snapWithPay(snap, p, night); // a job added to Setup since, at its rate, as locking stores it
     const c = computeNight(night, p, shifts);
     const hoursMissing = missingHoursRow(p, d) != null;
     let ot = null;
@@ -1660,21 +1673,23 @@ export function render(root) {
     rep.addEventListener(
       'click',
       choose(() => ({
-        stored: overDup((cur) =>
-          alignNight(
+        stored: overDup((cur) => {
+          const made = onto(cur);
+          return alignNight(
             {
-              ...onto(cur),
+              ...made,
               id: cur.id,
               workplaceId: w.id,
-              ...(cur.snap ? { snap: cur.snap } : {}),
+              // a locked night keeps its snapshot, with a job added to Setup since at its Setup rate (snapWithPay)
+              ...(cur.snap ? { snap: snapWithPay(cur.snap, p, made) } : {}),
               ...(cur.periodStart ? { periodStart: cur.periodStart } : {}), // stays in the pay period it was moved to
             },
             d,
             p,
             cur,
             peopleOf(cur, p),
-          ),
-        ),
+          );
+        }),
       })),
     );
     const sep = el(

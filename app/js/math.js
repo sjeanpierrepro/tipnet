@@ -270,14 +270,7 @@ export function snapshotFor(p, shifts) {
     rf: fedRate(p),
     fixed: round2(fixedTotal(p)),
     n: shifts > 0 ? shifts : shiftsPerPeriod(p, [], todayISO()).n,
-    pay: (p.payTypes || []).map((t, i) => {
-      const o = { id: t.id, rate: num(t.rate), unit: t.unit };
-      if (i === 0) o.usual = num(t.usual);
-      if (t.supp) o.supp = 1;
-      if (t.nontax) o.nontax = 1;
-      if (t.k === 'diff' || t.diff) o.diff = 1;
-      return o;
-    }),
+    pay: (p.payTypes || []).map(snapPayOf),
     tipout: savedTipout(ts.on, ts.basis, ts.list), // with the old single shape too when that fits (for v37)
     tipouts: ts.list.map((x) => ({ ...x })),
   };
@@ -285,6 +278,34 @@ export function snapshotFor(p, shifts) {
   const nt = round2(nontaxRecurring(p));
   if (nt > 0) s.nontax = nt;
   return s;
+}
+/** A Setup pay type as a snapshot keeps it (i: its place in the list; the usual amount only matters for the first). */
+function snapPayOf(t, i) {
+  const o = { id: t.id, rate: num(t.rate), unit: t.unit };
+  if (i === 0) o.usual = num(t.usual);
+  if (t.supp) o.supp = 1;
+  if (t.nontax) o.nontax = 1;
+  if (t.k === 'diff' || t.diff) o.diff = 1;
+  return o;
+}
+/**
+ * A locked night's snapshot with the pay types the night has an amount for (not 0) that the snapshot doesn't have,
+ * added at their CURRENT Setup rate, unit and flags: a job added to Setup after the pay period was locked, worked on a
+ * night entered in that period later. Without it the night was paid $0 for that job while Tonight and the night editor
+ * showed its rate. Everything else in the snapshot stays, and so does the rest of the period. Pure: snap itself when
+ * nothing is missing (or no snap), else a copy. Locking, Tonight (its preview, cash check and Add / Replace) and the
+ * night editor all use it, so the rate shown is the rate stored.
+ */
+export function snapWithPay(snap, p, night) {
+  if (!snap || !night || !night.pay) return snap;
+  const pay = Array.isArray(snap.pay) ? snap.pay : [];
+  const has = (t) => pay.some((x) => String(x.id) === String(t.id));
+  const add = ((p && p.payTypes) || []).filter((t) => num(night.pay[t.id]) !== 0 && !has(t));
+  if (!add.length) return snap;
+  const out = JSON.parse(JSON.stringify(snap));
+  out.pay = pay.map((x) => ({ ...x }));
+  add.forEach((t) => out.pay.push(snapPayOf(t, out.pay.length)));
+  return out;
 }
 export const isLocked = (night) => !!(night && night.snap);
 /**
@@ -314,7 +335,8 @@ export function lockFinishedNights(profile, nights, today = todayISO()) {
     const s = snaps.get(nightPeriodIndex(profile, n)); // a night locks when the period it counts toward ends
     if (!s) return n;
     stamped++;
-    const locked = { ...n, snap: JSON.parse(JSON.stringify(s)) };
+    // a job added to Setup since the period's snapshot was taken: this night gets it at its Setup rate (snapWithPay)
+    const locked = { ...n, snap: snapWithPay(JSON.parse(JSON.stringify(s)), profile, n) };
     // Who was tipped out was ticked for today's people; a copy of the period's older snapshot may list other ones (a
     // barback's row added again, someone removed): the ticks are carried over to the snapshot's people (alignTicks).
     // Only the people the night's map names count as choices.

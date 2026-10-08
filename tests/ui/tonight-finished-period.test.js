@@ -232,3 +232,112 @@ test('finished pay period locked with the same Setup as today (e.g. after midnig
     await page.close();
   }
 });
+
+/* ---------- a job added to Setup after the period was locked (third v38 review) ---------- */
+// Locked with Bartender, Training and Bonus; Setup now also has a Server job at $10/h. Before: the job line said
+// "$10.00/h → $60.00" but the night got $0 base pay ($200 stored in tips mode; in total mode the $260 typed all counted
+// as tips, barback $39 instead of $30).
+const SERVER = { id: 'p9', k: 'server', name: 'Server', rate: 10, unit: 'hr', usual: 0 };
+const withServer = (mode) => ({ payTypes: [...clone(oldSetup().payTypes), { ...SERVER }], entryMode: mode });
+const rowText = (page) => page.$$('.job-rate').map((x) => x.textContent);
+const baseLine = (page) =>
+  page.text(page.must(page.byText('.breakdown div', 'of which base pay', page.app), 'base pay line'));
+function asServer(page, made) {
+  const sel = key(page, 'night-job-0');
+  sel.value = 'p9';
+  page.change(sel);
+  page.type(key(page, 'night-total'), made);
+  page.type(key(page, 'night-pay-p9'), '6');
+  page.type(key(page, 'night-cash'), '100');
+}
+for (const mode of ['tips', 'total'])
+  test(
+    'finished pay period, a job added to Setup since (' +
+      mode +
+      ' mode): shown, previewed and stored at its rate',
+    async () => {
+      const page = await boot({ seed: seed([BARBACK], [lockedNight()], withServer(mode)) });
+      try {
+        const date = addDays(start, 5);
+        page.type(key(page, 'night-date'), date);
+        asServer(page, mode === 'tips' ? '200' : '260');
+        assert.deepEqual(rowText(page), ['$10.00/h → $60.00']);
+        assert.equal(baseLine(page), 'of which base pay$60.00');
+        assert.match(page.text(page.$('.result', page.app)), /Barback \(15% of tips\)−\$30\.00/);
+        const preview = page.$('.quick-net').textContent;
+        page.click(page.button('Save night'));
+        await page.settle();
+        const S = page.state();
+        const n = S.nights.find((x) => x.date === date);
+        assert.equal(n.total, 260);
+        assert.ok(n.snap, 'locked with the period’s snapshot');
+        assert.deepEqual(n.snap.pay[n.snap.pay.length - 1], { id: 'p9', rate: 10, unit: 'hr' });
+        const c = computeNight(n, S.workplaces[0].profile, 10);
+        assert.equal(c.basePay, 60);
+        assert.equal(c.tips, 200);
+        assert.equal(c.tipout, 30);
+        assert.equal(preview, 'Estimated take-home: $' + c.net.toFixed(2), 'the preview is what is stored');
+        assert.equal(
+          page.text(page.$('#night-saved')),
+          'Saved. $' + c.net.toFixed(2) + ' take-home for ' + fmtDate(date) + '.',
+        );
+        // the night locked before keeps its own snapshot (no Server)
+        const n1 = S.nights.find((x) => x.id === 'n1');
+        assert.deepEqual(n1.snap, lockedNight().snap);
+      } finally {
+        await page.close();
+      }
+    },
+  );
+
+test('finished pay period, a job added since: Add to / Replace a locked night pay it at its rate too', async () => {
+  for (const verb of ['Add to that night', 'Replace it']) {
+    const page = await boot({ seed: seed([BARBACK], [lockedNight()], withServer('total')) });
+    try {
+      page.type(key(page, 'night-date'), lockedNight().date);
+      asServer(page, '260');
+      page.click(page.button('Save night'));
+      page.click(page.button(verb));
+      await page.settle();
+      const S = page.state();
+      const n = S.nights.find((x) => x.id === 'n1');
+      const c = computeNight(n, S.workplaces[0].profile, 10);
+      assert.equal(c.basePay, verb === 'Replace it' ? 60 : 96 + 60, verb);
+      assert.deepEqual(n.snap.pay[n.snap.pay.length - 1], { id: 'p9', rate: 10, unit: 'hr' }, verb);
+      assert.deepEqual(
+        { ...n.snap, pay: [] },
+        { ...lockedNight().snap, pay: [] },
+        verb + ': nothing else changes',
+      );
+    } finally {
+      await page.close();
+    }
+  }
+});
+
+test('night editor: a locked night given hours at a job added since is paid at the rate it shows', async () => {
+  const page = await boot({ seed: seed([BARBACK], [lockedNight()], withServer('total')) });
+  try {
+    page.tab('periods');
+    page.click(page.must(page.$('[data-focus-key="edit-n1-total"]', page.app), 'Edit'));
+    page.click(page.must(page.$('[data-focus-key="edit-n1-add-job"]'), '+ Add another job'));
+    const sel = key(page, 'edit-n1-job-1');
+    sel.value = 'p9';
+    page.change(sel);
+    page.type(key(page, 'edit-n1-pay-p9'), '6');
+    assert.ok(rowText(page).includes('$10.00/h → $60.00'));
+    const preview = page.text(
+      page.must(page.byText('p.hint', 'Estimated take-home for this night'), 'preview'),
+    );
+    page.click(page.button('Save changes'));
+    await page.settle();
+    const S = page.state();
+    const n = S.nights.find((x) => x.id === 'n1');
+    const c = computeNight(n, S.workplaces[0].profile, 10);
+    assert.equal(c.basePay, 96 + 60);
+    assert.equal(preview, 'Estimated take-home for this night: $' + c.net.toFixed(2) + '.');
+    assert.deepEqual({ ...n.snap, pay: [] }, { ...lockedNight().snap, pay: [] }, 'nothing else changes');
+  } finally {
+    await page.close();
+  }
+});
