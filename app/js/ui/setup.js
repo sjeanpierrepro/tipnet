@@ -88,13 +88,33 @@ let adding = null; // "+ Set up another establishment" is open: {name, error}
  * open = {wid, base, draft}, where base and draft are {name, noDeductions, profile} (base: as it was when opened).
  */
 let open = null;
-let asking = null; // "Save changes to <name>?" is showing: {next} runs after Save or Discard
+let asking = null;
+/** "Removed X." toasts with Undo, each with the draft it would change (toast handle -> draft; see endDraftToasts). */
+const draftToasts = new Map();
+/** A "Removed X." toast with Undo. On the full page the Undo changes the open draft, so the toast belongs to it. */
+function undoToast(ctx, message, undo) {
+  const t = toast(message, { undo });
+  if (ctx.draft) draftToasts.set(t, ctx.draft);
+}
+/**
+ * The open draft was applied (Save), thrown away (Cancel, Discard, closing its row) or replaced: the Undo toasts of
+ * drafts that are no longer open are dismissed, since their Undo would do nothing.
+ */
+function endDraftToasts() {
+  const cur = open && open.draft;
+  draftToasts.forEach((dr, t) => {
+    if (dr === cur) return;
+    t.close();
+    draftToasts.delete(t);
+  });
+} // "Save changes to <name>?" is showing: {next} runs after Save or Discard
 let lastSaved = null; // {wid, text}: the line under a row that was just saved
 const foldOpen = new Set(); // shared sections (Late nights, Appearance...) that are open
 const userClosed = new Set(); // restaurants the person closed themselves (a not-set-up one otherwise opens by itself)
 export function reset() {
   open = null;
   asking = null;
+  draftToasts.clear();
   lastSaved = null;
   foldOpen.clear();
   userClosed.clear();
@@ -783,14 +803,12 @@ function dedCard(ctx) {
         ctx.touch(true);
         drawRows();
         focusNear(rowsHost, at, 'dk-add');
-        toast('Removed ' + d.name + '.', {
-          undo: () => {
-            if (p.deductions.includes(d)) return;
-            p.deductions.splice(Math.min(at, p.deductions.length), 0, d);
-            ctx.touch(true);
-            drawRows();
-            focusNear(rowsHost, at, 'dk-add');
-          },
+        undoToast(ctx, 'Removed ' + d.name + '.', () => {
+          if (p.deductions.includes(d)) return;
+          p.deductions.splice(Math.min(at, p.deductions.length), 0, d);
+          ctx.touch(true);
+          drawRows();
+          focusNear(rowsHost, at, 'dk-add');
         });
       });
       rowsHost.append(el('div', { class: 'repeat-row', style: 'grid-template-columns:minmax(0,1fr)' }, kids));
@@ -971,15 +989,13 @@ function nontaxSection(ctx, redrawSummary) {
         changed();
         draw();
         focusNear(host, at, 'nt-add');
-        toast('Removed ' + x.name + '.', {
-          undo: () => {
-            if (list().includes(x)) return;
-            p.nontaxable = list().slice();
-            p.nontaxable.splice(Math.min(at, p.nontaxable.length), 0, x);
-            changed();
-            draw();
-            focusNear(host, at, 'nt-add');
-          },
+        undoToast(ctx, 'Removed ' + x.name + '.', () => {
+          if (list().includes(x)) return;
+          p.nontaxable = list().slice();
+          p.nontaxable.splice(Math.min(at, p.nontaxable.length), 0, x);
+          changed();
+          draw();
+          focusNear(host, at, 'nt-add');
         });
       });
       host.append(el('div', { class: 'repeat-row', style: 'grid-template-columns:minmax(0,1fr)' }, kids));
@@ -1084,14 +1100,12 @@ function payCard(ctx) {
       ctx.touch(false);
       draw();
       focusNear(host, Math.max(0, near - 1), addId);
-      toast('Removed ' + (t.name || what) + '.', {
-        undo: () => {
-          if (p.payTypes.includes(t)) return;
-          p.payTypes.splice(Math.min(at, p.payTypes.length), 0, t);
-          ctx.touch(false);
-          draw();
-          focusNear(host, Math.max(0, near - 1), addId);
-        },
+      undoToast(ctx, 'Removed ' + (t.name || what) + '.', () => {
+        if (p.payTypes.includes(t)) return;
+        p.payTypes.splice(Math.min(at, p.payTypes.length), 0, t);
+        ctx.touch(false);
+        draw();
+        focusNear(host, Math.max(0, near - 1), addId);
       });
     });
     return el('div', { style: 'grid-column:1/-1' }, rm);
@@ -1475,14 +1489,12 @@ function tipoutCard(ctx) {
         ctx.touch(false);
         drawRows();
         focusNear(rowsHost, at, 'to-add');
-        toast('Removed ' + r.who + '.', {
-          undo: () => {
-            if (p.tipouts.includes(r)) return;
-            p.tipouts.splice(Math.min(at, p.tipouts.length), 0, r);
-            ctx.touch(false);
-            drawRows();
-            focusEl('tw-' + r.id);
-          },
+        undoToast(ctx, 'Removed ' + r.who + '.', () => {
+          if (p.tipouts.includes(r)) return;
+          p.tipouts.splice(Math.min(at, p.tipouts.length), 0, r);
+          ctx.touch(false);
+          drawRows();
+          focusEl('tw-' + r.id);
         });
       });
       rowsHost.append(
@@ -2317,6 +2329,7 @@ export function confirmLeave(next) {
   if (!hasUnsaved()) {
     open = null;
     asking = null;
+    endDraftToasts();
     return false;
   }
   asking = { next };
@@ -2399,6 +2412,7 @@ function saveOpen() {
   S.profileExample = false;
   open = null;
   asking = null;
+  endDraftToasts(); // applied: an Undo from the draft would change nothing now
   const mine = { wid: w.id, text: 'Saving…' + note };
   lastSaved = mine;
   const n = ++saveSeq;
@@ -2422,6 +2436,7 @@ function closeRow(wid) {
   userClosed.add(wid);
   open = null;
   asking = null;
+  endDraftToasts();
   bus.rerender();
   focusId('wp-row-' + wid);
 }
@@ -2447,6 +2462,7 @@ function openRow(S, wid) {
       return;
     }
     open = { wid, base: snapOf(w), draft: snapOf(w) };
+    endDraftToasts();
     userClosed.delete(wid);
     // Tonight and Setup share the picked restaurant
     if (S.settings.activeWorkplaceId !== wid) {
@@ -2575,6 +2591,7 @@ function saveBar(S, w, ctx) {
       const next = asking.next;
       open = null;
       asking = null;
+      endDraftToasts();
       if (next) next();
       else closeRow(w.id);
     });
@@ -2716,6 +2733,7 @@ function fullPage(root, S, active) {
     open.base = snapOf(w);
     open.draft = snapOf(w);
   }
+  endDraftToasts(); // a draft that was closed or replaced (e.g. removed in another window)
   if (restoreRequest.open) foldOpen.add('backup');
   const many = S.workplaces.length > 1;
   const importHost = el('div'),

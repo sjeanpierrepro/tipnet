@@ -352,9 +352,10 @@ export function keepFocus(root, redraw) {
 }
 
 /* ---------- toast ---------- */
+/** Show a toast (with an Undo button when undo is given). Returns {close}: dismiss it early (e.g. its Undo went stale). */
 export function toast(message, { undo, ms } = {}) {
   const host = document.getElementById('toast');
-  if (!host) return;
+  if (!host) return { close() {} };
   const t = el('div', { class: 'toast' }, el('span', null, message));
   let timer;
   const duration = ms || (undo ? 8000 : 3500);
@@ -427,6 +428,7 @@ export function toast(message, { undo, ms } = {}) {
   }
   host.append(t);
   restart();
+  return { close };
 }
 
 /* ---------- two-tap buttons ---------- */
