@@ -517,6 +517,16 @@ select {
   color: var(--accent-ink);
   font-weight: 600;
   font-size: 15px;
+  /* on a phone it stays at the top of the screen, so someone scrolled down still sees the update */
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+@media (min-width: 900px) {
+  /* there the tab bar sticks to the top instead: the bar stays at the top of the page */
+  .update-bar {
+    position: static;
+  }
 }
 .update-bar button {
   min-height: var(--tap);
