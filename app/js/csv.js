@@ -54,14 +54,20 @@ export function looksNegative(v) {
   return /^[-−]/.test(bare) || /[-−]$/.test(bare) || /^\(.*\)$/.test(bare);
 }
 
-/** "$1,234.50" -> 1234.5, "(45.00)" and "$(45.00)" -> -45, "-$3" and "$-3" -> -3, "" or junk -> null. */
+/**
+ * "$1,234.50" -> 1234.5, "(45.00)" and "$(45.00)" -> -45, "-$3" and "$-3" -> -3, "" or junk -> null. The same comma rules
+ * as the screens (readMoney): a lone comma before 1-2 digits is a decimal ("212,5" -> 212.5), "1,234" and "1,234.50" are
+ * thousands groups. Anything unclear ("1.234,50", "1,2,3", "1.2.3") is null, never a guess at a wrong amount.
+ */
 export function parseMoney(v) {
   if (v == null) return null;
   let s = String(v).trim();
   if (!s) return null;
   const neg = looksNegative(s);
-  s = s.replace(/[^0-9.]/g, '');
-  if (!s || s === '.' || (s.match(/\./g) || []).length > 1) return null;
+  s = s.replace(/[^0-9.,]/g, '');
+  if (/^\d{1,3}(?:,\d{3})+(?:\.\d*)?$/.test(s)) s = s.replace(/,/g, '');
+  else if (/^\d*,\d{1,2}$/.test(s)) s = s.replace(',', '.');
+  if (!/^(?:\d+\.?\d*|\.\d+)$/.test(s)) return null;
   const n = parseFloat(s);
   if (!Number.isFinite(n)) return null;
   return neg ? -n : n;
@@ -242,6 +248,15 @@ export function buildNights(rows, mapping, opts = {}) {
     const out = mapping.barback != null ? yesNo(r[mapping.barback]) : null;
     let total = mapping.total != null ? parseMoney(r[mapping.total]) : null;
     const hadTotal = total != null;
+    // A money cell with digits that parseMoney can't read ("1.234,50", "1.2.3") skips the row; never a night with that cell left out.
+    const unreadable = ['cash', 'card', 'tips', 'sales', 'total'].some((k) => {
+      const cell = mapping[k] != null ? r[mapping[k]] : null;
+      return cell != null && /\d/.test(cell) && parseMoney(cell) == null;
+    });
+    if (unreadable) {
+      skipped.push({ row: rowNo, reason: 'amount' });
+      return;
+    }
     // A negative amount or hours (refund, void, typo) is not a night we can trust: skip the row and say why.
     const negHours = mapping.hours != null && useHours && looksNegative(r[mapping.hours]);
     if (

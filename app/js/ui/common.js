@@ -34,10 +34,6 @@ export const periodLabel = (p, idx) => {
 };
 export { addDays };
 
-/** Keep only characters that make up a number, so "$1,200.50" reads as 1200.50. */
-export const clean = (v) => String(v == null ? '' : v).replace(/[^0-9.-]/g, '');
-export const numOf = (v) => num(clean(v));
-
 /* ---------- DOM ---------- */
 export function el(tag, props, ...kids) {
   const n = document.createElement(tag);

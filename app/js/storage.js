@@ -29,7 +29,7 @@ const STATE_KEY = 'state';
  *               pay schedule, paystub, jobs, tip-out and entry mode (profile) and its own "Check my accuracy" history (calib).
  *   nights:     [{..., workplaceId}]  every night belongs to one restaurant.
  *   settings:   {theme:'auto'|'light'|'dark', lastTab, csvMapping, activeWorkplaceId, periodsFilter?, dayCutoffHour?, guidedDraft?,
- *                lastBackupAt?, backupNudgeUntil?, nightsSinceBackup?, backupNightsAt?, iosNoteSeen?, entitlement?}
+ *                lastBackupAt?, backupNudgeUntil?, nightsSinceBackup?, backupNightsAt?, iosNoteSeen?, wordingV38?, entitlement?}
  *               (shared by every restaurant)
  *   budget:     see budget.js (shared: bills are paid from all money; a goal may name the restaurant it is saved from, fundedBy).
  *   profileExample / nightsExample: first-run example mode; only ever about the first restaurant.
@@ -39,7 +39,10 @@ const STATE_KEY = 'state';
  */
 export const ENTRY_MODES = ['tips', 'total'];
 export const FIRST_WORKPLACE_NAME = 'My establishment';
-/** The names v37 and earlier gave by themselves ("My restaurant", "Restaurant 2") follow the "establishment" wording. */
+/**
+ * The names v37 and earlier gave by themselves ("My restaurant", "Restaurant 2") follow the "establishment" wording.
+ * Only once, when upgrading data saved before settings.wordingV38 existed: a name typed after that is always kept.
+ */
 const OLD_DEFAULT_NAME = /^(?:My restaurant|Restaurant ([1-9]\d?))$/;
 const renameOldDefault = (name) => {
   const m = OLD_DEFAULT_NAME.exec(name);
@@ -71,7 +74,13 @@ export function seedState() {
     ],
     nights: exampleNights().map((n) => ({ ...n, workplaceId: 'w1' })),
     budget: emptyBudget(),
-    settings: { theme: 'auto', lastTab: 'tonight', csvMapping: null, activeWorkplaceId: 'w1' },
+    settings: {
+      theme: 'auto',
+      lastTab: 'tonight',
+      csvMapping: null,
+      activeWorkplaceId: 'w1',
+      wordingV38: true,
+    },
   };
 }
 
@@ -441,6 +450,7 @@ function cleanSettings(x, ids) {
   const count = (v) => Number.isInteger(v) && v >= 0 && v < 1e7;
   if (count(s.nightsSinceBackup)) out.nightsSinceBackup = s.nightsSinceBackup;
   if (count(s.backupNightsAt)) out.backupNightsAt = s.backupNightsAt;
+  out.wordingV38 = true; // set by the first migrate: old default names were renamed then, never again (see renameOldDefault)
   if (s.iosNoteSeen === true) out.iosNoteSeen = true; // the iPhone "Safari may clear data" note was shown once
   // The license entitlement is device-only. decodeBackup strips it before migrate; here we only keep its known plain fields.
   if (isObj(s.entitlement)) {
@@ -653,7 +663,8 @@ function migrateUnsafe(input, today) {
     const example = i === 0 && !!S.profileExample;
     // Existing users keep the meaning of their nightly number: anyone with real nights or their own profile typed totals.
     const realNights = !S.nightsExample && mine.length > 0;
-    const name = renameOldDefault(typeof w.name === 'string' ? w.name.trim().slice(0, 40) : '');
+    const typed = typeof w.name === 'string' ? w.name.trim().slice(0, 40) : '';
+    const name = settingsIn.wordingV38 === true ? typed : renameOldDefault(typed);
     const out = {
       id: ids[i],
       name: name || (i === 0 ? FIRST_WORKPLACE_NAME : 'Establishment ' + (i + 1)),

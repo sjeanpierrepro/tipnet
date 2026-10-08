@@ -47,6 +47,48 @@ test('parseMoney', () => {
   assert.equal(parseMoney(null), null);
 });
 
+test('parseMoney follows the screens’ comma rules; unclear text is null', () => {
+  const ok = {
+    '212,5': 212.5,
+    '12,50': 12.5,
+    '1,25': 1.25,
+    '1,234': 1234,
+    '1,234.50': 1234.5,
+    '$1,234.50': 1234.5,
+    '12,500.75': 12500.75,
+    '1,000,000': 1000000,
+    '-12,5': -12.5,
+    '(12,50)': -12.5,
+    '(1,234.50)': -1234.5,
+    '$212,5': 212.5,
+    '.5': 0.5,
+  };
+  for (const [s, v] of Object.entries(ok)) assert.equal(parseMoney(s), v, s);
+  for (const s of ['1.234,50', '1.2.3', '1,2,3', '12,345,6', '1,2345', '1.2,5', ',', '1,'])
+    assert.equal(parseMoney(s), null, s);
+});
+
+test('buildNights: a cash cell like "212,5" is 212.50 and an unclear one skips the row as an amount problem', () => {
+  const rows = [
+    ['2026-09-01', '212,5'],
+    ['2026-09-02', '1.234,50'],
+    ['2026-09-03', '1.2.3'],
+    ['2026-09-04', '1,234.50'],
+  ];
+  const { nights, skipped } = buildNights(rows, { date: 0, cash: 1 }, { payId: null });
+  assert.deepEqual(
+    nights.map((n) => [n.date, n.total]),
+    [
+      ['2026-09-01', 212.5],
+      ['2026-09-04', 1234.5],
+    ],
+  );
+  assert.deepEqual(skipped, [
+    { row: 2, reason: 'amount' },
+    { row: 3, reason: 'amount' },
+  ]);
+});
+
 test('parseDate: all supported formats', () => {
   assert.equal(parseDate('2026-09-26'), '2026-09-26');
   assert.equal(parseDate('9/26/2026'), '2026-09-26');
