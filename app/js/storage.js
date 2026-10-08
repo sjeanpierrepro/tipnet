@@ -48,6 +48,12 @@ const renameOldDefault = (name) => {
   const m = OLD_DEFAULT_NAME.exec(name);
   return !m ? name : m[1] ? 'Establishment ' + m[1] : FIRST_WORKPLACE_NAME;
 };
+/** The renamed name, or the next free "<name> 2", "<name> 3"... when it is taken (case-insensitive, as Setup compares). */
+const freeName = (name, taken) => {
+  if (!taken.has(name.toLowerCase())) return name;
+  const base = name.replace(/ [0-9]+$/, '');
+  for (let k = 2; ; k++) if (!taken.has((base + ' ' + k).toLowerCase())) return base + ' ' + k;
+};
 /** The most establishments a save or a backup keeps when it loads (earlier versions let people add up to 12). */
 export const MAX_WORKPLACES = 12;
 /** How many establishments can be ADDED: 3 in the free app, 5 with TipNet Budget unlocked. */
@@ -500,6 +506,11 @@ function cleanProfile(p, { startFallback, entryDefault }) {
   return out;
 }
 
+let migrator = migrateUnsafe;
+/** Test helper: replace the function migrate() runs (to make loading fail on purpose). No argument puts the real one back. */
+export function _setMigrator(fn) {
+  migrator = fn || migrateUnsafe;
+}
 /**
  * Accepts anything (null, prototype v1 shapes both old and new, v2). Returns a fresh, valid v2 state.
  * Never throws for missing or garbage input; returns the seed state instead. Every field is coerced to a
@@ -507,7 +518,7 @@ function cleanProfile(p, { startFallback, entryDefault }) {
  */
 export function migrate(input, { today = todayISO() } = {}) {
   try {
-    return migrateUnsafe(input, today);
+    return migrator(input, today);
   } catch (e) {
     return seedState();
   }
@@ -656,6 +667,10 @@ function migrateUnsafe(input, today) {
     n.workplaceId = ids[rawIdx.has(n.workplaceId) ? rawIdx.get(n.workplaceId) : 0];
   });
 
+  // Names in use, so the one-time rename (renameOldDefault) never makes two establishments share a name.
+  const taken = new Set(
+    rawW.map((w) => (typeof w.name === 'string' ? w.name.trim().slice(0, 40).toLowerCase() : '')),
+  );
   const workplaces = rawW.map((w, i) => {
     const p = w.profile;
     const mine = rawNights.filter((n) => n.workplaceId === ids[i]);
@@ -664,7 +679,11 @@ function migrateUnsafe(input, today) {
     // Existing users keep the meaning of their nightly number: anyone with real nights or their own profile typed totals.
     const realNights = !S.nightsExample && mine.length > 0;
     const typed = typeof w.name === 'string' ? w.name.trim().slice(0, 40) : '';
-    const name = settingsIn.wordingV38 === true ? typed : renameOldDefault(typed);
+    let name = settingsIn.wordingV38 === true ? typed : renameOldDefault(typed);
+    if (name !== typed) {
+      name = freeName(name, taken);
+      taken.add(name.toLowerCase());
+    }
     const out = {
       id: ids[i],
       name: name || (i === 0 ? FIRST_WORKPLACE_NAME : 'Establishment ' + (i + 1)),
@@ -1086,7 +1105,7 @@ const withoutTab = (S) => ({
  */
 function absorb(copy) {
   const none = { changed: false, conflict: false, visible: false };
-  if (!cache || !copy || savedAtOf(copy) <= lastKnown || copy._writer === writerId) return none;
+  if (recovery || !cache || !copy || savedAtOf(copy) <= lastKnown || copy._writer === writerId) return none;
   const theirs = migrate(copy);
   const mine = cache;
   const hadChanges = !base || !same(mine, base);
@@ -1153,6 +1172,17 @@ export async function syncFromStorage() {
   return true;
 }
 
+const RECOVERY_KEY = 'tipnet.recovery';
+let recovery = null; // {at, text}: the stored data load() could not read, while nothing may be saved over it
+function keepRecovery(raw) {
+  const rec = { at: Date.now(), text: JSON.stringify(raw) };
+  lsSet(RECOVERY_KEY, { at: rec.at, data: raw }); // a separate key: the normal copies are never touched
+  return rec;
+}
+/** null normally; {at, text} when the saved data could not be read: the raw copy to download (app.js shows it). */
+export function recoveryInfo() {
+  return recovery;
+}
 /**
  * load(): reads IndexedDB (then localStorage v2, then legacy 'tipnet.v1'), migrates, fills the
  * in-memory cache and returns it. Never throws; falls back to the example state. If IndexedDB does not answer within
@@ -1160,6 +1190,7 @@ export async function syncFromStorage() {
  */
 export async function load() {
   ensureChannel();
+  recovery = null;
   let idbRaw = null;
   try {
     const d = await openDB();
@@ -1169,7 +1200,16 @@ export async function load() {
   }
   let raw = pickNewest(idbRaw, lsGet(LS_KEY));
   if (!raw) raw = lsGet(LEGACY_KEY);
-  cache = migrate(raw);
+  if (raw && typeof raw === 'object') {
+    try {
+      cache = migrator(raw, todayISO());
+    } catch (e) {
+      // Stored data that cannot be read must never be replaced by the example: keep a copy, show the recovery screen,
+      // and write nothing until the person restores or erases (see flush and setState).
+      cache = seedState();
+      recovery = keepRecovery(raw);
+    }
+  } else cache = migrate(raw);
   base = clone(cache);
   lastKnown = savedAtOf(raw);
   written = null;
@@ -1225,6 +1265,7 @@ export function lockFinished({ force = false, today = todayISO() } = {}) {
 /** Replace the whole state (e.g. after restore or erase) and schedule a save. today: for tests (default: the real date). */
 export function setState(next, { today } = {}) {
   const fresh = migrate(next, today ? { today } : undefined);
+  recovery = null; // a restore or an erase is the person's choice: saving may start again
   if (cache && fresh !== cache)
     intoPlace(cache, fresh); // the same state object, so no screen holds a stale one
   else cache = fresh;
@@ -1287,6 +1328,11 @@ export async function flush() {
   }
   const waiters = pending;
   pending = null;
+  if (recovery) {
+    // The stored data could not be read: never write the example over it (see load).
+    if (waiters) waiters.resolve(false);
+    return false;
+  }
   let ok = false;
   if (cache) {
     try {

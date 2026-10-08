@@ -288,3 +288,21 @@ test('a name typed after the upgrade is kept, even if it reads like an old defau
   // a brand-new install is already on the new wording
   assert.equal(migrate(seedState(), { today: TODAY }).settings.wordingV38, true);
 });
+
+test('the one-time rename never makes two establishments share a name', () => {
+  const S = two();
+  delete S.settings.wordingV38;
+  S.workplaces[0].name = 'My restaurant';
+  S.workplaces[1].name = 'my ESTABLISHMENT'; // already taken (any case)
+  S.workplaces.push({ ...S.workplaces[1], id: 'w3', name: 'Restaurant 2' });
+  S.workplaces.push({ ...S.workplaces[1], id: 'w4', name: 'Establishment 2' });
+  S.workplaces.push({ ...S.workplaces[1], id: 'w5', name: 'My restaurant' });
+  const out = migrate(S, { today: TODAY });
+  assert.deepEqual(
+    out.workplaces.map((w) => w.name),
+    ['My establishment 2', 'my ESTABLISHMENT', 'Establishment 3', 'Establishment 2', 'My establishment 3'],
+  );
+  const lower = out.workplaces.map((w) => w.name.toLowerCase());
+  assert.equal(new Set(lower).size, lower.length);
+  assert.deepEqual(migrate(out, { today: TODAY }), out);
+});

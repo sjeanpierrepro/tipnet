@@ -218,14 +218,25 @@ export function listEmployees(rows, mapping) {
  *  Night: {id, date, total, cash|null, [tips], [sales], pay:{[payId]:hours}, barback, [barbackSet: the file said]}. skipped: [{row, reason}] (row = 1-based data row;
  *  reason is 'date', 'amount', 'hours' (unreadable, ambiguous or over 24), or 'negative' for a negative money or hours value).
  */
-/** A yes/no cell: true, false, or null when blank or unreadable. */
+/** A yes/no cell: true, false, or null when blank or unreadable. A number is an amount tipped out: more than 0 = yes, 0 = no
+ *  ("$45.00", "0.00"), read with the same money rules as the other columns. A lone "-" stays "no", as before. */
 export function yesNo(v) {
   const s = String(v == null ? '' : v)
     .trim()
     .toLowerCase();
   if (/^(y|yes|true|1|x|✓|✔)$/.test(s)) return true;
   if (/^(n|no|false|0|-)$/.test(s)) return false;
-  return null;
+  const n = parseMoney(s);
+  if (n == null || n < 0) return null;
+  return n > 0;
+}
+/** True when the cells in a "tipped out" column hold dollar amounts (anything numeric but a plain 0 or 1), so the preview can say how they are read. */
+export function tipoutLooksLikeAmounts(rows, col) {
+  if (col == null) return false;
+  return rows.some((r) => {
+    const s = String(r[col] == null ? '' : r[col]).trim();
+    return !/^[01]$/.test(s) && parseMoney(s) != null;
+  });
 }
 export function buildNights(rows, mapping, opts = {}) {
   const { employee, refYear, rate = 0, payId = 'p1', barback = true, today } = opts;

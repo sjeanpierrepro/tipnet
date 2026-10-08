@@ -136,3 +136,42 @@ test('Total mapped with a blank total on one row: that row falls back to tips + 
   assert.equal(nights[0].total, 200);
   assert.equal(nights[0].tips, undefined);
 });
+
+test('a POS "Tip Out" dollar column: an amount above 0 is tipped out, $0.00 is not', async () => {
+  const { yesNo, tipoutLooksLikeAmounts } = await import('../app/js/csv.js');
+  const hdr = ['Date', 'Net Sales', 'Tips', 'Tip Out', 'Hours'];
+  const m = guessMapping(hdr);
+  const rows = [
+    ['2026-09-10', '$2,000.00', '$300.00', '$45.00', '7'],
+    ['2026-09-11', '$1,500.00', '$220.00', '0.00', '6'],
+    ['2026-09-12', '$1,800.00', '$250.00', '$0.00', '6'],
+    ['2026-09-13', '$1,800.00', '$250.00', '0', '6'],
+    ['2026-09-14', '$1,800.00', '$250.00', '', '6'],
+    ['2026-09-15', '$1,800.00', '$250.00', '-', '6'],
+  ];
+  const { nights } = buildNights(rows, m, { today: '2026-10-08', refYear: 2026, rate: 10, payId: 'p1' });
+  assert.deepEqual(
+    nights.map((n) => [n.barback, !!n.barbackSet]),
+    [
+      [true, true],
+      [false, true],
+      [false, true],
+      [false, true],
+      [true, false],
+      [false, true],
+    ],
+  );
+  for (const [v, want] of [
+    ['yes', true],
+    ['Y', true],
+    ['1', true],
+    ['no', false],
+    ['12.5', true],
+    ['', null],
+    ['abc', null],
+    ['-5', null],
+  ])
+    assert.equal(yesNo(v), want, v);
+  assert.equal(tipoutLooksLikeAmounts(rows, m.barback), true);
+  assert.equal(tipoutLooksLikeAmounts([['yes'], ['no'], ['1'], ['0']], 0), false);
+});
