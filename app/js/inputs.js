@@ -79,9 +79,9 @@ export function negativeCheckReason(c) {
 /**
  * Read an hours/shifts field. "7:30" = 7.5, "7h 30m" = 7.5, "7.5" = 7.5, "7,5" = 7.5 (a lone comma before 1-2 digits
  * is a decimal comma). A leading minus stays negative ("-5" = -5, "-7:30" = -7.5), so the screens can refuse it
- * instead of flipping it. Empty or junk -> 0. This is the one hours parser in the app (the CSV import uses it too).
- * "1,250" or "1,250.5" is ambiguous (thousands? decimal?): with { strict: true } (CSV import) it returns NaN so the row
- * can be rejected; otherwise the comma is ignored (1250, which the screens refuse as more than 24 hours).
+ * instead of flipping it. Empty or junk -> 0. This is the one hours parser in the app.
+ * "1,250" or "1,250.5" is ambiguous (thousands? decimal?): the comma is ignored (1250, which the screens refuse as more than
+ * 24 hours).
  */
 const HOURS_UNIT = 'h(?:ours?|rs?)?';
 // "7h30", "7h 30", "7h 30m": the minutes after the unit may skip the "m".
@@ -106,16 +106,13 @@ function dropEndPeriod(s) {
   if (/^\d.*[a-z]\.$/i.test(s) || /^\d+(?:\.\d+)?\.$/.test(s)) return s.slice(0, -1);
   return s;
 }
-export function parseHoursInput(v, { strict = false } = {}) {
+export function parseHoursInput(v) {
   let s = String(v == null ? '' : v).trim();
   const neg = /^[-−]/.test(s);
   if (neg) s = s.slice(1).trim();
-  s = normHours(dropEndPeriod(s), !strict); // a Shifts box reads "1 shift"; a CSV hours cell does not
+  s = normHours(dropEndPeriod(s), true); // a Shifts box reads "1 shift"
   const sign = neg ? -1 : 1;
   let x;
-  // CSV import: text the screens refuse ("1.2.3", "12abc", "seven") is NaN so the row is skipped, never read as its digits.
-  if (strict && !hoursShape(s)) return NaN;
-  if (strict && (/^\d*,\d+(?:\.\d+)?$/.test(s) || /^\d+(?:,\d{3})+(?:\.\d+)?$/.test(s))) return NaN;
   if ((x = CLOCK_RE.exec(s))) return sign * (+x[1] + +x[2] / 60);
   if ((x = HM_RE.exec(s))) return sign * (+x[1] + (x[2] ? +x[2] / 60 : 0));
   if ((x = FRAC_RE.exec(s))) return sign * (+(x[1] || 0) + FRACS[x[2]]);

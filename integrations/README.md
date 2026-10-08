@@ -3,17 +3,13 @@
 A source is any object with this shape:
 
 ```js
-{ id: 'csv', label: 'CSV file', fetchNights(range) -> Promise<night[]> }
+{ id: 'toast', label: 'Toast', fetchNights(range) -> Promise<night[]> }
 ```
 
 - `range` is `{ from?, to? }` with `YYYY-MM-DD` strings (inclusive, both optional).
 - A `night` is `{ id, date, total, cash|null, pay: {[payTypeId]: amount}, barback }`, the same shape the app stores.
-- Sources only return nights. The UI decides what to import (dedupe with `dedupeNights` / `mergeNights` in `app/js/csv.js`).
+- Sources only return nights.
 
-`source.js` has:
+`source.js` has `toastSource`: a stub. `fetchNights()` throws "Toast import is not available yet."
 
-- `csvSource({ text, mapping, opts, hasHeader })`: parses a CSV the user picked, on the device.
-- `toastSource`: a stub. `fetchNights()` throws "Toast import is not available yet."
-
-To add Toast in Phase 2 with a CSV export, add a `toast` entry to `MAPPING_PRESETS` in `app/js/csv.js`
-(there is a commented placeholder). Nothing here makes network calls, and none should be added to the app.
+TipNet has no spreadsheet (CSV) import (owner decision, see DECISIONS.md). Nothing here makes network calls, and none should be added to the app.

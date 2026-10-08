@@ -314,3 +314,15 @@ test('migrate: old calib entries stay valid, new ones keep period info, impossib
     ['2026-02-28'],
   );
 });
+
+test('migrate: a csvMapping left in old saved settings is dropped quietly (the CSV import is gone)', async () => {
+  const { migrate } = await import('../app/js/storage.js');
+  const r = migrate({
+    schemaVersion: 3,
+    settings: { theme: 'dark', csvMapping: { date: 'Date' } },
+    workplaces: [],
+    nights: [],
+  });
+  assert.ok(r, 'still loads');
+  assert.equal('csvMapping' in r.settings, false);
+});

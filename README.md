@@ -69,7 +69,7 @@ Both give you an https link that works on any device.
 - `tests/` — automated tests: the money math, storage, budget and the screens.
 - `tools/` — build and check scripts (make-icons.ps1, check-version.mjs, run-dates.mjs, and fake-today.mjs, which run-dates preloads to fake the date).
 - `app/js/math.js` — pure math functions (no buttons or screens). This is what the tests check.
-- `integrations/` — the "Toast seam" (kept outside `app/` so it isn't published). Today TipNet imports any CSV file (Setup > Import nights). Toast has no built-in support yet: once a real Toast export is available, it becomes a saved column preset in `app/js/csv.js` (see `integrations/README.md`). A live Toast connection would need a server and is not part of this app.
+- `integrations/` — the "Toast seam" (kept outside `app/` so it isn't published). TipNet has no spreadsheet (CSV) import. Toast has no built-in support yet (see `integrations/README.md`). A live Toast connection would need a server and is not part of this app.
 - `archive/` — the original approved prototype, kept for reference.
 
 ## How your staff installs TipNet

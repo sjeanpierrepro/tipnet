@@ -30,7 +30,7 @@ const STATE_KEY = 'state';
  *   workplaces: [{id, name, profile, calib, setupDone?, guideSkipped?, noDeductions?}]  one per restaurant, each with its own
  *               pay schedule, paystub, jobs, tip-out and entry mode (profile) and its own "Check my accuracy" history (calib).
  *   nights:     [{..., workplaceId}]  every night belongs to one restaurant.
- *   settings:   {theme:'auto'|'light'|'dark', lastTab, csvMapping, activeWorkplaceId, periodsFilter?, dayCutoffHour?, guidedDraft?,
+ *   settings:   {theme:'auto'|'light'|'dark', lastTab, activeWorkplaceId, periodsFilter?, dayCutoffHour?, guidedDraft?,
  *                lastBackupAt?, backupNudgeUntil?, nightsSinceBackup?, backupNightsAt?, iosNoteSeen?, wordingV38?, entitlement?}
  *               (shared by every restaurant)
  *   budget:     see budget.js (shared: bills are paid from all money; a goal may name the restaurant it is saved from, fundedBy).
@@ -85,7 +85,6 @@ export function seedState() {
     settings: {
       theme: 'auto',
       lastTab: 'tonight',
-      csvMapping: null,
       activeWorkplaceId: 'w1',
       wordingV38: true,
     },
@@ -418,19 +417,10 @@ function cleanSettings(x, ids) {
   const out = {
     theme: ['auto', 'light', 'dark'].includes(s.theme) ? s.theme : 'auto',
     lastTab: ['tonight', 'periods', 'budget', 'setup'].includes(s.lastTab) ? s.lastTab : 'tonight',
-    csvMapping: null,
     activeWorkplaceId: ids.includes(s.activeWorkplaceId) ? s.activeWorkplaceId : ids[0],
   };
   // Pay periods filter: 'all' or one restaurant (remembered; dropped when that restaurant is gone).
   if (s.periodsFilter === 'all' || ids.includes(s.periodsFilter)) out.periodsFilter = s.periodsFilter;
-  if (isObj(s.csvMapping)) {
-    const m = {};
-    Object.keys(s.csvMapping).forEach((k) => {
-      const v = s.csvMapping[k];
-      if (v === null || ['string', 'number', 'boolean'].includes(typeof v)) m[k] = v;
-    });
-    out.csvMapping = m;
-  }
   // (setupDone, guideSkipped and noDeductions live on each restaurant since v3; see migrateUnsafe.)
   // "Late nights" rule: shifts logged before this hour count as the night before (0 = off). Kept only when it's a whole hour 0-12.
   if (Number.isInteger(s.dayCutoffHour) && s.dayCutoffHour >= 0 && s.dayCutoffHour <= 12)
@@ -578,7 +568,7 @@ export function orderNight(n) {
   return n;
 }
 /**
- * A night with no list of who was tipped out (saved before several tip-outs, or imported from a CSV file) only says
+ * A night with no list of who was tipped out (saved before several tip-outs) only says
  * everyone or nobody (night.barback). Pin that to the people set up now (its snapshot's people once it is locked: call
  * it after locking), in place, so someone added to Setup later is never counted on it. Returns how many nights got a list.
  */

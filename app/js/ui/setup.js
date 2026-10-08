@@ -58,7 +58,6 @@ import {
 } from './common.js';
 import { cutoffFromSettings, readMoney, moneyTypo, percentTypo } from '../inputs.js';
 import {
-  isSetUp,
   isWorkplaceSetUp,
   activeWorkplace,
   findWorkplace,
@@ -70,7 +69,6 @@ import {
   lockFinished,
   flush,
 } from '../storage.js';
-import { renderImporter } from './importer.js';
 import { renderBackup, renderInstall } from './backup.js';
 import { redateDraft, dropDraft, nightsWithoutSales } from './tonight.js';
 
@@ -2736,24 +2734,8 @@ function fullPage(root, S, active) {
   endDraftToasts(); // a draft that was closed or replaced (e.g. removed in another window)
   if (restoreRequest.open) foldOpen.add('backup');
   const many = S.workplaces.length > 1;
-  const importHost = el('div'),
-    installHost = el('div'),
+  const installHost = el('div'),
     backupHost = el('div');
-  // Imported nights would count as "set up" and be worked out with whatever paystub is here, so the importer waits for the basics.
-  if (isSetUp(S)) renderImporter(importHost);
-  else
-    importHost.append(
-      el(
-        'section',
-        null,
-        el('h2', null, 'Import'),
-        el(
-          'p',
-          { class: 'hint' },
-          'You can import nights from a spreadsheet once your paystub numbers are in.',
-        ),
-      ),
-    );
   renderInstall(installHost);
   renderBackup(backupHost);
   const ctx = { S }; // the shared cards only use the state
@@ -2794,12 +2776,6 @@ function fullPage(root, S, active) {
       ),
       foldRow('cutoff', 'Late nights', cutoffText, inner(cutoffCard(ctx))),
       foldRow('theme', 'Appearance', themeText, inner(themeCard(ctx))),
-      foldRow(
-        'import',
-        'Import nights',
-        () => 'From a spreadsheet (.csv) file',
-        inner(importHost.firstElementChild),
-      ),
       foldRow('install', 'Install TipNet', () => 'Open it like an app', inner(installHost.firstElementChild)),
       foldRow('backup', 'Backups', lastBackup, inner(backupHost.firstElementChild)),
       sub
