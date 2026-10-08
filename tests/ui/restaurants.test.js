@@ -1,4 +1,4 @@
-// Several restaurants in the app: Setup (add, rename, remove), Tonight (switching), Pay periods (filter, accuracy), import.
+// Several restaurants in the app: Setup (add, rename, remove), Tonight (switching), Pay periods (filter, accuracy).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { boot, realState } from './harness.js';
@@ -168,7 +168,7 @@ test('setup: rename and remove (two taps, says how many nights go, Undo brings b
   }
 });
 
-test('setup: shared settings (late nights, theme, backup) stay global; the importer asks which establishment', async () => {
+test('setup: shared settings (late nights, theme, backup) stay global', async () => {
   const page = await boot({ seed: twoState() });
   try {
     page.tab('setup');
@@ -318,55 +318,6 @@ test('pay periods: All / one establishment filter (remembered), names under All,
     page.tab('tonight');
     page.tab('periods');
     assert.equal(checked(page, 'Show pay periods for').textContent, 'Second Spot', 'remembered');
-  } finally {
-    await page.close();
-  }
-});
-
-/* ---------- Spreadsheet import ---------- */
-test('import: with two establishments it asks which one; duplicate dates are looked for at that establishment only', async () => {
-  const seed = twoState((S) => {
-    S.nights = [
-      {
-        id: 'ex',
-        date: addDays(todayISO(), -40),
-        total: 50,
-        cash: 10,
-        pay: {},
-        barback: true,
-        workplaceId: 'w1',
-      },
-    ];
-  });
-  const page = await boot({ seed });
-  try {
-    page.tab('setup');
-    const input = page.must(page.$('input[type=file]', page.app), 'file input');
-    // dated relative to (fake) today, so the file is never in the future (tools/run-dates.mjs)
-    const d = (n) => addDays(todayISO(), n);
-    const csv = ['Date,Total,Cash', d(-41) + ',120,40', d(-40) + ',90,30'].join('\n');
-    Object.defineProperty(input, 'files', {
-      value: [{ name: 'spot.csv', text: async () => csv }],
-      configurable: true,
-    });
-    page.change(input);
-    await page.settle();
-    const sel = page.must(page.$('#map-workplace'), 'establishment select');
-    assert.match(page.text(), /Which establishment are these nights from\?/);
-    assert.match(page.text(), /Choose the establishment above to see a preview/);
-    assert.equal(
-      page.byText('button', 'Import 2 nights'),
-      null,
-      'nothing to import until an establishment is picked',
-    );
-    sel.value = 'w2';
-    page.change(sel);
-    assert.match(page.text(), /2 nights ready to import to Second Spot/);
-    assert.doesNotMatch(page.text(), /already ha/, 'the Sep 2 night is at Voodoo Bayou, not here');
-    page.click(page.button('Import 2 nights'));
-    const S = page.state();
-    assert.equal(nightsOf(S, 'w2').length, 2);
-    assert.equal(nightsOf(S, 'w1').length, 1);
   } finally {
     await page.close();
   }

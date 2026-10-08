@@ -63,7 +63,7 @@ test('the math uses the night’s own "I tip out": Setup’s switch never change
 test('loading: every night gets the switch it was most likely saved with; switching it later changes no night', () => {
   const S = migrate(
     state(prof(false), [
-      // saved while it was off: no list yet (an older save, or a CSV import) and the draft's "everyone" (barback true)
+      // saved while it was off: no list yet (an older save, or a v37 page) and the draft's "everyone" (barback true)
       night({ id: 'a', tipouts: undefined }),
       night({ id: 'b' }),
       // locked with tip-outs on (its period ended): its snapshot's switch

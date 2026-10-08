@@ -3,7 +3,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as M from '../app/js/math.js';
 import { migrate, encodeBackup, decodeBackup, pinTipouts } from '../app/js/storage.js';
-import { buildNights, mergeNights, guessMapping, yesNo } from '../app/js/csv.js';
 
 const today = '2026-09-20';
 const BARBACK = { id: 't1', k: 'barback', who: 'Barback', mode: 'pctTips', value: 15, from: 'cash' };
@@ -313,7 +312,7 @@ test('an older night keeps the people set up when it was saved: someone added to
   const after = M.computeNight(n, p, 10);
   assert.equal(after.tipout, before.tipout);
   assert.equal(after.net, before.net);
-  // nights with no list (an import): nobody stays nobody, everyone is everyone set up right now, and only once
+  // nights with no list (older saves): nobody stays nobody, everyone is everyone set up right now, and only once
   const off = { id: 'n2', date: today, total: 300, cash: 100, pay: {}, barback: false, workplaceId: 'w1' };
   const imp = { id: 'n3', date: today, total: 300, cash: 100, pay: {}, barback: true, workplaceId: 'w1' };
   assert.equal(pinTipouts(out.workplaces, [off, imp]), 2);
@@ -322,7 +321,7 @@ test('an older night keeps the people set up when it was saved: someone added to
   assert.equal(pinTipouts(out.workplaces, [off, imp]), 0);
 });
 
-test('imported nights are pinned when the import locks, before a Setup change can add someone', async () => {
+test('nights with no list are pinned when they lock, before a Setup change can add someone', async () => {
   const S = await import('../app/js/storage.js');
   const st = S.setState(oldState({ on: true, mode: 'pct', value: 15, basis: 'before', from: 'cash' }), {
     today,
@@ -336,64 +335,4 @@ test('imported nights are pinned when the import locks, before a Setup change ca
     c.tipouts.map((l) => l.who),
     ['Barback'],
   );
-});
-
-/* ---------- CSV ---------- */
-test('CSV: a tipped-out column maps to everyone or nobody; a Sales column adds up per date', () => {
-  assert.equal(yesNo('Yes'), true);
-  assert.equal(yesNo('x'), true);
-  assert.equal(yesNo('no'), false);
-  assert.equal(yesNo('0'), false);
-  assert.equal(yesNo(''), null);
-  const head = ['Date', 'Tips', 'Hours', 'Net Sales', 'Tip-out'];
-  const m = guessMapping(head);
-  assert.equal(m.sales, 3);
-  assert.equal(m.barback, 4);
-  assert.equal(m.tips, 1, 'the tip-out column is never taken for tips');
-  const { nights } = buildNights(
-    [
-      ['9/5/2026', '$300', '7', '$1,000', 'yes'],
-      ['9/5/2026', '$50', '1', '$200.50', 'no'],
-      ['9/6/2026', '$100', '5', '', 'no'],
-      ['9/7/2026', '$100', '5', '', ''],
-    ],
-    m,
-    { rate: 12, payId: 'p1' },
-  );
-  assert.equal(nights[0].sales, 1200.5);
-  assert.equal(nights[0].barback, true);
-  assert.equal(nights[0].barbackSet, true);
-  assert.equal(nights[1].barback, false);
-  assert.equal('sales' in nights[1], false);
-  assert.equal(nights[2].barback, true, 'a blank cell: the default');
-  assert.equal('barbackSet' in nights[2], false);
-  assert.deepEqual(
-    buildNights([['9/5/2026', '$300', '7', '-$5', '']], m, { rate: 12, payId: 'p1' }).skipped,
-    [{ row: 1, reason: 'negative' }],
-  );
-});
-
-test('CSV overwrite: the file’s tipped-out choice wins; without one the saved night keeps its own', () => {
-  const ex = [
-    { id: 'a', date: '2026-09-05', total: 1, pay: {}, barback: true, tipouts: { t1: true, t2: false } },
-  ];
-  const fromFile = mergeNights(
-    ex,
-    [{ id: 9, date: '2026-09-05', total: 200, pay: {}, barback: false, barbackSet: true }],
-    {
-      overwrite: true,
-    },
-  ).nights[0];
-  assert.equal(fromFile.barback, false);
-  assert.equal('tipouts' in fromFile, false);
-  assert.equal('barbackSet' in fromFile, false);
-  const kept = mergeNights(ex, [{ id: 9, date: '2026-09-05', total: 200, pay: {}, barback: true }], {
-    overwrite: true,
-  }).nights[0];
-  assert.deepEqual(kept.tipouts, { t1: true, t2: false });
-  const fresh = mergeNights(
-    [],
-    [{ id: 9, date: '2026-09-06', total: 2, pay: {}, barback: true, barbackSet: true }],
-  ).nights[0];
-  assert.equal('barbackSet' in fresh, false);
 });

@@ -43,7 +43,7 @@ test('setup rows: after setup each establishment is one closed row with a summar
     assert.equal(sum('w1'), 'Bartender $12/h · every two weeks');
     assert.match(sum('w2'), /^Bartender \$15\/h · every two weeks · payday (Mon|Tue|Wed|Thu|Fri|Sat|Sun)$/);
     assert.equal(row(page, 'w1').closest('h2').tagName, 'H2', 'each row is a heading with a button');
-    for (const k of ['cutoff', 'theme', 'import', 'install', 'backup', 'privacy']) {
+    for (const k of ['cutoff', 'theme', 'install', 'backup', 'privacy']) {
       const b = page.must(page.$('#fold-' + k), 'shared row ' + k);
       assert.equal(b.getAttribute('aria-expanded'), 'false', k);
       assert.equal(page.$('#fold-body-' + k).hidden, true, k);

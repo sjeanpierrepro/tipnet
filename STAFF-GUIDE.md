@@ -53,7 +53,7 @@ Enter: start Sep 1, end Sep 14, shifts 10, every two weeks, gross $2,000, the fo
 
 Type amounts with numbers and one decimal point, like 12.50 (a $ sign and commas like 1,250 are fine). If a box has something TipNet can’t read, like 1.2.3, it tells you and won’t save it until you fix it.
 
-Something changed (raise, new insurance)? Update it in **Setup**. Once you are set up, Setup shows each establishment as one line (for example "Bartender $12/h · every two weeks · payday Fri"). Tap it to open everything for that establishment, make your changes, then tap **Save** (or **Cancel** to throw them away). Nothing changes until you save; if you leave with changes not saved, TipNet asks **Save changes?** first. The shared settings below (Late nights, Appearance, Import nights, Install TipNet, Backups) are one line each too; tap to open them. Those apply right away.
+Something changed (raise, new insurance)? Update it in **Setup**. Once you are set up, Setup shows each establishment as one line (for example "Bartender $12/h · every two weeks · payday Fri"). Tap it to open everything for that establishment, make your changes, then tap **Save** (or **Cancel** to throw them away). Nothing changes until you save; if you leave with changes not saved, TipNet asks **Save changes?** first. The shared settings below (Late nights, Appearance, Install TipNet, Backups) are one line each too; tap to open them. Those apply right away.
 
 **Work at a second establishment?** In **Setup**, tap **+ Set up another establishment**, type its name, and do the same three steps with a paystub from there. Its pay schedule, jobs and tip-out are kept apart from the first one. You can have up to 3 establishments in the free app, or up to 5 with TipNet Budget. To rename or remove an establishment, open its line in Setup (removing one also removes its nights; **Undo** brings them back).
 
@@ -78,11 +78,18 @@ The estimate usually gets closer after a check or two. Changing gross pay or a d
 
 ---
 
+## Nightly reminder (optional)
+
+TipNet cannot send its own notifications (it has no server), so the reminder is an event in your phone's calendar. In **Setup**, open **Nightly reminder**, pick the time (a late time like 2:00 AM is fine) and the days you work, then tap **Add to my calendar** and open the file your phone saves. Your calendar repeats the reminder every week.
+
+To change it later, add a new one the same way and delete the old reminder in your calendar.
+
 ## Good to know
 
 - **Logging after midnight?** Before 6 a.m. it is saved as the night before.
 - **Paycheck counted a night in another pay period?** In **Pay periods**, tap **Edit** on that night and pick the pay period it counts toward under **Counts toward the pay period that started:** (the pay period before, its own, or the next). If that changes a pay period that has already ended (for example moving a night back into the pay period that just ended), TipNet asks first. Changing a night's date moves it to that date's pay period (TipNet asks first if a finished period is involved).
 - **Your data stays on your phone.** Your bar cannot see it. Every 10 nights you log, Tonight offers **Save backup file** (tap **Not now** to be asked again 10 nights later). Keep the file somewhere safe, like your email.
+- **"Update available: Refresh"** means a new version is ready. Close any other TipNet windows or tabs, then tap **Refresh**. If your browser asks "Leave site?", choose **Leave**. Your nights are kept.
 - **It is an estimate,** not an exact paycheck.
 - **Tax questions?** Ask payroll or a tax professional. TipNet is not tax advice.
 

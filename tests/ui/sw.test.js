@@ -208,7 +208,7 @@ test('sw: install precaches the whole shell with cache: reload into the versione
 });
 
 test('sw: install fails when a shell file fails to download, so the old version stays in charge', async () => {
-  const sw = load(async (url) => new Response('x', { status: url.endsWith('js/csv.js') ? 404 : 200 }));
+  const sw = load(async (url) => new Response('x', { status: url.endsWith('js/math.js') ? 404 : 200 }));
   const old = sw.open('tipnet-v1'); // the previous, complete version
   old.set(ORIGIN + '/index.html', new Response('old'));
   await assert.rejects(sw.lifecycle('install'));

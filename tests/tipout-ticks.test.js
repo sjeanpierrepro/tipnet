@@ -104,7 +104,7 @@ test('locking with the period’s snapshot carries the ticks over to its people 
   assert.deepEqual(alone.tipouts, { t9: true });
 });
 
-test('a CSV night imported into a finished period is pinned to the people it is locked with (lock, then pin)', async () => {
+test('a night with no list added to a finished period is pinned to the people it is locked with (lock, then pin)', async () => {
   // Setup now: the barback is gone, a runner was added; the period's locked night has the barback
   const old = prof([BARBACK]);
   const now = prof([RUNNER]);
@@ -121,7 +121,7 @@ test('a CSV night imported into a finished period is pinned to the people it is 
     },
     { today },
   );
-  // the importer adds the night (no list of who was tipped out: "yes" = everyone), then locks
+  // a night is added (no list of who was tipped out: "yes" = everyone), then locks
   st.nights.push(night('i1', '2026-09-12'));
   S.lockFinished({ force: true, today });
   const imp = st.nights.find((n) => n.id === 'i1');

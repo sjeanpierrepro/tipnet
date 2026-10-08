@@ -1,12 +1,11 @@
 // A "% of sales" tip-out on a night with no sales counts $0: every screen says so instead of leaving it out silently
-// (Tonight's result card, Pay periods rows and the night editor, the CSV import preview, and Setup when someone is
+// (Tonight's result card, Pay periods rows and the night editor, and Setup when someone is
 // switched to "% of sales" while saved nights have no sales).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { boot, realState } from './harness.js';
-import { todayISO, addDays, computeNight } from '../../app/js/math.js';
+import { addDays, computeNight } from '../../app/js/math.js';
 
-const today = todayISO();
 const BARBACK = { id: 't1', k: 'barback', who: 'Barback', mode: 'pctTips', value: 15, from: 'cash' };
 const RUNNER = { id: 't2', k: 'runner', who: 'Runner', mode: 'pctSales', value: 1.25, from: 'payroll' };
 const seed = (list = [BARBACK, RUNNER], mutate) =>
@@ -90,79 +89,6 @@ test('Pay periods: a night without sales says who isn’t counted; the editor as
     );
   } finally {
     await page.close();
-  }
-});
-
-/* ---------- CSV import ---------- */
-// Fixture dates are written as September 2026 and moved to about six weeks before (fake) today (see importer.test.js).
-const day = (n) => addDays(today, n - 45);
-const dated = (s) => s.replace(/2026-09-(\d\d)/g, (_, d) => day(Number(d)));
-async function pickFile(page, name, text) {
-  const input = page.must(page.$('input[type=file]', page.app), 'file input');
-  Object.defineProperty(input, 'files', {
-    value: [{ name, text: async () => dated(text) }],
-    configurable: true,
-  });
-  page.change(input);
-  await page.settle();
-}
-const warning = (page) => page.$('#import-sales-warning', page.app);
-
-test('CSV import: no Sales column (or rows without sales) warns who won’t be counted, before importing', async () => {
-  const page = await boot({ seed: seed() });
-  try {
-    page.tab('setup');
-    await pickFile(page, 'x.csv', 'Date,Tips,Hours\n2026-09-05,300,7\n2026-09-06,200,6');
-    assert.match(page.text(), /2 nights ready to import/);
-    const w = page.must(warning(page), 'sales warning');
-    assert.match(
-      w.textContent,
-      /No Sales column is chosen, so Runner \(1\.25% of sales\) won’t be counted on these nights\./,
-    );
-    assert.match(w.textContent, /add each night’s sales in Pay periods/);
-    // the warning comes before the Import button
-    const go = page.button('Import 2 nights');
-    assert.ok(w.compareDocumentPosition(go) & page.win.Node.DOCUMENT_POSITION_FOLLOWING);
-  } finally {
-    await page.close();
-  }
-  const p2 = await boot({ seed: seed() });
-  try {
-    p2.tab('setup');
-    // one row has no sales; another says nobody was tipped out (no sales needed there)
-    await pickFile(
-      p2,
-      'x.csv',
-      'Date,Tips,Hours,Net Sales,Tip-out\n2026-09-05,300,7,1000,yes\n2026-09-06,200,6,,yes\n2026-09-07,100,5,,no',
-    );
-    assert.equal(p2.$('#map-sales').value, '3');
-    const w = p2.must(warning(p2), 'sales warning');
-    assert.match(
-      w.textContent,
-      /1 night has no sales, so Runner \(1\.25% of sales\) won’t be counted on it\. Add its sales in Pay periods after importing/,
-    );
-    p2.click(p2.button('Import 3 nights'));
-    await p2.settle();
-    assert.equal(p2.state().nights.length, 3, 'a warning, not a block');
-  } finally {
-    await p2.close();
-  }
-  // every row has sales, or nobody gets a % of sales: no warning
-  const p3 = await boot({ seed: seed() });
-  try {
-    p3.tab('setup');
-    await pickFile(p3, 'x.csv', 'Date,Tips,Hours,Sales\n2026-09-05,300,7,1000');
-    assert.equal(warning(p3), null);
-  } finally {
-    await p3.close();
-  }
-  const p4 = await boot({ seed: seed([BARBACK]) });
-  try {
-    p4.tab('setup');
-    await pickFile(p4, 'x.csv', 'Date,Tips,Hours\n2026-09-05,300,7');
-    assert.equal(warning(p4), null);
-  } finally {
-    await p4.close();
   }
 });
 

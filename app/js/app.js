@@ -90,6 +90,25 @@ function errorScreen(root) {
       afterFix();
     },
   });
+  if (rec && rec.newer) {
+    // Saved by a newer TipNet (this tab is an older copy): nothing is read or written until this one is updated.
+    const reload = el('button', { type: 'button', class: 'btn btn-primary' }, 'Reload');
+    reload.addEventListener('click', () => location.reload());
+    root.append(
+      el(
+        'section',
+        { class: 'card stack' },
+        el('h2', { tabindex: '-1' }, 'This data was saved by a newer version of TipNet. Reload to update.'),
+        el(
+          'p',
+          { class: 'note' },
+          'Your saved data is still on this device and nothing has been changed or saved over it. If Reload does not fix it, download your data first so you have a copy.',
+        ),
+        el('div', { class: 'cluster' }, reload, download),
+      ),
+    );
+    return;
+  }
   root.append(
     el(
       'section',
@@ -167,10 +186,11 @@ function render() {
   window.scrollTo(0, y);
 }
 
+/** Returns false when Setup is asking "Save changes?" first (go runs again, with the same opts, after Save or Discard). */
 function go(tab, opts = {}) {
-  const { focus = false, preview: asPreview = false } = opts;
+  const { focus = false, preview: asPreview = false, after } = opts; // after: runs once the tab is drawn (e.g. land on a card)
   // Leaving Setup with unsaved restaurant changes: it asks "Save changes to <name>?" first, then comes back here.
-  if (current === 'setup' && tab !== 'setup' && setup.confirmLeave(() => go(tab, opts))) return;
+  if (current === 'setup' && tab !== 'setup' && setup.confirmLeave(() => go(tab, opts))) return false;
   if (tab !== 'budget') preview = false;
   else if (asPreview) preview = true;
   if (!SCREENS[tab] || (tab === 'budget' && !budgetOpen())) tab = 'tonight';
@@ -196,6 +216,8 @@ function go(tab, opts = {}) {
   }
   render();
   if (!focus) window.scrollTo(0, 0);
+  if (after) after();
+  return true;
 }
 
 function wireTabs() {

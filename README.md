@@ -14,6 +14,7 @@ All the numbers stay on your phone or computer. Your bar cannot see them. No acc
 - **Setup stays tidy**: once set up, Setup shows each establishment as one line with a short summary. Tap it to edit, then **Save** (or **Cancel**); leaving with unsaved changes asks first. Shared settings are one line each and apply right away.
 - **Non-taxable earnings**: reimbursements and allowances your stub lists as non-taxable are left out of the tax rate; the ones on every check are added to your estimate without tax.
 - **Track accuracy**: At the end of a pay period, enter your actual paycheck and let TipNet learn. Each check you compare brings the next estimate closer.
+- **Nightly reminder**: in Setup, pick a time and the days you work and tap **Add to my calendar**. Your phone's calendar then reminds you each night to log in TipNet (TipNet has no server, so the reminder is a calendar event).
 - **Install like an app**: Tap "Install to home screen" in your browser. It works on iPhone, Android, Windows, and Mac.
 
 ## How to run TipNet
@@ -69,7 +70,7 @@ Both give you an https link that works on any device.
 - `tests/` — automated tests: the money math, storage, budget and the screens.
 - `tools/` — build and check scripts (make-icons.ps1, check-version.mjs, run-dates.mjs, and fake-today.mjs, which run-dates preloads to fake the date).
 - `app/js/math.js` — pure math functions (no buttons or screens). This is what the tests check.
-- `integrations/` — the "Toast seam" (kept outside `app/` so it isn't published). Today TipNet imports any CSV file (Setup > Import nights). Toast has no built-in support yet: once a real Toast export is available, it becomes a saved column preset in `app/js/csv.js` (see `integrations/README.md`). A live Toast connection would need a server and is not part of this app.
+- `integrations/` — the "Toast seam" (kept outside `app/` so it isn't published). TipNet has no spreadsheet (CSV) import. Toast has no built-in support yet (see `integrations/README.md`). A live Toast connection would need a server and is not part of this app.
 - `archive/` — the original approved prototype, kept for reference.
 
 ## How your staff installs TipNet
@@ -87,7 +88,9 @@ TipNet is built for current versions of Safari (iPhone and Mac), Chrome (Android
 
 **What was and was not tested**: The money math is covered by automated tests (`npm test`). The screens were checked in a desktop Chromium browser at phone and desktop sizes, in both themes. The service worker was verified in desktop Chrome on Windows 11: it registers, the app works offline after the local server is stopped, the install prompt fires, and the update bar appears after a `VERSION` bump.
 
-**Not tested**: a Lighthouse audit, actually installing the app, iPhone Safari, Android Chrome, Edge, and macOS. TipNet is deployed on GitHub Pages, but the live site has not been checked on real phones yet. Before the pilot, install it on one iPhone and one Android phone, turn on airplane mode, and reopen it to confirm it works offline.
+**Also tested in real Edge on Windows (desktop)**: the v37 to v38 upgrade, offline use, and the update bar.
+
+**Not tested**: a Lighthouse audit, real phones (the iPhone home-screen app and Android Chrome), and macOS. TipNet is deployed on GitHub Pages, but the live site has not been checked on real phones yet. Before the pilot, install it on one iPhone and one Android phone, turn on airplane mode, and reopen it to confirm it works offline.
 
 ## Releasing an update
 

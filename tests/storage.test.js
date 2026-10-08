@@ -91,7 +91,7 @@ test('migrate: oldest prototype shape (hourly/hours/fed/other/ss/med/fixed)', ()
 
 test('migrate: newer prototype shape gets k, periodEnd and schemaVersion, keeps data', () => {
   const s = migrate(MIDDLE());
-  assert.equal(s.schemaVersion, 3);
+  assert.equal(s.schemaVersion, SCHEMA_VERSION);
   assert.equal(s.workplaces[0].profile.periodEnd, '');
   assert.equal(s.workplaces[0].profile.payTypes[0].k, 'hourly');
   assert.equal(s.workplaces[0].profile.payTypes[1].k, 'other');
@@ -107,7 +107,7 @@ test('migrate is idempotent, does not mutate its input, and survives garbage', (
   assert.deepEqual(migrate(once), once);
   for (const bad of [null, undefined, 5, 'x', {}, { profile: 3 }]) {
     const s = migrate(bad);
-    assert.equal(s.schemaVersion, 3);
+    assert.equal(s.schemaVersion, SCHEMA_VERSION);
     assert.equal(s.profileExample, true);
     assert.equal(s.nights.length, 4);
   }
@@ -145,7 +145,7 @@ test('a prototype backup code restores (both shapes, unicode name)', () => {
   const s = decodeBackup(protoEncode(mid));
   assert.equal(s.workplaces[0].profile.payTypes[0].name, 'Bar – naïve');
   assert.equal(s.nights.length, 1);
-  assert.equal(s.schemaVersion, 3);
+  assert.equal(s.schemaVersion, SCHEMA_VERSION);
   const old = decodeBackup(protoEncode(OLDEST()));
   assert.equal(old.workplaces[0].profile.deductions.length, 5);
   assert.equal(old.nights.length, 2);
@@ -313,4 +313,16 @@ test('migrate: old calib entries stay valid, new ones keep period info, impossib
     S.nights.map((n) => n.date),
     ['2026-02-28'],
   );
+});
+
+test('migrate: a csvMapping left in old saved settings is dropped quietly (the CSV import is gone)', async () => {
+  const { migrate } = await import('../app/js/storage.js');
+  const r = migrate({
+    schemaVersion: 3,
+    settings: { theme: 'dark', csvMapping: { date: 'Date' } },
+    workplaces: [],
+    nights: [],
+  });
+  assert.ok(r, 'still loads');
+  assert.equal('csvMapping' in r.settings, false);
 });

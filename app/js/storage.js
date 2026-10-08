@@ -13,9 +13,12 @@ import {
   TIPOUT_PRESETS,
   TIPOUT_MODES,
 } from './math.js';
+import { TIME_RE, UID_RE, cleanDays } from './ics.js';
 import { emptyBudget, migrateBudget } from './budget.js';
 
-export const SCHEMA_VERSION = 3;
+// 4 = v38 (establishments' tip-out people, pinned nights). migrate() reads every older version; data from a NEWER version
+// is never opened or saved over (see newerSchema and load).
+export const SCHEMA_VERSION = 4;
 export const LEGACY_KEY = 'tipnet.v1';
 const LS_KEY = 'tipnet.v2';
 const DB_NAME = 'tipnet';
@@ -28,8 +31,9 @@ const STATE_KEY = 'state';
  *   workplaces: [{id, name, profile, calib, setupDone?, guideSkipped?, noDeductions?}]  one per restaurant, each with its own
  *               pay schedule, paystub, jobs, tip-out and entry mode (profile) and its own "Check my accuracy" history (calib).
  *   nights:     [{..., workplaceId}]  every night belongs to one restaurant.
- *   settings:   {theme:'auto'|'light'|'dark', lastTab, csvMapping, activeWorkplaceId, periodsFilter?, dayCutoffHour?, guidedDraft?,
- *                lastBackupAt?, backupNudgeUntil?, nightsSinceBackup?, backupNightsAt?, iosNoteSeen?, wordingV38?, entitlement?}
+ *   settings:   {theme:'auto'|'light'|'dark', lastTab, activeWorkplaceId, periodsFilter?, dayCutoffHour?, guidedDraft?,
+ *                lastBackupAt?, backupNudgeUntil?, nightsSinceBackup?, backupNightsAt?, iosNoteSeen?, wordingV38?, entitlement?,
+ *                reminder?: {time:'HH:MM', days:[0-6, Monday first], addedAt, uid, seq}}
  *               (shared by every restaurant)
  *   budget:     see budget.js (shared: bills are paid from all money; a goal may name the restaurant it is saved from, fundedBy).
  *   profileExample / nightsExample: first-run example mode; only ever about the first restaurant.
@@ -83,7 +87,6 @@ export function seedState() {
     settings: {
       theme: 'auto',
       lastTab: 'tonight',
-      csvMapping: null,
       activeWorkplaceId: 'w1',
       wordingV38: true,
     },
@@ -419,19 +422,10 @@ function cleanSettings(x, ids) {
   const out = {
     theme: ['auto', 'light', 'dark'].includes(s.theme) ? s.theme : 'auto',
     lastTab: ['tonight', 'periods', 'budget', 'setup'].includes(s.lastTab) ? s.lastTab : 'tonight',
-    csvMapping: null,
     activeWorkplaceId: ids.includes(s.activeWorkplaceId) ? s.activeWorkplaceId : ids[0],
   };
   // Pay periods filter: 'all' or one restaurant (remembered; dropped when that restaurant is gone).
   if (s.periodsFilter === 'all' || ids.includes(s.periodsFilter)) out.periodsFilter = s.periodsFilter;
-  if (isObj(s.csvMapping)) {
-    const m = {};
-    Object.keys(s.csvMapping).forEach((k) => {
-      const v = s.csvMapping[k];
-      if (v === null || ['string', 'number', 'boolean'].includes(typeof v)) m[k] = v;
-    });
-    out.csvMapping = m;
-  }
   // (setupDone, guideSkipped and noDeductions live on each restaurant since v3; see migrateUnsafe.)
   // "Late nights" rule: shifts logged before this hour count as the night before (0 = off). Kept only when it's a whole hour 0-12.
   if (Number.isInteger(s.dayCutoffHour) && s.dayCutoffHour >= 0 && s.dayCutoffHour <= 12)
@@ -449,6 +443,26 @@ function cleanSettings(x, ids) {
     if (g.noDeductions === true) d.noDeductions = true;
     if (isObj(g.profile)) d.profile = cleanProfile(g.profile, { startFallback: '', entryDefault: 'tips' });
     out.guidedDraft = d;
+  }
+  // Nightly reminder (the calendar event last added): a valid one is kept, anything else dropped.
+  const r = s.reminder;
+  if (
+    isObj(r) &&
+    TIME_RE.test(r.time) &&
+    UID_RE.test(r.uid) &&
+    Number.isInteger(r.seq) &&
+    r.seq >= 0 &&
+    r.seq < 1e7
+  ) {
+    const days = cleanDays(r.days);
+    if (
+      days.length &&
+      days.length === r.days.length &&
+      typeof r.addedAt === 'number' &&
+      r.addedAt > 0 &&
+      r.addedAt < 1e14
+    )
+      out.reminder = { time: r.time, days, addedAt: r.addedAt, uid: r.uid, seq: r.seq };
   }
   // Backups: when the last backup code or file was made (ms), and until when the "Last backup" reminder is dismissed.
   const ms = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0 && v < 1e14;
@@ -581,7 +595,7 @@ export function orderNight(n) {
   return n;
 }
 /**
- * A night with no list of who was tipped out (saved before several tip-outs, or imported from a CSV file) only says
+ * A night with no list of who was tipped out (saved before several tip-outs) only says
  * everyone or nobody (night.barback). Pin that to the people set up now (its snapshot's people once it is locked: call
  * it after locking), in place, so someone added to Setup later is never counted on it. A night saved while tip-outs were
  * off (its night.tipoutOn) or "after tip-out" had nobody tipped out, whatever barback says (v37 and older drafts said
@@ -608,7 +622,7 @@ export function pinTipouts(workplaces, nights) {
 }
 /**
  * Nights that don't say whether "I tip out" was on when they were saved (night.tipoutOn: saved before it was kept, by a
- * v37 page, or imported) get it now, in place: a locked night its snapshot's (what it is worked out with), any other its
+ * v37 page) get it now, in place: a locked night its snapshot's (what it is worked out with), any other its
  * establishment's switch as it is now (what it was most likely saved with, and what it was worked out with until now).
  * From then on switching tip-outs on or off in Setup changes no night already logged. Call it after locking and before
  * pinTipouts; not for example nights (they follow the Setup they illustrate). Returns how many nights got it.
@@ -982,6 +996,37 @@ function lsGet(key) {
     return null;
   }
 }
+/** The stored text of a key when it holds something that is not valid JSON (cut off, damaged), else ''. */
+function lsUnreadable(key) {
+  try {
+    const v = localStorage.getItem(key);
+    if (!v || !v.trim()) return '';
+    JSON.parse(v);
+    return '';
+  } catch (e) {
+    try {
+      return localStorage.getItem(key) || '';
+    } catch (e2) {
+      return '';
+    }
+  }
+}
+/** True when a stored copy was written by a newer TipNet than this one (see SCHEMA_VERSION). */
+const newerSchema = (c) =>
+  isObj(c) && typeof c.schemaVersion === 'number' && c.schemaVersion > SCHEMA_VERSION;
+/**
+ * True when migrate() can make a state of this stored copy, i.e. it is not the example in disguise: an object with a
+ * restaurant that has a profile, or a v2 / prototype profile. Anything else (an array, a string, an object with neither)
+ * is data TipNet does not recognize and must never write over.
+ */
+function recognizedShape(c) {
+  if (!isObj(c)) return false;
+  if (Array.isArray(c.workplaces) && c.workplaces.some((w) => isObj(w) && isObj(w.profile))) return true;
+  return isObj(c.profile);
+}
+/** Stored but empty ({} or []): nothing to protect, the same as no data. */
+const emptyCopy = (c) =>
+  !c || (typeof c === 'object' && Object.keys(c).filter((k) => k[0] !== '_').length === 0);
 function lsSet(key, value) {
   try {
     localStorage.setItem(key, JSON.stringify(value));
@@ -1135,7 +1180,14 @@ const withoutTab = (S) => ({
  */
 function absorb(copy) {
   const none = { changed: false, conflict: false, visible: false };
-  if (recovery || !cache || !copy || savedAtOf(copy) <= lastKnown || copy._writer === writerId) return none;
+  if (recovery || !cache || !copy || copy._writer === writerId) return none;
+  // Another window already runs a newer TipNet: its data is never merged, and this window stops saving (see flush).
+  if (newerSchema(copy)) {
+    recovery = keepRecovery(copy, true);
+    return { ...none, changed: true, visible: true };
+  }
+  // A copy TipNet cannot read as its own is left alone: taking it in would replace this window's data with the example.
+  if (savedAtOf(copy) <= lastKnown || !recognizedShape(copy)) return none;
   const theirs = migrate(copy);
   const mine = cache;
   const hadChanges = !base || !same(mine, base);
@@ -1204,12 +1256,14 @@ export async function syncFromStorage() {
 
 const RECOVERY_KEY = 'tipnet.recovery';
 let recovery = null; // {at, text}: the stored data load() could not read, while nothing may be saved over it
-function keepRecovery(raw) {
-  const rec = { at: Date.now(), text: JSON.stringify(raw) };
-  lsSet(RECOVERY_KEY, { at: rec.at, data: raw }); // a separate key: the normal copies are never touched
+// newer: the data is fine, it was only saved by a newer TipNet (nothing to copy aside; the screen says to reload).
+function keepRecovery(raw, newer = false) {
+  const rec = { at: Date.now(), text: typeof raw === 'string' ? raw : JSON.stringify(raw) };
+  if (newer) rec.newer = true;
+  else lsSet(RECOVERY_KEY, { at: rec.at, data: raw }); // a separate key: the normal copies are never touched
   return rec;
 }
-/** null normally; {at, text} when the saved data could not be read: the raw copy to download (app.js shows it). */
+/** null normally; {at, text, [newer]} when the saved data could not be read (or came from a newer TipNet): the raw copy to download (app.js shows it). */
 export function recoveryInfo() {
   return recovery;
 }
@@ -1228,10 +1282,20 @@ export async function load() {
   } catch (e) {
     idbRaw = null;
   }
-  let raw = pickNewest(idbRaw, lsGet(LS_KEY));
+  const lsCopy = lsGet(LS_KEY);
+  let raw = pickNewest(idbRaw, lsCopy);
   if (!raw) raw = lsGet(LEGACY_KEY);
-  if (raw && typeof raw === 'object') {
+  // Text that is there but not valid JSON (cut off by a full disk, damaged) is stored data too, not "no data".
+  const unreadable = lsUnreadable(LS_KEY) || (raw ? '' : lsUnreadable(LEGACY_KEY));
+  if (!raw && unreadable) {
+    cache = seedState();
+    recovery = keepRecovery(unreadable);
+  } else if (newerSchema(idbRaw) || newerSchema(lsCopy) || newerSchema(raw)) {
+    cache = seedState();
+    recovery = keepRecovery(newerSchema(raw) ? raw : newerSchema(idbRaw) ? idbRaw : lsCopy, true);
+  } else if (raw && typeof raw === 'object' && !emptyCopy(raw)) {
     try {
+      if (!recognizedShape(raw)) throw new Error('saved data is not in a shape TipNet knows');
       cache = migrator(raw, todayISO());
     } catch (e) {
       // Stored data that cannot be read must never be replaced by the example: keep a copy, show the recovery screen,
@@ -1239,6 +1303,10 @@ export async function load() {
       cache = seedState();
       recovery = keepRecovery(raw);
     }
+  } else if (raw && !emptyCopy(raw)) {
+    // A stored value that is not even an object (a number, a string) is unrecognized data as well.
+    cache = seedState();
+    recovery = keepRecovery(raw);
   } else cache = migrate(raw);
   base = clone(cache);
   lastKnown = savedAtOf(raw);
@@ -1280,8 +1348,9 @@ export function lockFinished({ force = false, today = todayISO() } = {}) {
     const old = S.nights[i];
     if (n !== old) Object.assign(old, n); // lockAll keeps the order, so index i is the same night
   });
-  // Imported nights say everyone or nobody: pinned AFTER locking, to the people they are worked out with (a finished
-  // period's snapshot when they were just locked into one, else today's people), before a Setup change can add someone.
+  // Older nights (saved before v38, or by a v37 page) say everyone or nobody: pinned AFTER locking, to the people they
+  // are worked out with (a finished period's snapshot when they were just locked into one, else today's people), before
+  // a Setup change can add someone.
   // They also don't say whether tip-outs were on: the switch as it is now (pinTipoutOn), before Setup can change it.
   const on = S.nightsExample ? 0 : pinTipoutOn(S.workplaces, S.nights);
   const pinned = pinTipouts(S.workplaces, S.nights) + on;
@@ -1371,6 +1440,11 @@ export async function flush() {
       // 1. localStorage: take in a newer copy from another window, then write. Nothing before this is asynchronous.
       // The screen is redrawn right away, so nothing typed from here on lands in the replaced state.
       notify(absorb(lsGet(LS_KEY)));
+      if (recovery) {
+        // another window runs a newer TipNet: its data stays as it is
+        if (waiters) waiters.resolve(false);
+        return false;
+      }
       syncSavedTipouts(cache);
       let at = Math.max(Date.now(), lastKnown + 1);
       let json = JSON.stringify(cache);
@@ -1398,6 +1472,11 @@ export async function flush() {
       const d = await openDB();
       if (d) {
         const r = absorb(await idbGet(d)); // newer only when localStorage could not be written (full)
+        if (recovery) {
+          notify(r);
+          if (waiters) waiters.resolve(false);
+          return false;
+        }
         if (r.changed) {
           notify(r);
           at = Math.max(Date.now(), lastKnown + 1);

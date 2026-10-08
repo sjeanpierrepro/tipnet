@@ -72,8 +72,8 @@ const two = () => {
 
 test('v2 -> v3: the profile and accuracy history become the first establishment; every night belongs to it', () => {
   const S = migrate(v2(), { today: TODAY });
-  assert.equal(S.schemaVersion, 3);
-  assert.equal(SCHEMA_VERSION, 3);
+  assert.equal(S.schemaVersion, 4);
+  assert.equal(SCHEMA_VERSION, 4);
   assert.equal(S.workplaces.length, 1);
   const w = S.workplaces[0];
   assert.equal(w.id, 'w1');

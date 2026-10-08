@@ -139,8 +139,7 @@ test('guided setup: Skip swaps the example paystub for a blank one, and Tonight 
       'no example deductions',
     );
     assert.equal(S.nightsExample, false);
-    assert.match(page.text(), /import nights from a spreadsheet once your paystub numbers are in/);
-    assert.equal(page.$('input[type=file]:not(#bk-file)', page.app), null, 'no importer before the basics');
+    assert.equal(page.$('input[type=file]:not(#bk-file)', page.app), null, 'no spreadsheet import');
     assert.equal(S.nights.length, 0);
     assert.equal(S.workplaces[0].setupDone, undefined, 'skipping is not finishing');
     assert.match(page.text(), /Tonight shows your take-home once they are in/);
