@@ -6,6 +6,7 @@ import {
   mappingToNames,
   listEmployees,
   buildNights,
+  tipoutLooksLikeAmounts,
   dedupeNights,
   mergeNights,
 } from '../csv.js';
@@ -244,6 +245,14 @@ export function renderImporter(host) {
         );
         return;
       }
+      if (tipoutLooksLikeAmounts(dataRows(), m.barback))
+        preview.append(
+          el(
+            'p',
+            { class: 'hint' },
+            'The tipped out column is read as yes or no: an amount above 0 means tipped out, 0 means not.',
+          ),
+        );
       preview.append(
         el(
           'p',
