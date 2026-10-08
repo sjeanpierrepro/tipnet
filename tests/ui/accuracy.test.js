@@ -1,7 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { boot, realState } from './harness.js';
-import { addDays, todayISO, calibrate, periodIndex, rate } from '../../app/js/math.js';
+import {
+  addDays,
+  todayISO,
+  calibrate,
+  periodIndex,
+  rate,
+  exampleProfile,
+  lockFinishedNights,
+  periodTotals,
+} from '../../app/js/math.js';
+import { fmtShort } from '../../app/js/ui/common.js';
 
 // Pay periods are 14 days long. Period 0 and 1 are finished; period 2 (the one that contains today) is not.
 const today = todayISO();
@@ -361,4 +371,154 @@ test('check my accuracy, Replace offered: "Don’t change" names the rate in use
   } finally {
     await page.close();
   }
+});
+
+test('check my accuracy: nights where a % of sales person has no sales are named and nothing is proposed (like missing cash)', async () => {
+  // Runner gets 1.25% of sales through payroll; the nights came from a spreadsheet without a Sales column, so the
+  // runner counts $0 on them and the prediction ($2,074.00) is above the real check ($1,823.92).
+  const RUNNER = { id: 't2', k: 'runner', who: 'Runner', mode: 'pctSales', value: 1.25, from: 'payroll' };
+  const start = addDays(today, -30);
+  const profile = {
+    ...exampleProfile(today),
+    periodStart: start,
+    periodEnd: addDays(start, 13),
+    freq: 14,
+    shifts: 8,
+    tipout: { on: true, basis: 'before' },
+    tipouts: [{ ...RUNNER }],
+  };
+  const mk = (i, sales) => ({
+    id: 'n' + i,
+    date: addDays(start, 1 + i),
+    total: 500,
+    cash: 150,
+    pay: { p1: 8 },
+    barback: true,
+    tipouts: { t2: true },
+    ...(sales != null ? { sales } : {}),
+    workplaceId: 'w1',
+  });
+  const EIGHT = [0, 1, 2, 3, 4, 5, 6, 7];
+  const truth = lockFinishedNights(
+    profile,
+    EIGHT.map((i) => mk(i, 3000)),
+    today,
+  ).nights;
+  const actual = periodTotals(profile, truth, 0, today).chk;
+  assert.equal(actual, 1823.92);
+  const page = await boot({
+    seed: realState((S) => {
+      S.workplaces[0].setupDone = true;
+      S.workplaces[0].profile = JSON.parse(JSON.stringify(profile));
+      S.nights = EIGHT.map((i) => (i < 2 ? mk(i, i === 1 ? '' : null) : mk(i, 3000))); // none, and blank
+    }),
+  });
+  try {
+    page.tab('periods');
+    const sel = page.$('#cal-period');
+    sel.value = '0';
+    page.change(sel);
+    page.type(page.$('#cal-actual'), actual.toFixed(2));
+    page.click(page.$('#cal-run'));
+    assert.equal(page.$('#cal-pending'), null, 'no rate change is proposed');
+    assert.equal(page.$('#cal-apply'), null);
+    const d = (i) => fmtShort(addDays(start, 1 + i));
+    assert.match(
+      page.text(),
+      new RegExp(
+        'Add sales for ' +
+          d(0) +
+          ' and ' +
+          d(1) +
+          ' in Pay periods first; Runner’s % of sales isn’t counted on them, so the check can’t be predicted',
+      ),
+    );
+    assert.equal(page.state().workplaces[0].profile.rateOverride, null, 'nothing applied');
+    assert.equal(page.state().workplaces[0].calib.length, 0);
+    // with every night's sales in, the same check matches the estimate
+    await page.close();
+    const page2 = await boot({
+      seed: realState((S) => {
+        S.workplaces[0].setupDone = true;
+        S.workplaces[0].profile = JSON.parse(JSON.stringify(profile));
+        S.nights = EIGHT.map((i) => mk(i, 3000));
+      }),
+    });
+    try {
+      page2.tab('periods');
+      const sel2 = page2.$('#cal-period');
+      sel2.value = '0';
+      page2.change(sel2);
+      page2.type(page2.$('#cal-actual'), actual.toFixed(2));
+      page2.click(page2.$('#cal-run'));
+      assert.match(page2.text(), /Your estimate matched — no change needed\./);
+    } finally {
+      await page2.close();
+    }
+  } finally {
+    await page.close();
+  }
+});
+
+test('check my accuracy: many nights without sales are listed briefly, one night says "it"', async () => {
+  const BUSSER = { id: 't3', k: 'busser', who: 'Busser', mode: 'pctSales', value: 1, from: 'cash' };
+  const RUNNER = { id: 't2', k: 'runner', who: 'Runner', mode: 'pctSales', value: 1.25, from: 'payroll' };
+  const start = addDays(today, -30);
+  const profile = {
+    ...exampleProfile(today),
+    periodStart: start,
+    periodEnd: addDays(start, 13),
+    freq: 14,
+    shifts: 8,
+    tipout: { on: true, basis: 'before' },
+    tipouts: [{ ...RUNNER }, { ...BUSSER }],
+  };
+  const mk = (i, ticks) => ({
+    id: 'n' + i,
+    date: addDays(start, 1 + i),
+    total: 500,
+    cash: 150,
+    pay: { p1: 8 },
+    barback: true,
+    tipouts: ticks,
+    workplaceId: 'w1',
+  });
+  const run = async (nights) => {
+    const page = await boot({
+      seed: realState((S) => {
+        S.workplaces[0].setupDone = true;
+        S.workplaces[0].profile = JSON.parse(JSON.stringify(profile));
+        S.nights = nights;
+      }),
+    });
+    try {
+      page.tab('periods');
+      const sel = page.$('#cal-period');
+      sel.value = '0';
+      page.change(sel);
+      page.type(page.$('#cal-actual'), '1800');
+      page.click(page.$('#cal-run'));
+      assert.equal(page.$('#cal-pending'), null);
+      return page.text();
+    } finally {
+      await page.close();
+    }
+  };
+  const d = (i) => fmtShort(addDays(start, 1 + i));
+  const many = await run([0, 1, 2, 3, 4, 5, 6, 7].map((i) => mk(i, { t2: true, t3: i % 2 === 0 })));
+  assert.match(
+    many,
+    new RegExp(
+      'Add sales for ' +
+        [0, 1, 2, 3, 4].map(d).join(', ') +
+        ' and 3 more nights in Pay periods first; Runner’s and Busser’s % of sales isn’t counted on them',
+    ),
+  );
+  const one = await run([mk(0, { t2: false, t3: true }), { ...mk(1, { t2: true, t3: true }), sales: 2000 }]);
+  assert.match(
+    one,
+    new RegExp(
+      'Add sales for ' + d(0) + ' in Pay periods first; Busser’s % of sales isn’t counted on it, so',
+    ),
+  );
 });

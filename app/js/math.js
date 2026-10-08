@@ -758,7 +758,9 @@ export const SUSPECT_ERROR = 0.25;
 export const MATCH_ERROR = 0.005;
 /**
  * calibrate(profile, nights, idx, actual, today?, shifts?)
- * Does not mutate. Returns {ok:false, reason:'nonights'|'noactual'|'notFinal'|'missingCash', missingCash}
+ * Does not mutate. Returns {ok:false, reason:'nonights'|'noactual'|'notFinal'|'missingCash'|'missingSales', missingCash}
+ * ('missingSales' also has missingSales: how many nights, and salesNights: [{id, date, who: [names]}] oldest first, the
+ * nights where someone ticked gets a % of sales and no sales were entered)
  * or {ok:true, pred, actual, err, rNew, rOld, rateOverride, uncapped, capped, change,
  *     nightsLogged, expectedShifts, expectedSource, missingNights, suspect, T, C, F}.
  *   rNew: the rate the check implies, within 0..MAX_RATE (always computed). matched: |err| < MATCH_ERROR and
@@ -788,6 +790,25 @@ export function calibrate(p, nights, idx, actual, today = todayISO(), shifts, ra
   const cs = ns.map((night) => computeNight(night, p, n));
   const missing = cs.filter((c) => c.cashInHand == null).length;
   if (missing) return { ok: false, reason: 'missingCash', missingCash: missing };
+  // A ticked % of sales person counts $0 on a night without sales (tipoutNeedsSales): the prediction would be too
+  // high and drag the rate the wrong way, so it is refused like missing cash, naming the nights and who.
+  const salesNights = [];
+  cs.forEach((c, i) => {
+    if (c.tipoutNeedsSales)
+      salesNights.push({
+        id: ns[i].id,
+        date: ns[i].date,
+        who: c.tipouts.filter((l) => l.mode === 'pctSales').map((l) => l.who),
+      });
+  });
+  if (salesNights.length)
+    return {
+      ok: false,
+      reason: 'missingSales',
+      missingCash: 0,
+      missingSales: salesNights.length,
+      salesNights,
+    };
   let T = 0,
     Tt = 0,
     C = 0,

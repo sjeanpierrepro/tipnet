@@ -751,6 +751,30 @@ const NOT_FINAL_TEXT =
   'This pay period is still in progress, so there is no paycheck to compare yet. Come back once it ends and the check lands.';
 const MATCHED_TEXT = 'Your estimate matched — no change needed.';
 const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+/** "A", "A and B", "A, B and C". */
+const listOf = (xs) =>
+  xs.length > 1 ? xs.slice(0, -1).join(', ') + ' and ' + xs[xs.length - 1] : xs[0] || '';
+/** At most this many night dates are named when sales are missing; the rest are counted ("and 3 more nights"). */
+const SALES_DATES_SHOWN = 5;
+/**
+ * Check my accuracy refused (calibrate 'missingSales', handled like missing cash): which nights need their sales and
+ * who isn't counted on them. nights: calibrate's salesNights [{date, who}].
+ */
+function salesMissingText(nights) {
+  const dates = nights.slice(0, SALES_DATES_SHOWN).map((x) => fmtShort(x.date));
+  const more = nights.length - dates.length;
+  if (more > 0) dates.push(plural(more, 'more night'));
+  const who = [...new Set(nights.flatMap((x) => x.who))].map((name) => name + '’s');
+  return (
+    'Add sales for ' +
+    listOf(dates) +
+    ' in Pay periods first; ' +
+    listOf(who) +
+    ' % of sales isn’t counted on ' +
+    (nights.length === 1 ? 'it' : 'them') +
+    ', so the check can’t be predicted.'
+  );
+}
 const points = (x) => (x > 0 ? '+' : x < 0 ? '−' : '') + Math.abs(x * 100).toFixed(2) + ' points';
 function focusId(id) {
   const n = document.getElementById(id);
@@ -1046,6 +1070,7 @@ function calibCard(S, today) {
             ' no cash amount, so the check can’t be predicted. Add cash to every night first.',
         );
       }
+      if (r.reason === 'missingSales') return show(salesMissingText(r.salesNights));
       return show('Pick a pay period with nights in it and enter the check amount.');
     }
     // Within 0.5% of the check and implying the current rate: nothing to adjust, nothing to ask, nothing recorded.
