@@ -36,6 +36,7 @@ import {
   clear,
   field,
   moneyInput,
+  watchTypo,
   select,
   money,
   pct,
@@ -216,16 +217,7 @@ const typoBoxes = () =>
   boxes.filter((b) => b.input.isConnected && !b.input.closest('[hidden]') && b.typo(b.input.value));
 function guard(input, f, typo = moneyTypo) {
   boxes.push({ input, f, typo });
-  input.addEventListener('input', () => {
-    const m = typo(input.value);
-    if (m) {
-      f.setError(m);
-      input.setAttribute('data-typo', '');
-    } else if (input.hasAttribute('data-typo')) {
-      input.removeAttribute('data-typo');
-      f.setError('');
-    }
-  });
+  watchTypo(input, f, typo);
 }
 const labelOf = (f) =>
   (f.querySelector('label') ? f.querySelector('label').textContent : '')

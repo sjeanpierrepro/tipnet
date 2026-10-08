@@ -59,8 +59,9 @@ import {
   setupFirstCard,
   moneyInput,
   select,
-  numOf,
-  clean,
+  flagTypo,
+  watchTypo,
+  inlineError,
   money,
   money0,
   fmtDate,
@@ -73,6 +74,15 @@ import {
   debounce,
   addDays,
 } from './common.js';
+import { readMoney, moneyTypo } from '../inputs.js';
+
+/** A typed amount as a number: 0 when blank or a typo (every form checks moneyTypo first, so a typo is never used). */
+const moneyOf = (v) => {
+  const n = readMoney(v);
+  return Number.isFinite(n) ? n : 0;
+};
+/** A day-of-month box ("1 to 31"): same reading as money, its own wording. */
+const dayTypo = (v) => (Number.isNaN(readMoney(v)) ? 'That isn’t a day. Use a number from 1 to 31.' : '');
 
 const MANAGE_URL = 'https://app.lemonsqueezy.com/my-orders';
 
@@ -496,7 +506,9 @@ function entityForm(kind, item) {
             })
           : moneyInput({ placeholder: '0.00', value: item && v ? String(v) : '', 'data-focus-key': fk });
     ins[f.k] = input;
-    fs.push([f, field(f.label, input)]);
+    const fld = field(f.label, input);
+    if (f.type !== 'text') watchTypo(input, fld, f.type === 'day' ? dayTypo : moneyTypo);
+    fs.push([f, fld]);
   });
   // A spending category repeats every week, every two weeks or every month.
   const freqSel =
@@ -516,7 +528,7 @@ function entityForm(kind, item) {
   const paidText = el('span', null, 'Already paid this month?');
   const paidField = paidCb ? el('label', { class: 'check', hidden: true }, paidCb, paidText) : null;
   const passedDue = () => {
-    const d = Math.round(numOf(ins.dueDay ? ins.dueDay.value : ''));
+    const d = Math.round(moneyOf(ins.dueDay ? ins.dueDay.value : ''));
     if (!(d >= 1 && d <= 31)) return null;
     const today = todayISO();
     const due = billsDue({ bills: [{ id: 'x', dueDay: d }] }, today.slice(0, 8) + '01', today)[0];
@@ -574,13 +586,13 @@ function entityForm(kind, item) {
         out[f.k] = raw.trim();
         if (!out[f.k]) msg = 'Give it a name.';
       } else if (f.type === 'day') {
-        const d = Math.round(numOf(raw));
+        const d = Math.round(moneyOf(raw));
         out[f.k] = d;
-        if (!(d >= 1 && d <= 31)) msg = 'Enter a day from 1 to 31.';
+        msg = dayTypo(raw) || (d >= 1 && d <= 31 ? '' : 'Enter a day from 1 to 31.');
       } else {
-        const n = numOf(raw);
+        const n = moneyOf(raw);
         out[f.k] = Math.max(0, n);
-        if (f.req && !(n > 0)) msg = 'Enter an amount above zero.';
+        msg = moneyTypo(raw) || (f.req && !(n > 0) ? 'Enter an amount above zero.' : '');
       }
       fld.setError(msg);
       if (msg) bad = true;
@@ -798,25 +810,24 @@ function heroCard(S, r0, src) {
       ].filter(Boolean),
     );
   };
-  const box = el(
-    'div',
-    { class: 'card stack-sm' },
-    field('Money you have right now (bank + cash)', cashIn, {
-      optional: true,
-      hint: 'Saved on this device with the time you entered it, so it is still here next visit. Update it when you check your bank. If you leave it blank, TipNet uses your cash tips from this pay period, minus spending you logged.',
-    }),
-  );
+  const cashF = field('Money you have right now (bank + cash)', cashIn, {
+    optional: true,
+    hint: 'Saved on this device with the time you entered it, so it is still here next visit. Update it when you check your bank. If you leave it blank, TipNet uses your cash tips from this pay period, minus spending you logged.',
+  });
+  const box = el('div', { class: 'card stack-sm' }, cashF);
   let dirty = false;
   const commit = () => {
     if (!dirty) return;
     dirty = false;
-    const n = parseFloat(clean(cashIn.value));
+    if (moneyTypo(cashIn.value)) return; // a typo is never saved; the last balance stays
+    const n = readMoney(cashIn.value);
     S.budget.balance = Number.isFinite(n) ? { amount: round2(n), asOf: new Date().toISOString() } : null;
     save();
     draw(safeToSpendAll(S.budget, src, todayISO()));
   };
   const later = debounce(commit, 400);
   cashIn.addEventListener('input', () => {
+    flagTypo(cashIn, cashF);
     dirty = true;
     later();
   });
@@ -1205,6 +1216,7 @@ function spendingCard(S) {
     });
     const date = el('input', { type: 'date', value: today });
     const af = field('Amount', amt);
+    watchTypo(amt, af);
     const form = el(
       'form',
       { class: 'stack-sm', novalidate: true },
@@ -1216,9 +1228,9 @@ function spendingCard(S) {
     );
     form.addEventListener('submit', (e) => {
       e.preventDefault();
-      const n = numOf(amt.value);
-      if (!(n > 0)) {
-        af.setError('Enter how much you spent.');
+      const n = moneyOf(amt.value);
+      if (moneyTypo(amt.value) || !(n > 0)) {
+        af.setError(moneyTypo(amt.value) || 'Enter how much you spent.');
         amt.focus();
         return;
       }
@@ -1426,6 +1438,7 @@ function historyRow(B, g, c, i) {
       class: 'input',
     });
     const fld = field('New amount for ' + entryText(c).split(':')[0], input);
+    watchTypo(input, fld);
     const okBtn = el(
       'button',
       {
@@ -1457,10 +1470,15 @@ function historyRow(B, g, c, i) {
     );
     form.addEventListener('submit', (e) => {
       e.preventDefault();
-      const raw = clean(input.value);
-      const n = numOf(raw);
-      if (raw === '' || raw === '-' || raw === '.' || !(n >= 0)) {
-        fld.setError(n < 0 ? 'Amounts cannot be negative.' : 'Enter an amount, or 0.');
+      const n = readMoney(input.value);
+      if (n === null || Number.isNaN(n) || !(n >= 0)) {
+        fld.setError(
+          Number.isNaN(n)
+            ? moneyTypo(input.value)
+            : n < 0
+              ? 'Amounts cannot be negative.'
+              : 'Enter an amount, or 0.',
+        );
         input.focus();
         return;
       }
@@ -1548,6 +1566,7 @@ function goalControls(B, g, p, funder, many = false) {
       class: 'input',
     });
     const fld = field('How much did you put toward this from this check?', input);
+    watchTypo(input, fld);
     const btn = el(
       'button',
       {
@@ -1566,11 +1585,14 @@ function goalControls(B, g, p, funder, many = false) {
     );
     form.addEventListener('submit', (e) => {
       e.preventDefault();
-      const raw = clean(input.value);
-      const n = numOf(raw);
-      if (raw === '' || raw === '-' || raw === '.' || !(n >= 0)) {
+      const n = readMoney(input.value);
+      if (n === null || Number.isNaN(n) || !(n >= 0)) {
         fld.setError(
-          n < 0 ? 'Amounts cannot be negative.' : 'Enter an amount, or 0 if you put nothing toward it.',
+          Number.isNaN(n)
+            ? moneyTypo(input.value)
+            : n < 0
+              ? 'Amounts cannot be negative.'
+              : 'Enter an amount, or 0 if you put nothing toward it.',
         );
         input.focus();
         return;
@@ -1606,10 +1628,17 @@ function goalControls(B, g, p, funder, many = false) {
     'data-focus-key': 'goal-add-' + g.id,
     class: 'input',
   });
+  const addErr = inlineError(add);
+  watchTypo(add, addErr);
   const addBtn = el('button', { type: 'button', class: 'btn btn-secondary btn-small' }, 'Add to saved');
   addBtn.setAttribute('aria-label', 'Add extra money to ' + g.name);
   addBtn.addEventListener('click', () => {
-    const n = numOf(add.value);
+    const n = moneyOf(add.value);
+    if (moneyTypo(add.value)) {
+      addErr.setError(moneyTypo(add.value));
+      add.focus();
+      return;
+    }
     if (!(n > 0)) {
       add.focus();
       toast('Enter an amount to add.');
@@ -1626,7 +1655,9 @@ function goalControls(B, g, p, funder, many = false) {
     }
   });
   out.push(el('div', { class: 'hint' }, 'Extra money any time (a gift, a bonus):'));
-  out.push(el('div', { class: 'cluster' }, el('div', { style: 'flex:1;min-width:120px' }, add), addBtn));
+  out.push(
+    el('div', { class: 'cluster' }, el('div', { style: 'flex:1;min-width:120px' }, add, addErr.node), addBtn),
+  );
   const hist = historyBox(B, g);
   if (hist) out.push(hist);
   return out;
@@ -1881,13 +1912,13 @@ function goalForm(item, kind = 'plan') {
     const d = {
       kind: 'purchase',
       name: name.value.trim(),
-      target: Math.max(0, numOf(cost.value)),
-      saved: Math.max(0, numOf(saved.value)),
+      target: Math.max(0, moneyOf(cost.value)),
+      saved: Math.max(0, moneyOf(saved.value)),
       createdAt: today,
     };
     d.startSaved = d.saved;
     if (mode === 'date') d.targetDate = byDate.value;
-    else d.perPaycheck = Math.max(0, numOf(perCheck.value));
+    else d.perPaycheck = Math.max(0, moneyOf(perCheck.value));
     return d;
   };
   /** The slider's range for what is still missing. */
@@ -1900,7 +1931,7 @@ function goalForm(item, kind = 'plan') {
   /** Keep the typed amount within what the budget leaves (when that is known). Returns the amount. */
   const clampTyped = () => {
     const rg = rangeNow();
-    let per = Math.max(0, numOf(perCheck.value));
+    let per = Math.max(0, moneyOf(perCheck.value));
     if (rg.capped && per > rg.max) {
       per = rg.max;
       perCheck.value = per > 0 ? String(per) : '';
@@ -1934,6 +1965,13 @@ function goalForm(item, kind = 'plan') {
     clear(extra);
     clear(preview);
     live.textContent = '';
+    // A typo (like 1.2.3) shows its message and no numbers: they would be worked out from something else than what was typed.
+    const typos = [
+      flagTypo(cost, fCost),
+      flagTypo(saved, fSaved),
+      mode === 'fixed' ? flagTypo(perCheck, fPer) : false,
+    ];
+    if (typos.some(Boolean)) return;
     if (mode === 'date') {
       if (!(d.target > 0) || !d.targetDate || d.targetDate <= today) return;
       const plan = purchasePlan(d, funder.profile, today);
@@ -1958,7 +1996,7 @@ function goalForm(item, kind = 'plan') {
         el('p', { class: 'hint' }, 'Enter what you need and TipNet will show what is safe to put aside.'),
       );
       slider.max = String(Math.max(ASIDE_STEP, rg.max || 0));
-      slider.value = String(Math.min(Number(slider.max), Math.max(0, numOf(perCheck.value))));
+      slider.value = String(Math.min(Number(slider.max), Math.max(0, moneyOf(perCheck.value))));
       return;
     }
     if (!rg.capped) {
@@ -2135,15 +2173,18 @@ function goalForm(item, kind = 'plan') {
       if (msg) bad = true;
     };
     check(fName, d.name ? '' : 'Give it a name.');
-    check(fCost, d.target > 0 ? '' : 'Enter an amount above zero.');
-    check(fSaved, '');
+    check(fCost, moneyTypo(cost.value) || (d.target > 0 ? '' : 'Enter an amount above zero.'));
+    check(fSaved, moneyTypo(saved.value));
     check(fDate, mode === 'date' && !(d.targetDate > today) ? 'Pick a date after today.' : '');
     check(
       fPer,
       // With no room in the budget, a $0-a-paycheck goal ("save when you can") is allowed; the form says why.
-      mode !== 'fixed' || d.perPaycheck > 0 || d.target - d.saved <= 0 || (rg.capped && rg.disabled)
+      mode !== 'fixed'
         ? ''
-        : 'Enter an amount above zero.',
+        : moneyTypo(perCheck.value) ||
+            (d.perPaycheck > 0 || d.target - d.saved <= 0 || (rg.capped && rg.disabled)
+              ? ''
+              : 'Enter an amount above zero.'),
     );
     if (bad) {
       const first = form.querySelector('[aria-invalid]');
@@ -2436,6 +2477,9 @@ function incomeForm(item) {
     }),
     fDay1 = field(lab1, day1),
     fDay2 = field('Second day of the month', day2);
+  watchTypo(amount, fAmount);
+  watchTypo(day1, fDay1, dayTypo);
+  watchTypo(day2, fDay2, dayTypo);
   const sync = () => {
     fDay1.hidden = !(freq.value === 'monthly' || freq.value === 'twiceMonthly');
     fDay2.hidden = freq.value !== 'twiceMonthly';
@@ -2481,7 +2525,7 @@ function incomeForm(item) {
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     const f = freq.value;
-    const dayOf = (v) => Math.round(numOf(v));
+    const dayOf = (v) => Math.round(moneyOf(v));
     const okDay = (d) => d >= 1 && d <= 31;
     let bad = false;
     const check = (fld, msg) => {
@@ -2489,13 +2533,27 @@ function incomeForm(item) {
       if (msg) bad = true;
     };
     const n = name.value.trim(),
-      a = numOf(amount.value);
+      a = moneyOf(amount.value);
     check(fName, n ? '' : 'Give it a name.');
-    check(fAmount, a > 0 ? '' : 'Enter an amount above zero.');
+    check(fAmount, moneyTypo(amount.value) || (a > 0 ? '' : 'Enter an amount above zero.'));
     check(fNext, /^\d{4}-\d{2}-\d{2}$/.test(next.value) ? '' : 'Pick the next date it arrives.');
     const needDay1 = f === 'twiceMonthly' || (f === 'monthly' && day1.value.trim());
-    check(fDay1, needDay1 && !okDay(dayOf(day1.value)) ? 'Enter a day from 1 to 31.' : '');
-    check(fDay2, f === 'twiceMonthly' && !okDay(dayOf(day2.value)) ? 'Enter a day from 1 to 31.' : '');
+    check(
+      fDay1,
+      !fDay1.hidden && dayTypo(day1.value)
+        ? dayTypo(day1.value)
+        : needDay1 && !okDay(dayOf(day1.value))
+          ? 'Enter a day from 1 to 31.'
+          : '',
+    );
+    check(
+      fDay2,
+      !fDay2.hidden && dayTypo(day2.value)
+        ? dayTypo(day2.value)
+        : f === 'twiceMonthly' && !okDay(dayOf(day2.value))
+          ? 'Enter a day from 1 to 31.'
+          : '',
+    );
     if (bad) {
       const first = form.querySelector('[aria-invalid]');
       if (first) first.focus();

@@ -1,6 +1,7 @@
 // Shared UI helpers: formatting, DOM builder, toast, two-tap buttons, debounce, save, theme.
 import { parseISO, addDays, periodRange, num } from '../math.js';
 import { getState, scheduleSave, requestPersist } from '../storage.js';
+import { moneyTypo } from '../inputs.js';
 
 export { getState };
 
@@ -113,6 +114,44 @@ export const moneyInput = (props = {}) =>
     spellcheck: 'false',
     ...props,
   });
+/**
+ * Flag a box whose text isn't a number: f.setError shows typo(text)'s message (the box gets aria-invalid and the message is
+ * linked to it) and the box is marked data-typo; fixing the text clears it. Only an error raised here is cleared here.
+ * Returns true while the text is a typo, so callers can skip applying it. f: a field() or anything with setError.
+ */
+export function flagTypo(input, f, typo = moneyTypo) {
+  const m = typo(input.value);
+  if (m) {
+    f.setError(m);
+    input.setAttribute('data-typo', '');
+    return true;
+  }
+  if (input.hasAttribute('data-typo')) {
+    input.removeAttribute('data-typo');
+    f.setError('');
+  }
+  return false;
+}
+/** flagTypo as the person types. */
+export const watchTypo = (input, f, typo) => input.addEventListener('input', () => flagTypo(input, f, typo));
+/** Error line for a box that has no field() around it: {node, setError}; put node right after the box. */
+export function inlineError(input) {
+  const node = el('p', { class: 'field-error', id: (input.id || (input.id = uid())) + '-err', hidden: true });
+  return {
+    node,
+    setError(msg) {
+      node.hidden = !msg;
+      node.textContent = msg || '';
+      if (msg) {
+        input.setAttribute('aria-invalid', 'true');
+        input.setAttribute('aria-describedby', node.id);
+      } else {
+        input.removeAttribute('aria-invalid');
+        input.removeAttribute('aria-describedby');
+      }
+    },
+  };
+}
 export const select = (options, value, props = {}) => {
   const s = el(
     'select',
