@@ -29,7 +29,7 @@ import {
   taxableGross,
   TIPOUT_PRESETS,
 } from '../math.js';
-import { budgetVisible, isUnlocked } from '../billing.js';
+import { budgetVisible, isUnlocked, BILLING } from '../billing.js';
 import { subscriptionLine, openPreview } from './budget.js';
 import {
   el,
@@ -1713,7 +1713,14 @@ function addWorkplaceCard(S) {
       { class: 'hint', id: 'wp-limit' },
       unlocked
         ? 'You can have up to ' + workplaceLimit(true) + ' establishments.'
-        : 'You can have up to ' +
+        : !BILLING.provider
+          ? // payments off: no "unlock" to push, Budget can't be bought yet
+            'You can have up to ' +
+            workplaceLimit(false) +
+            ' establishments in the free app. TipNet Budget (coming soon) will allow up to ' +
+            workplaceLimit(true) +
+            '. '
+          : 'You can have up to ' +
             workplaceLimit(false) +
             ' establishments. Unlock TipNet Budget to add up to ' +
             workplaceLimit(true) +

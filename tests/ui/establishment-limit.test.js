@@ -41,10 +41,26 @@ test('free app: a 3rd establishment can be added, then the button is disabled wi
     assert.equal(at.getAttribute('aria-describedby'), 'wp-limit');
     assert.match(
       page.$('#wp-limit').textContent,
+      /^You can have up to 3 establishments in the free app\. TipNet Budget \(coming soon\) will allow up to 5\./,
+    );
+    assert.doesNotMatch(page.$('#wp-limit').textContent, /Unlock/, 'payments off: nothing to buy yet');
+    page.click(page.button('See what’s inside', page.$('#wp-limit')));
+    assert.equal(selected(page), 'budget', '"See what’s inside" opens the Budget preview');
+  } finally {
+    await page.close();
+  }
+});
+
+test('payments on: the limit line asks to unlock TipNet Budget', async () => {
+  const page = await boot({ seed: withPlaces(3), payments: true });
+  try {
+    page.tab('setup');
+    assert.match(
+      page.$('#wp-limit').textContent,
       /^You can have up to 3 establishments\. Unlock TipNet Budget to add up to 5\./,
     );
     page.click(page.button('See what’s inside', page.$('#wp-limit')));
-    assert.equal(selected(page), 'budget', '"See what’s inside" opens the Budget preview');
+    assert.equal(selected(page), 'budget');
   } finally {
     await page.close();
   }
