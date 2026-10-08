@@ -87,7 +87,9 @@ TipNet is built for current versions of Safari (iPhone and Mac), Chrome (Android
 
 **What was and was not tested**: The money math is covered by automated tests (`npm test`). The screens were checked in a desktop Chromium browser at phone and desktop sizes, in both themes. The service worker was verified in desktop Chrome on Windows 11: it registers, the app works offline after the local server is stopped, the install prompt fires, and the update bar appears after a `VERSION` bump.
 
-**Not tested**: a Lighthouse audit, actually installing the app, iPhone Safari, Android Chrome, Edge, and macOS. TipNet is deployed on GitHub Pages, but the live site has not been checked on real phones yet. Before the pilot, install it on one iPhone and one Android phone, turn on airplane mode, and reopen it to confirm it works offline.
+**Also tested in real Edge on Windows (desktop)**: the v37 to v38 upgrade, offline use, and the update bar.
+
+**Not tested**: a Lighthouse audit, real phones (the iPhone home-screen app and Android Chrome), and macOS. TipNet is deployed on GitHub Pages, but the live site has not been checked on real phones yet. Before the pilot, install it on one iPhone and one Android phone, turn on airplane mode, and reopen it to confirm it works offline.
 
 ## Releasing an update
 
