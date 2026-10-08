@@ -1443,7 +1443,7 @@ export function render(root) {
         el(
           'div',
           { class: 'result' },
-          el('p', { class: 'note' }, 'Fix the amount marked above to see your take-home.'),
+          el('p', { class: 'note' }, 'Fix the number marked above to see your take-home.'),
         ),
       );
       lastSummary = '';

@@ -290,7 +290,7 @@ function editor(S, n) {
   /** quiet: the first draw (opening the editor) shows the estimate without speaking it. */
   const upd = (quiet) => {
     if (typoProblem(p, d)) {
-      preview.textContent = 'Fix the amount marked above to see the estimate.';
+      preview.textContent = 'Fix the number marked above to see the estimate.';
       return quiet === true ? undefined : speak();
     }
     const night = build();

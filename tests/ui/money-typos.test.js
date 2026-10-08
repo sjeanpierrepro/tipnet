@@ -52,7 +52,7 @@ test('Tonight: a typo in the total, hours, sales or cash box blocks Save, shows 
       assert.equal(invalid(total), true, bad);
       assert.match(
         page.$('.result').textContent,
-        /Fix the amount marked above/,
+        /Fix the number marked above/,
         'no numbers from a typo: ' + bad,
       );
       assert.doesNotMatch(page.$('.result').textContent, /\$/, bad);
@@ -86,6 +86,8 @@ test('Tonight: a typo in the total, hours, sales or cash box blocks Save, shows 
     for (const bad of ['1.2.3', '7..5', '7:3:3:3', '7h abc']) {
       typeOut(page, hours, bad);
       assert.match(page.text(), /Hours should be a number, like 6 or 7:30\./, bad);
+      // the hours box is not an amount: the result names a number
+      assert.match(page.$('.result').textContent, /Fix the number marked above to see your take-home\./, bad);
       submit(page);
       assert.equal(page.state().nights.length, 0, bad);
       assert.equal(page.doc.activeElement, hours);
@@ -164,7 +166,7 @@ test('Pay periods night editor: a typo is refused with a message and the saved n
     const hours = key(page, 'edit-1-pay-p1');
     typeOut(page, total, '1.2.3');
     assert.match(errOf(page, total), AMOUNT);
-    assert.match(page.text(), /Fix the amount marked above to see the estimate\./);
+    assert.match(page.text(), /Fix the number marked above to see the estimate\./);
     page.click(page.button('Save changes'));
     assert.equal(page.state().nights[0].total, 300, 'not stored');
     assert.equal(page.doc.activeElement, total);
