@@ -21,6 +21,7 @@ import {
   exampleProfile,
   exampleNights,
   tipoutSetup,
+  nightTipout,
   tippedOut,
   alignTicks,
   nightTicks,
@@ -106,11 +107,15 @@ const typeById = (p, id) => (p.payTypes || []).find((t) => same(t.id, id));
 const fmtHrs = (h) => String(Math.round(h * 100) / 100);
 
 /**
- * The people a draft can tick as tipped out: from the locked night's own tip-outs (d.tipoutSnap, set by draftFromNight)
- * or the restaurant's Setup. [] unless tip-outs are on and the number typed is before tip-out.
+ * {on, basis, list}: the tip-outs a draft is worked out with. The people and before/after: the locked night's own
+ * (d.tipoutSnap, set by draftFromNight, or a finished period's snapshot on Tonight) or the restaurant's Setup. On or
+ * off: the night's own while it is edited (d.tipoutOn, from draftFromNight; "Recalculate with current Setup" drops it),
+ * else the snapshot's or Setup's as it is now (what a new night is saved with).
  */
+export const draftSetup = (d, p) => nightTipout({ snap: d && d.tipoutSnap, tipoutOn: d && d.tipoutOn }, p);
+/** The people a draft can tick as tipped out (draftSetup): [] unless tip-outs are on and the number typed is before tip-out. */
 export function draftTipouts(d, p) {
-  const ts = tipoutSetup((d && d.tipoutSnap) || p);
+  const ts = draftSetup(d, p);
   return ts.on && ts.basis === 'before' ? ts.list : [];
 }
 /** Ticked unless unticked: everyone starts ticked on a new night. */
@@ -212,7 +217,6 @@ export function blankDraft(S, p) {
     pay: main && main.unit === 'shift' ? { [main.id]: '1' } : {},
     rows: main ? [main.id] : [],
     showOther: false,
-    barback: true,
     tipouts: {}, // who was tipped out tonight (recipient id -> false when unticked); everyone is ticked to start
     sales: '',
     cashOffPayroll: !!p.cashOffPayroll, // pre-ticked from the restaurant's Setup default until tonight's box is touched
@@ -243,10 +247,10 @@ export function draftFromNight(n, p) {
     pay: {},
     rows: [],
     showOther: false,
-    barback: n.barback !== false,
     tipouts: {},
     sales: n.sales == null ? '' : String(n.sales),
     tipoutSnap: n.snap || null, // a locked night ticks its own tip-out people
+    tipoutOn: nightTipout(n, p).on, // whether tip-outs were on when it was saved: Setup's switch doesn't change it
     cashOffPayroll: !!n.cashOffPayroll,
     cashOffTouched: true, // a saved night keeps its own choice, whatever Setup says now
     date: n.date,
@@ -318,9 +322,10 @@ export function liveNight(d, id, p, { snap: lockedWith } = {}) {
     total: '',
     cash,
     pay,
-    barback: d.barback,
+    barback: false, // anyone ticked (below), for older copies of the app
   };
   // Who was tipped out tonight (everyone ticked unless unticked), and tonight's sales when a ticked person gets a % of them.
+  // With no boxes on screen (tip-outs off or "after tip-out") nobody is (see alignNight).
   const people = draftTipouts(d, p);
   if (people.length) {
     const m = {};
@@ -334,6 +339,7 @@ export function liveNight(d, id, p, { snap: lockedWith } = {}) {
       if (s != null && s >= 0) night.sales = round2(s);
     }
   }
+  night.tipoutOn = draftSetup(d, p).on; // the night keeps whether tip-outs were on, whatever Setup says later
   if (d.cashOffPayroll && cash !== '') night.cashOffPayroll = true;
   if (tipsMode(p)) {
     const t = typedAmount(d.total);
@@ -361,6 +367,7 @@ export function storedNight(d, p, id, { snap } = {}) {
     barback: ln.barback,
   };
   if (ln.tipouts) out.tipouts = ln.tipouts;
+  out.tipoutOn = ln.tipoutOn;
   if (ln.sales != null) out.sales = ln.sales;
   if (ln.cashOffPayroll) out.cashOffPayroll = true;
   if (tipsMode(p) && hasTips(ln)) out.tips = ln.tips;
@@ -373,12 +380,21 @@ export function storedNight(d, p, id, { snap } = {}) {
  * Tonight's boxes are always Setup's, the editor's are the night's own until a recalculation or a move changes its
  * snapshot. cur: the saved night it replaces or edits (null for a new night). See alignTicks: the choices on screen are
  * carried over to target and the rest of cur's map is kept. No boxes on screen (tip-outs switched off or "after
- * tip-out"): the night keeps what it had (its map, barback and sales), so nobody's tick changes. Changes out; returns it.
+ * tip-out"): a new night (or the part added to one) had nobody tipped out, so everyone in target is false (a night saved
+ * while tip-outs were off never becomes tipped out); an edited or replaced night keeps what it had (its map, barback and
+ * sales), so nobody's tick changes. Changes out; returns it.
  */
 export function alignNight(out, d, p, cur, target) {
   const shownList = draftTipouts(d, p);
   if (!shownList.length) {
-    if (!cur) return out;
+    if (!cur) {
+      out.tipouts = {};
+      target.forEach((r) => {
+        out.tipouts[r.id] = false;
+      });
+      out.barback = false;
+      return out;
+    }
     if (cur.tipouts && typeof cur.tipouts === 'object') out.tipouts = { ...cur.tipouts };
     else delete out.tipouts;
     out.barback = !!cur.barback;
@@ -513,7 +529,8 @@ export function entryCheck(p, d, { when = 'tonight', today = todayISO() } = {}) 
 }
 /**
  * Combine an existing night with a new one on the same date: pay adds up by pay type (so job hours merge by job), cash
- * and totals add up. In tips mode the tips add up too, so the merged night keeps following the current rates.
+ * and totals add up. In tips mode the tips add up too, so the merged night keeps following the current rates. Whether
+ * tip-outs were on is a's (a.tipoutOn): a part entered after "I tip out" was switched changes nothing about it.
  */
 export function mergeNights(a, b, p) {
   const pay = { ...a.pay };
@@ -628,7 +645,7 @@ export function nightFields(
   };
   /** A box was left: its waiting typo message is shown now. */
   const flushTypos = () => [totalLater, salesLater, hoursLater, cashLater].forEach((l) => l.flush());
-  const ts = tipoutSetup(d.tipoutSnap || p);
+  const ts = draftSetup(d, p);
   const after = ts.on && ts.basis === 'after';
   const people = draftTipouts(d, p); // the people who can be ticked tonight
   const tips = tipsMode(p);
@@ -740,7 +757,7 @@ export function nightFields(
       ),
       salesField,
     );
-  } else d.barback = d.barback !== false ? d.barback : true;
+  }
 
   /* ----- jobs worked tonight ----- */
   const jobs = jobsOf(p);
@@ -1588,13 +1605,15 @@ export function render(root) {
     if (S.nights.length > had) countSavedNight(S);
     lockFinished({ force: true });
     // The take-home said is what was stored, locked as it now is (a night in a finished pay period gets its snapshot
-    // when saved). "Add to that night": the part added, worked out the way the night it joined is.
+    // when saved). "Add to that night": the part added, worked out the way the night it joined is (its snapshot, and
+    // whether tip-outs were on for it: the night keeps its own).
     const st = kept.stored;
-    const net = computeNight(
-      kept.part ? (st.snap ? { ...kept.part, snap: st.snap } : kept.part) : st,
-      p,
-      shifts,
-    ).net;
+    const joined = (part) => ({
+      ...part,
+      tipoutOn: nightTipout(st, p).on,
+      ...(st.snap ? { snap: st.snap } : {}),
+    });
+    const net = computeNight(kept.part ? joined(kept.part) : st, p, shifts).net;
     save();
     drafts.set(w.id, blankDraft(S, p));
     bus.rerender(); // the whole tab, so the backup reminder and the TipNet Budget card stay
@@ -1662,6 +1681,10 @@ export function render(root) {
           part = alignNight(onto(cur), d, p, null, peopleOf(cur, p));
           return mergeNights(cur, part, p);
         });
+        // A part entered with no boxes on screen (tip-outs off or "after tip-out" tonight) says nothing about who was
+        // tipped out: the night keeps its own choices (and its own switch), so the part is said with them too.
+        if (stored !== part && !draftTipouts(d, p).length)
+          part = { ...part, tipouts: stored.tipouts, barback: stored.barback };
         return { stored, part };
       }),
     );

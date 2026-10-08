@@ -25,6 +25,7 @@ import {
   rate as currentRate,
   tipoutsTonight,
   tipoutSetup,
+  nightTipout,
   alignTicks,
 } from '../math.js';
 import { businessDate, cutoffFromSettings, moneyTypo } from '../inputs.js';
@@ -113,7 +114,7 @@ function nightSub(n, c, p) {
   if (c.tipout) bits.push(money(c.tipout) + ' tip-out');
   else {
     // tip-outs are on for that night, but nobody was tipped out
-    const ts = tipoutSetup(n.snap || p);
+    const ts = nightTipout(n, p); // as the night was saved (whether tip-outs were on is its own)
     if (ts.on && ts.basis === 'before' && ts.list.length && !tipoutsTonight(ts, n).length)
       bits.push('no tip-out');
   }
@@ -481,6 +482,19 @@ function editor(S, n) {
     d.note = noteInput.value;
   });
   const noteField = field('Note', noteInput, { optional: true });
+  // Whether tip-outs were on is the night's own (d.tipoutOn, from draftFromNight): Setup's switch doesn't change it.
+  // One plain line says so when Setup's switch is different now; "Recalculate with current Setup" takes today's.
+  const ownOn = d.tipoutOn;
+  const switchLine =
+    ownOn !== tipoutSetup(p).on
+      ? el(
+          'p',
+          { class: 'hint', id: 'edit-' + n.id + '-tipout-on' },
+          ownOn
+            ? 'Saved with “I tip out” on; Setup has it off now.'
+            : 'Saved with “I tip out” off, so no tip-outs are taken out of this night.',
+        )
+      : null;
   let lockNote = null;
   if (n.snap) {
     const cb = el('input', { type: 'checkbox', id: 'edit-' + n.id + '-recalc' });
@@ -501,6 +515,10 @@ function editor(S, n) {
       // its own snapshot's. The ticks are carried over to them (alignTicks) and the fields are drawn again.
       const was = draftTipouts(d, p);
       d.tipoutSnap = recalc ? null : n.snap;
+      // today's "I tip out" too when recalculated, else the night's own again
+      if (recalc) delete d.tipoutOn;
+      else d.tipoutOn = ownOn;
+      if (switchLine) switchLine.hidden = recalc;
       d.tipouts = alignTicks(d.tipouts, d.tipouts, was, draftTipouts(d, p));
       const fresh = nightFields(p, d, fieldOpts);
       f.root.replaceWith(fresh.root);
@@ -552,6 +570,7 @@ function editor(S, n) {
     { class: 'card stack', novalidate: true },
     el('div', { class: 'card-title' }, 'Edit night'),
     f.root,
+    switchLine,
     noteField,
     weekField,
     lockNote,

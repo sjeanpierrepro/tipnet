@@ -244,3 +244,20 @@ test('carryTicks: never guesses between two, and a different kind or name is nev
   assert.equal(M.carryTicks(ns, [BARBACK], [BARBACK, BARBACK2]).changed, 0);
   assert.equal(M.carryTicks(ns, [BARBACK, RUNNER], [RUNNER]).changed, 0);
 });
+
+test('same-date Add: the night keeps whether tip-outs were on, whatever the added part says (third v38 review)', () => {
+  const p = prof([BARBACK]);
+  const a = night('a', '2026-10-06', { tipouts: { t1: true }, tipoutOn: true });
+  const b = {
+    id: 'x',
+    date: '2026-10-06',
+    total: 100,
+    cash: null,
+    pay: { p1: 1 },
+    barback: false,
+    tipouts: { t1: false },
+    tipoutOn: false,
+  };
+  assert.equal(mergeNights(a, b, p).tipoutOn, true);
+  assert.equal(mergeNights({ ...a, tipoutOn: false }, { ...b, tipoutOn: true }, p).tipoutOn, false);
+});

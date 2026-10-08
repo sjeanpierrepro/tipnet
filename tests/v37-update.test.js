@@ -248,3 +248,22 @@ test('a v37 page saving after the update keeps one flat tip-out paid through pay
   assert.deepEqual(strip(money(after)), strip(money(v38)));
   assert.equal(money(after).nights[1].tipout, 25);
 });
+
+test('a v37 page saving after the update: a night saved while tip-outs were off keeps no tip-out (third review)', async (t) => {
+  const old = await S37();
+  if (!old) return t.skip('git or commit ' + V37 + ' (tipnet-v37) is not available');
+  // "I tip out" was off for x (nobody ticked, as Tonight now saves it) and is on again; y was saved with it on
+  const v38 = migrate(
+    state(profile([BARBACK]), [
+      night('x', '2026-10-06', false, { tipoutOn: false }),
+      night('y', '2026-10-07', true, { tipoutOn: true }),
+    ]),
+    { today },
+  );
+  assert.equal(money(v38).nights[0].net, 410.75);
+  const after = migrate(clone(old.migrate(clone(v38), { today })), { today });
+  // v37 drops tipoutOn and the ticks, but keeps barback (false for x): the money stays
+  assert.deepEqual(money(after), money(v38));
+  assert.equal(money(after).nights[0].tipout, 0);
+  assert.equal(money(after).nights[1].tipout, 60.6);
+});

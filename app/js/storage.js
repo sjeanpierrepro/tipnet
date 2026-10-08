@@ -8,7 +8,7 @@ import {
   todayISO,
   lockFinishedNights,
   legacyTipouts,
-  tipoutSetup,
+  nightTipout,
   savedTipout,
   TIPOUT_PRESETS,
   TIPOUT_MODES,
@@ -392,6 +392,8 @@ function cleanNights(list) {
           });
         o.tipouts = t;
       }
+      // whether "I tip out" was on when the night was saved (nights without it get it after locking: pinTipoutOn)
+      if (typeof n.tipoutOn === 'boolean') o.tipoutOn = n.tipoutOn;
       // tonight's sales, for a % of sales tip-out
       if (
         (typeof n.sales === 'number' || (typeof n.sales === 'string' && n.sales.trim() !== '')) &&
@@ -556,6 +558,7 @@ const NIGHT_KEYS = [
   'barback',
   'workplaceId',
   'tipouts',
+  'tipoutOn',
   'sales',
   'cashOffPayroll',
   'tips',
@@ -578,21 +581,44 @@ export function orderNight(n) {
 /**
  * A night with no list of who was tipped out (saved before several tip-outs, or imported from a CSV file) only says
  * everyone or nobody (night.barback). Pin that to the people set up now (its snapshot's people once it is locked: call
- * it after locking), in place, so someone added to Setup later is never counted on it. Returns how many nights got a list.
+ * it after locking), in place, so someone added to Setup later is never counted on it. A night saved while tip-outs were
+ * off (its night.tipoutOn) or "after tip-out" had nobody tipped out, whatever barback says (v37 and older drafts said
+ * everyone): everyone is pinned as not tipped out (and barback false). Returns how many nights got a list.
  */
 export function pinTipouts(workplaces, nights) {
-  const lists = new Map(workplaces.map((w) => [w.id, tipoutSetup(w.profile).list]));
-  const first = workplaces.length ? lists.get(workplaces[0].id) : [];
+  const profiles = new Map(workplaces.map((w) => [w.id, w.profile]));
+  const first = workplaces.length ? workplaces[0].profile : {};
   let pinned = 0;
   nights.forEach((n) => {
     if (isObj(n.tipouts)) return;
-    const list = n.snap ? tipoutSetup(n.snap).list : lists.get(n.workplaceId) || first;
+    const ts = nightTipout(n, profiles.get(n.workplaceId) || first); // its snapshot's people once locked
+    const taken = ts.on && ts.basis === 'before' && !!n.barback;
     const t = {};
-    list.forEach((r) => {
-      t[r.id] = !!n.barback;
+    ts.list.forEach((r) => {
+      t[r.id] = taken;
     });
     n.tipouts = t;
+    if (!taken) n.barback = false; // anyone ticked, for older copies of the app
     orderNight(n); // where loading puts it (before the snapshot), so the next load writes the same JSON
+    pinned++;
+  });
+  return pinned;
+}
+/**
+ * Nights that don't say whether "I tip out" was on when they were saved (night.tipoutOn: saved before it was kept, by a
+ * v37 page, or imported) get it now, in place: a locked night its snapshot's (what it is worked out with), any other its
+ * establishment's switch as it is now (what it was most likely saved with, and what it was worked out with until now).
+ * From then on switching tip-outs on or off in Setup changes no night already logged. Call it after locking and before
+ * pinTipouts; not for example nights (they follow the Setup they illustrate). Returns how many nights got it.
+ */
+export function pinTipoutOn(workplaces, nights) {
+  const profiles = new Map(workplaces.map((w) => [w.id, w.profile]));
+  const first = workplaces.length ? workplaces[0].profile : {};
+  let pinned = 0;
+  nights.forEach((n) => {
+    if (typeof n.tipoutOn === 'boolean') return;
+    n.tipoutOn = nightTipout(n, profiles.get(n.workplaceId) || first).on;
+    orderNight(n);
     pinned++;
   });
   return pinned;
@@ -701,8 +727,10 @@ function migrateUnsafe(input, today) {
     return out;
   });
   // Lock first, then pin: an older night's "everyone or nobody" becomes the people it is worked out with (its snapshot's
-  // once locked, which can be a finished period's older one; else the people set up now).
+  // once locked, which can be a finished period's older one; else the people set up now). Whether tip-outs were on is
+  // pinned first (pinTipoutOn): a night saved while they were off is pinned as nobody tipped out.
   const nights = lockAll(workplaces, cleanNights(rawNights), today).nights;
+  if (!S.nightsExample) pinTipoutOn(workplaces, nights);
   pinTipouts(workplaces, nights);
   // Old states and old backup codes have no budget: they get an empty one. Old "Paid" ticks (keyed by pay period) are
   // converted with the first restaurant's schedule, the only one there was then.
@@ -1252,7 +1280,9 @@ export function lockFinished({ force = false, today = todayISO() } = {}) {
   });
   // Imported nights say everyone or nobody: pinned AFTER locking, to the people they are worked out with (a finished
   // period's snapshot when they were just locked into one, else today's people), before a Setup change can add someone.
-  const pinned = pinTipouts(S.workplaces, S.nights);
+  // They also don't say whether tip-outs were on: the switch as it is now (pinTipoutOn), before Setup can change it.
+  const on = S.nightsExample ? 0 : pinTipoutOn(S.workplaces, S.nights);
+  const pinned = pinTipouts(S.workplaces, S.nights) + on;
   if (!r.stamped) {
     if (pinned) scheduleSave();
     lockedOn = today;

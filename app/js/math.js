@@ -352,7 +352,10 @@ export function lockFinishedNights(profile, nights, today = todayISO()) {
   });
   return { nights: out, stamped };
 }
-/** The numbers one night is worked out with: its snapshot when locked, else the current Setup. */
+/**
+ * The numbers one night is worked out with: its snapshot when locked, else the current Setup; the tip-outs as the night
+ * was saved (nightTipout: whether they were on is the night's own).
+ */
 function termsOf(night, p, shifts) {
   const s = night && night.snap;
   if (s)
@@ -363,7 +366,7 @@ function termsOf(night, p, shifts) {
       nontax: num(s.nontax), // older snapshots have none
       n: s.n,
       payTypes: s.pay || [],
-      tipout: tipoutSetup(s),
+      tipout: nightTipout(night, p),
     };
   return {
     r: rate(p),
@@ -371,7 +374,7 @@ function termsOf(night, p, shifts) {
     fixed: fixedTotal(p),
     nontax: nontaxRecurring(p),
     payTypes: p.payTypes || [],
-    tipout: tipoutSetup(p),
+    tipout: nightTipout(night, p),
     n: shifts > 0 ? shifts : shiftsPerPeriod(p, [], todayISO()).n,
   };
 }
@@ -416,7 +419,8 @@ export function periodNontax(p, ns) {
  * Older data has one tip-out {on, mode: 'pct'|'flat', value, basis, from: 'cash'|'check'}: that is one Barback (or nobody
  * when it was off); those fields are still written next to a list of one that fits them (savedTipout). A night says who
  * was tipped out with night.tipouts = {recipientId: true|false}; older nights only have night.barback (true: everyone,
- * false: nobody). night.sales: tonight's sales, for the % of sales tip-outs.
+ * false: nobody). night.sales: tonight's sales, for the % of sales tip-outs. night.tipoutOn: whether "I tip out" was on
+ * when the night was saved (nightTipout): the switch never changes a night already logged.
  */
 export const TIPOUT_PRESETS = [
   { k: 'barback', name: 'Barback' },
@@ -447,6 +451,16 @@ export function tipoutSetup(src) {
   const to = (src && src.tipout) || {};
   const list = Array.isArray(src && src.tipouts) ? src.tipouts : legacyTipouts(to);
   return { on: !!to.on, basis: to.basis === 'after' ? 'after' : 'before', list };
+}
+/**
+ * {on, basis, list} one night's tip-outs are worked out with: the people and before/after of its snapshot when it is
+ * locked, else Setup's (fixing a typo'd amount applies to the running pay period), and whether tip-outs were on as the
+ * night was saved (night.tipoutOn, written on every save and set on loading for older nights; without one, e.g. an
+ * example night, its snapshot's, else Setup's). So turning "I tip out" on or off never changes a night already logged.
+ */
+export function nightTipout(night, p) {
+  const ts = tipoutSetup((night && night.snap) || p);
+  return night && typeof night.tipoutOn === 'boolean' ? { ...ts, on: night.tipoutOn } : ts;
 }
 /**
  * profile.tipout / snap.tipout as saved: {on, basis}, plus, when the list is exactly one person on % of tips or flat,
