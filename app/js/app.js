@@ -186,10 +186,11 @@ function render() {
   window.scrollTo(0, y);
 }
 
+/** Returns false when Setup is asking "Save changes?" first (go runs again, with the same opts, after Save or Discard). */
 function go(tab, opts = {}) {
-  const { focus = false, preview: asPreview = false } = opts;
+  const { focus = false, preview: asPreview = false, after } = opts; // after: runs once the tab is drawn (e.g. land on a card)
   // Leaving Setup with unsaved restaurant changes: it asks "Save changes to <name>?" first, then comes back here.
-  if (current === 'setup' && tab !== 'setup' && setup.confirmLeave(() => go(tab, opts))) return;
+  if (current === 'setup' && tab !== 'setup' && setup.confirmLeave(() => go(tab, opts))) return false;
   if (tab !== 'budget') preview = false;
   else if (asPreview) preview = true;
   if (!SCREENS[tab] || (tab === 'budget' && !budgetOpen())) tab = 'tonight';
@@ -215,6 +216,8 @@ function go(tab, opts = {}) {
   }
   render();
   if (!focus) window.scrollTo(0, 0);
+  if (after) after();
+  return true;
 }
 
 function wireTabs() {

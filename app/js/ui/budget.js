@@ -233,18 +233,26 @@ function sampleCard(S) {
 /** Payments switched on (billing-config.js has a provider and a product id). */
 const paymentsOn = () => !!BILLING.provider;
 
-/** Open the Budget preview (it works while the tab is hidden), then focus `id` or the heading. */
+/**
+ * Open the Budget preview (it works while the tab is hidden), then focus `id` or the heading. From Setup with unsaved
+ * changes the "Save changes?" question comes first and keeps the focus; the landing runs after Save or Discard
+ * (app.js go runs `after` once the preview is drawn). Keep editing stays in Setup.
+ */
 export function openPreview(id) {
-  bus.go('budget', { preview: true });
-  const t = (id && document.getElementById(id)) || document.querySelector('#app h1');
-  if (!t) return;
-  if (/^H[1-6]$/.test(t.tagName)) t.setAttribute('tabindex', '-1'); // a heading takes focus only this way
-  try {
-    t.scrollIntoView({ block: 'center' });
-  } catch (e) {
-    /* not available */
-  }
-  t.focus();
+  bus.go('budget', {
+    preview: true,
+    after: () => {
+      const t = (id && document.getElementById(id)) || document.querySelector('#app h1');
+      if (!t) return;
+      if (/^H[1-6]$/.test(t.tagName)) t.setAttribute('tabindex', '-1'); // a heading takes focus only this way
+      try {
+        t.scrollIntoView({ block: 'center' });
+      } catch (e) {
+        /* not available */
+      }
+      t.focus();
+    },
+  });
 }
 /** The "Unlock Budget" card's heading: where every Upgrade button goes (the plans, or "Coming soon" while payments are off). */
 const UPGRADE_H = 'budget-upgrade-h';
