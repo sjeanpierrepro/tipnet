@@ -48,6 +48,12 @@ const renameOldDefault = (name) => {
   const m = OLD_DEFAULT_NAME.exec(name);
   return !m ? name : m[1] ? 'Establishment ' + m[1] : FIRST_WORKPLACE_NAME;
 };
+/** The renamed name, or the next free "<name> 2", "<name> 3"... when it is taken (case-insensitive, as Setup compares). */
+const freeName = (name, taken) => {
+  if (!taken.has(name.toLowerCase())) return name;
+  const base = name.replace(/ [0-9]+$/, '');
+  for (let k = 2; ; k++) if (!taken.has((base + ' ' + k).toLowerCase())) return base + ' ' + k;
+};
 /** The most establishments a save or a backup keeps when it loads (earlier versions let people add up to 12). */
 export const MAX_WORKPLACES = 12;
 /** How many establishments can be ADDED: 3 in the free app, 5 with TipNet Budget unlocked. */
@@ -656,6 +662,10 @@ function migrateUnsafe(input, today) {
     n.workplaceId = ids[rawIdx.has(n.workplaceId) ? rawIdx.get(n.workplaceId) : 0];
   });
 
+  // Names in use, so the one-time rename (renameOldDefault) never makes two establishments share a name.
+  const taken = new Set(
+    rawW.map((w) => (typeof w.name === 'string' ? w.name.trim().slice(0, 40).toLowerCase() : '')),
+  );
   const workplaces = rawW.map((w, i) => {
     const p = w.profile;
     const mine = rawNights.filter((n) => n.workplaceId === ids[i]);
@@ -664,7 +674,11 @@ function migrateUnsafe(input, today) {
     // Existing users keep the meaning of their nightly number: anyone with real nights or their own profile typed totals.
     const realNights = !S.nightsExample && mine.length > 0;
     const typed = typeof w.name === 'string' ? w.name.trim().slice(0, 40) : '';
-    const name = settingsIn.wordingV38 === true ? typed : renameOldDefault(typed);
+    let name = settingsIn.wordingV38 === true ? typed : renameOldDefault(typed);
+    if (name !== typed) {
+      name = freeName(name, taken);
+      taken.add(name.toLowerCase());
+    }
     const out = {
       id: ids[i],
       name: name || (i === 0 ? FIRST_WORKPLACE_NAME : 'Establishment ' + (i + 1)),
