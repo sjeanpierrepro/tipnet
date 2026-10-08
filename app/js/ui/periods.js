@@ -25,14 +25,13 @@ import {
   tipoutsTonight,
   tipoutSetup,
 } from '../math.js';
-import { businessDate, cutoffFromSettings } from '../inputs.js';
+import { businessDate, cutoffFromSettings, moneyTypo } from '../inputs.js';
 import { isSetUp, workplaceOf, findWorkplace, nightsOf, activeWorkplace, lockFinished } from '../storage.js';
 import {
   el,
   field,
   moneyInput,
   select,
-  numOf,
   money,
   money0,
   pct,
@@ -58,6 +57,8 @@ import {
   entryCheck,
   showEntryProblem,
   jobsText,
+  moneyNum,
+  typoProblem,
 } from './tonight.js';
 
 /** Pay periods shown at first; "Show older" adds this many more each time. */
@@ -260,7 +261,7 @@ function editor(S, n) {
       else delete out.tips;
     } else if (tipsMode(p)) {
       // Tips back to a stored total, with the pay this night is shown with (its snapshot, the new one, or today's Setup).
-      out.tips = round2(numOf(d.total));
+      out.tips = round2(moneyNum(d.total));
       out.total = totalFromTips(out.tips, out, p);
     }
     // just locked by the move: like locking, the stored total becomes the typed tips + pay at the rates it is locked with
@@ -269,6 +270,10 @@ function editor(S, n) {
   };
   /** quiet: the first draw (opening the editor) shows the estimate without speaking it. */
   const upd = (quiet) => {
+    if (typoProblem(p, d)) {
+      preview.textContent = 'Fix the amount marked above to see the estimate.';
+      return quiet === true ? undefined : speak();
+    }
     const night = build();
     const c = computeNight(night, p, shiftsFor(night));
     preview.textContent = 'Estimated take-home for this night: ' + money(c.net) + '.';
@@ -900,6 +905,8 @@ function calibCard(S, today) {
     { id: 'cal-period' },
   );
   const actual = moneyInput({ placeholder: '0.00', id: 'cal-actual', value: calActual });
+  const actualField = field('Actual paycheck amount (take-home on the stub)', actual);
+  actualField.setError(moneyTypo(calActual));
   const msg = el('p', { class: 'note', 'aria-live': 'polite', hidden: !calMsg }, calMsg ? calMsg.text : '');
   const run = el(
     'button',
@@ -936,6 +943,7 @@ function calibCard(S, today) {
   });
   actual.addEventListener('input', () => {
     calActual = actual.value;
+    actualField.setError(moneyTypo(calActual));
     dropPending();
   });
   if (inProgress() && !calMsg)
@@ -954,6 +962,12 @@ function calibCard(S, today) {
   run.addEventListener('click', () => {
     const idx = Number(sel.value);
     calActual = actual.value;
+    // a typo like 1.2.3 is never read as 1.2: nothing is compared until it is fixed
+    if (moneyTypo(calActual)) {
+      actualField.setError(moneyTypo(calActual));
+      actual.focus();
+      return;
+    }
     // One adjustment per pay period: an earlier comparison of this period is replaced, measured from the rate before it.
     // Matched by the period's dates, so moving the start date in Setup (which renumbers periods) can't adjust the same
     // dates twice. Only old entries saved without dates fall back to the period number.
@@ -972,7 +986,7 @@ function calibCard(S, today) {
       );
     const base = prev && typeof prev.rateBefore === 'number' ? prev.rateBefore : undefined;
     const r = idxs.length
-      ? calibrate(p, mine, idx, numOf(actual.value), today, undefined, base)
+      ? calibrate(p, mine, idx, moneyNum(actual.value), today, undefined, base)
       : { ok: false, reason: 'nonights' };
     if (!r.ok) {
       if (r.reason === 'notFinal') return show(NOT_FINAL_TEXT);
@@ -1068,7 +1082,7 @@ function calibCard(S, today) {
     ),
     wsel ? field('Establishment', wsel) : null,
     field('Pay period', sel),
-    field('Actual paycheck amount (take-home on the stub)', actual),
+    actualField,
     el('div', { class: 'cluster' }, run, undo),
     undoWhy,
     pendingNode,

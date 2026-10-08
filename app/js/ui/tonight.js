@@ -30,7 +30,9 @@ import {
   negativeCheckReason,
   parseHoursInput,
   hasHoursText,
-  hoursReadable,
+  readMoney,
+  moneyTypo,
+  hoursTypo,
   dateProblem,
   maxNightDate,
   MIN_NIGHT_DATE,
@@ -42,8 +44,6 @@ import {
   clear,
   field,
   moneyInput,
-  clean,
-  numOf,
   money,
   money0,
   minus,
@@ -71,13 +71,15 @@ const historyOf = (S, w) => (S.nightsExample ? [] : nightsOf(S, w.id));
 
 /** Tips-only entry: the nightly number is cash + card tips and TipNet adds the hourly/per-shift pay. */
 export const tipsMode = (p) => !!p && p.entryMode === 'tips';
-/** The typed amount as a number; null when blank or not a number. */
+/** The typed amount as a number; null when blank or a typo (see readMoney). */
 function typedAmount(v) {
-  const c = clean(v);
-  if (c === '' || c === '-' || c === '.') return null;
-  const n = parseFloat(c);
+  const n = readMoney(v);
   return Number.isFinite(n) ? n : null;
 }
+/** The typed amount, 0 when blank or a typo (a typo never counts as a number; the screens refuse it before saving). */
+export const moneyNum = (v) => typedAmount(v) ?? 0;
+/** Hours typed in an hours/shifts box: null when blank or a typo. */
+const hoursOf = (v) => (hasHoursText(v) && !hoursTypo(v) ? parseHoursInput(v) : null);
 /** The business date "tonight" belongs to (the Late nights rule). */
 const tonightOf = (S) => businessDate(new Date(), cutoffFromSettings(S && S.settings));
 
@@ -214,18 +216,17 @@ export function draftFromNight(n, p) {
   }
   return d;
 }
-/** The typed amounts as a clean pay map (hours "7:30" = 7.5). Negative or unreadable hours are left out (saving refuses them). */
+/** The typed amounts as a clean pay map (hours "7:30" = 7.5). Negative hours and typos are left out (saving refuses them). */
 function draftPay(d, p) {
   const pay = {};
   Object.keys(d.pay).forEach((k) => {
     if (d.pay[k] === '' || d.pay[k] == null) return;
     const t = p && typeById(p, k);
     if (t && t.unit !== 'amt') {
-      if (!hoursReadable(d.pay[k])) return;
-      const h = parseHoursInput(d.pay[k]);
-      if (h < 0) return;
+      const h = hoursOf(d.pay[k]);
+      if (h == null || h < 0) return;
       pay[k] = String(Math.round(h * 10000) / 10000);
-    } else pay[k] = clean(d.pay[k]);
+    } else if (typedAmount(d.pay[k]) != null) pay[k] = String(typedAmount(d.pay[k]));
   });
   // The main job always has an explicit amount (0 when blank), so the math never falls back to an old "usual" amount.
   const main = p && p.payTypes && p.payTypes[0];
@@ -246,7 +247,7 @@ function cashCheck(d, p, snap) {
 export function liveNight(d, id, p, { snap } = {}) {
   const pay = draftPay(d, p);
   // Cash that is negative or more than the tips is not used (the screen says why); it never blocks the night.
-  const cash = cashCheck(d, p, snap).status === 'ok' ? clean(d.cash) : '';
+  const cash = cashCheck(d, p, snap).status === 'ok' ? String(typedAmount(d.cash)) : '';
   const night = {
     id,
     date: d.date || todayISO(),
@@ -277,7 +278,7 @@ export function liveNight(d, id, p, { snap } = {}) {
       const tot = totalFromTips(t, snap ? { ...night, snap } : night, p);
       if (tot > 0) night.total = String(tot);
     }
-  } else if (numOf(d.total) > 0) night.total = clean(d.total);
+  } else if (moneyNum(d.total) > 0) night.total = String(typedAmount(d.total));
   return night;
 }
 /** Draft -> night to store (no snapshot; the caller keeps one). Freezes each pay type's amount (0 when not worked). */
@@ -290,8 +291,8 @@ export function storedNight(d, p, id, { snap } = {}) {
   const out = {
     id,
     date: ln.date,
-    total: tipsMode(p) ? num(ln.total) : numOf(d.total),
-    cash: ln.cash === '' ? null : numOf(ln.cash),
+    total: tipsMode(p) ? num(ln.total) : moneyNum(d.total),
+    cash: ln.cash === '' ? null : num(ln.cash),
     pay,
     barback: ln.barback,
   };
@@ -318,7 +319,7 @@ function visibleTypes(p, d) {
 }
 /**
  * {msg, id}: a plain message about the hours/shifts typed (and the pay type it is about), or {msg: ''}.
- * Refused: unreadable text, negative numbers, more than 24 hours in one row, more than 24 hours in all.
+ * Refused: typos (unreadable text, "1.2.3"), negative numbers, more than 24 hours in one row, more than 24 hours in all.
  */
 export function hoursProblem(p, d) {
   const types = visibleTypes(p, d);
@@ -326,10 +327,15 @@ export function hoursProblem(p, d) {
   let total = 0;
   for (const t of types) {
     const v = d.pay[t.id];
-    if (t.unit === 'amt' || !hasHoursText(v)) continue;
+    if (!hasHoursText(v)) continue;
+    if (t.unit === 'amt') {
+      const m = moneyTypo(v);
+      if (m) return { msg: payName(t, p.payTypes.indexOf(t)) + ': ' + m, id: t.id };
+      continue;
+    }
     const what = t.unit === 'hr' ? 'Hours' : 'Shifts';
     const forName = many ? ' for ' + payName(t, p.payTypes.indexOf(t)) : '';
-    if (!hoursReadable(v)) return { msg: what + forName + ' should be a number, like 6 or 7:30.', id: t.id };
+    if (hoursTypo(v)) return { msg: what + forName + ' should be a number, like 6 or 7:30.', id: t.id };
     const h = parseHoursInput(v);
     if (h < 0) return { msg: what + ' can’t be a negative number' + forName + '.', id: t.id };
     if (t.unit !== 'hr') continue;
@@ -355,11 +361,33 @@ export function hoursProblem(p, d) {
  * Total mode needs a total above 0. Tips mode takes 0 tips (a slow night still has hourly pay), but not blank or negative.
  */
 export function entryProblem(p, d, when = 'tonight') {
-  if (!tipsMode(p)) return numOf(d.total) > 0 ? '' : 'Enter what you made ' + when + ' first.';
+  const typo = moneyTypo(d.total);
+  if (typo) return typo;
+  if (!tipsMode(p)) return moneyNum(d.total) > 0 ? '' : 'Enter what you made ' + when + ' first.';
   const t = typedAmount(d.total);
   if (t == null) return 'Enter your tips first. Type 0 if you made none.';
   if (t < 0) return 'Tips can’t be a negative number.';
   return '';
+}
+/**
+ * The first typed amount that isn't a number ("1.2.3", "12abc"), else null: {where: 'total'|'sales'|'hours'|'cash', msg, id?}.
+ * Boxes that are not on screen (sales when nobody gets a % of sales) are not looked at. The live preview shows this
+ * instead of numbers, and saving refuses it.
+ */
+export function typoProblem(p, d) {
+  const total = moneyTypo(d.total);
+  if (total) return { where: 'total', msg: total };
+  if (salesNeeded(d, p)) {
+    const sales = moneyTypo(d.sales);
+    if (sales) return { where: 'sales', msg: sales };
+  }
+  const bad = hoursProblem(p, d);
+  const row = bad.msg && bad.id != null ? typeById(p, bad.id) : null;
+  if (row && (row.unit === 'amt' ? moneyTypo(d.pay[row.id]) : hoursTypo(d.pay[row.id])))
+    return { where: 'hours', msg: bad.msg, id: bad.id };
+  const cash = cashCheck(d, p);
+  if (cash.status === 'typo') return { where: 'cash', msg: cash.message };
+  return null;
 }
 /**
  * Everything that blocks saving, in the order the person meets it: {where: 'total'|'hours'|'sales'|'date', msg, id?} or
@@ -367,6 +395,8 @@ export function entryProblem(p, d, when = 'tonight') {
  * today: the business date for tonight (dates may be at most one day after it).
  */
 export function entryCheck(p, d, { when = 'tonight', today = todayISO() } = {}) {
+  const typo = typoProblem(p, d);
+  if (typo) return typo;
   const m = entryProblem(p, d, when);
   if (m) return { where: 'total', msg: m };
   const miss = missingHoursRow(p, d);
@@ -455,6 +485,9 @@ export function nightFields(
   const onInput = () => {
     refresh();
     onInputRaw();
+    // a typo in the tips/total box is flagged as it is typed (the screen's own callback just cleared any older message)
+    const typo = moneyTypo(d.total);
+    if (typo) setTotalError(typo);
   };
   const ts = tipoutSetup(d.tipoutSnap || p);
   const after = ts.on && ts.basis === 'after';
@@ -569,7 +602,7 @@ export function nightFields(
     const r = rateOf(t);
     if (!(r > 0)) return 'No rate in Setup for this job, so it adds no pay.';
     const unit = t.unit === 'shift' ? '/shift' : '/h';
-    const h = hoursReadable(v) ? parseHoursInput(v) : null;
+    const h = hoursOf(v);
     return money(r) + unit + (h != null && h >= 0 ? ' → ' + money(round2(h * r)) : '');
   };
   let rootEl = null;
@@ -849,9 +882,10 @@ export function nightFields(
     // the sales box shows only while someone ticked tonight gets a % of sales (then it is needed)
     const needSales = salesNeeded(d, p);
     salesField.hidden = !needSales;
-    if (!needSales || typedAmount(d.sales) != null) salesField.setError('');
+    if (needSales && moneyTypo(d.sales)) salesField.setError(moneyTypo(d.sales));
+    else if (!needSales || typedAmount(d.sales) != null) salesField.setError('');
     cashField.setError(cashCheck(d, p).message);
-    offField.hidden = !(cashCheck(d, p).status === 'ok' && clean(d.cash) !== '');
+    offField.hidden = cashCheck(d, p).status !== 'ok';
     offCb.checked = !!d.cashOffPayroll;
     rateLines.forEach(({ t, line }) => {
       line.textContent = rateText(t, d.pay[t.id]);
@@ -869,10 +903,12 @@ export function nightFields(
     setHoursError,
     setDateError: (m) => dateField.setError(m),
     setSalesError: (m) => salesField.setError(m),
+    setCashError: (m) => cashField.setError(m),
     refresh,
     focusPay: (id) => focusKey(key + '-pay-' + id),
     focusDate: () => date.focus(),
     focusSales: () => salesInput.focus(),
+    focusCash: () => cash.focus(),
   };
 }
 
@@ -884,6 +920,9 @@ export function showEntryProblem(f, prob) {
   } else if (prob.where === 'hours') {
     f.setHoursError(prob.msg);
     if (prob.id != null) f.focusPay(prob.id);
+  } else if (prob.where === 'cash') {
+    f.setCashError(prob.msg);
+    f.focusCash();
   } else if (prob.where === 'sales') {
     f.setSalesError(prob.msg);
     f.focusSales();
@@ -1204,6 +1243,21 @@ export function render(root) {
   const quick = el('p', { class: 'quick-net', 'data-focus-key': 'night-quick-net' });
 
   const update = () => {
+    // A typo (like 1.2.3) shows no numbers: they would be worked out from something else than what was typed.
+    if (typoProblem(p, d)) {
+      clear(resultHost).append(
+        el(
+          'div',
+          { class: 'result' },
+          el('p', { class: 'note' }, 'Fix the amount marked above to see your take-home.'),
+        ),
+      );
+      lastSummary = '';
+      quick.textContent = '';
+      quick.hidden = true;
+      started = true;
+      return announce();
+    }
     const hist = historyOf(S, w);
     const shifts = shiftsPerPeriod(p, hist).n;
     const night = liveNight(d, 'draft', p);
