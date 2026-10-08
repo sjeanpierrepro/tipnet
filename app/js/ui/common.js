@@ -110,26 +110,98 @@ export const moneyInput = (props = {}) =>
     spellcheck: 'false',
     ...props,
   });
+/* ---------- messages about what is being typed ---------- */
+/** A typo message waits for this pause in typing (or for the box to be left), so "$" or "7:" is never flagged mid-typing. */
+export const TYPO_PAUSE_MS = 800;
+/**
+ * The pace of a message about text being typed (a typo): later(msg) clears at once when msg is '' (the text was fixed),
+ * and shows msg at once when one is already up (the text is still wrong) or when now is true. Otherwise nothing is shown
+ * until typing pauses for TYPO_PAUSE_MS (each call starts the wait again). show(msg) draws it ('' clears).
+ * later.flush(): show a waiting message now (the box was left); later.cancel(): drop it; later.up(): one is shown.
+ */
+export function typoLater(show, ms = TYPO_PAUSE_MS) {
+  let up = false;
+  let wait = '';
+  const t = debounce(() => {
+    const m = wait;
+    wait = '';
+    up = !!m;
+    show(m);
+  }, ms);
+  const later = (m, now = false) => {
+    if (m && !up && !now) {
+      show(''); // an older message (e.g. Save's) is out of date once the text changes
+      wait = m;
+      t();
+      return;
+    }
+    t.cancel();
+    wait = '';
+    up = !!m;
+    show(m || '');
+  };
+  later.flush = () => {
+    if (wait) t.flush();
+  };
+  later.cancel = () => {
+    wait = '';
+    t.cancel();
+  };
+  later.up = () => up;
+  return later;
+}
+/**
+ * An error line's tone: an alert (role="alert") for what Save, Add and the like refuse when pressed, else a polite
+ * message (aria-live="polite") that never interrupts, like a typo flagged after a pause in typing.
+ */
+export function errorTone(node, alert) {
+  if (alert) {
+    node.removeAttribute('aria-live');
+    node.setAttribute('role', 'alert');
+  } else {
+    node.removeAttribute('role');
+    node.setAttribute('aria-live', 'polite');
+  }
+}
+const typoPace = new WeakMap(); // box -> the typoLater of its message
 /**
  * Flag a box whose text isn't a number: f.setError shows typo(text)'s message (the box gets aria-invalid and the message is
- * linked to it) and the box is marked data-typo; fixing the text clears it. Only an error raised here is cleared here.
- * Returns true while the text is a typo, so callers can skip applying it. f: a field() or anything with setError.
+ * linked to it); fixing the text clears it at once. Only an error raised here (or shown for that typo) is cleared here.
+ * now: false while the person types (watchTypo): the message then waits for a pause in typing or for the box to be left
+ * (typoLater). The box is marked data-typo at once either way, so nothing applies the text meanwhile. Returns true while
+ * the text is a typo, so callers can skip applying it. f: a field() or anything with setError.
  */
-export function flagTypo(input, f, typo = moneyTypo) {
+export function flagTypo(input, f, typo = moneyTypo, { now = true } = {}) {
   const m = typo(input.value);
+  let later = typoPace.get(input);
+  if (!later) {
+    later = typoLater((msg) => {
+      if (msg) {
+        input.setAttribute('data-typo-shown', '');
+        f.setError(msg);
+      } else if (input.hasAttribute('data-typo-shown')) {
+        input.removeAttribute('data-typo-shown');
+        f.setError('');
+      }
+    });
+    typoPace.set(input, later);
+    input.addEventListener('blur', () => later.flush());
+  }
   if (m) {
-    f.setError(m);
     input.setAttribute('data-typo', '');
+    later(m, now);
     return true;
   }
+  later('');
   if (input.hasAttribute('data-typo')) {
     input.removeAttribute('data-typo');
-    f.setError('');
+    f.setError(''); // e.g. a Save that refused the typo before its message was up
   }
   return false;
 }
-/** flagTypo as the person types. */
-export const watchTypo = (input, f, typo) => input.addEventListener('input', () => flagTypo(input, f, typo));
+/** flagTypo as the person types: the message waits for a pause or for the box to be left. */
+export const watchTypo = (input, f, typo) =>
+  input.addEventListener('input', () => flagTypo(input, f, typo, { now: false }));
 /** Error line for a box that has no field() around it: {node, setError}; put node right after the box. */
 export function inlineError(input) {
   const node = el('p', { class: 'field-error', id: (input.id || (input.id = uid())) + '-err', hidden: true });

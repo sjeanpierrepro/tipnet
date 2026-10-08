@@ -57,6 +57,7 @@ import {
   keepFocus,
   workplaceSwitcher,
   debounce,
+  flagTypo,
 } from './common.js';
 import {
   nightFields,
@@ -455,7 +456,6 @@ function editor(S, n) {
     key: 'edit-' + n.id,
     rateOf,
     onInput: () => {
-      f.setTotalError('');
       if (d.date !== lastDate) {
         // a new date: the choices follow it, and a "Move night?" asked for the old date no longer applies
         lastDate = d.date;
@@ -975,7 +975,7 @@ function calibCard(S, today) {
   );
   const actual = moneyInput({ placeholder: '0.00', id: 'cal-actual', value: calActual });
   const actualField = field('Actual paycheck amount (take-home on the stub)', actual);
-  actualField.setError(moneyTypo(calActual));
+  flagTypo(actual, actualField); // a typo kept from before this redraw shows at once
   const msg = el('p', { class: 'note', 'aria-live': 'polite', hidden: !calMsg }, calMsg ? calMsg.text : '');
   const run = el(
     'button',
@@ -1012,7 +1012,7 @@ function calibCard(S, today) {
   });
   actual.addEventListener('input', () => {
     calActual = actual.value;
-    actualField.setError(moneyTypo(calActual));
+    flagTypo(actual, actualField, moneyTypo, { now: false }); // after a pause in typing, or when the box is left
     dropPending();
   });
   if (inProgress() && !calMsg)

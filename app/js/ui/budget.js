@@ -830,7 +830,7 @@ function heroCard(S, r0, src) {
   };
   const later = debounce(commit, 400);
   cashIn.addEventListener('input', () => {
-    flagTypo(cashIn, cashF);
+    flagTypo(cashIn, cashF, moneyTypo, { now: false }); // after a pause in typing, or when the box is left
     dirty = true;
     later();
   });
@@ -1969,10 +1969,12 @@ function goalForm(item, kind = 'plan') {
     clear(preview);
     live.textContent = '';
     // A typo (like 1.2.3) shows its message and no numbers: they would be worked out from something else than what was typed.
+    // (their messages wait for a pause in typing, or for the box to be left)
+    const later = { now: false };
     const typos = [
-      flagTypo(cost, fCost),
-      flagTypo(saved, fSaved),
-      mode === 'fixed' ? flagTypo(perCheck, fPer) : false,
+      flagTypo(cost, fCost, moneyTypo, later),
+      flagTypo(saved, fSaved, moneyTypo, later),
+      mode === 'fixed' ? flagTypo(perCheck, fPer, moneyTypo, later) : false,
     ];
     if (typos.some(Boolean)) return;
     if (mode === 'date') {

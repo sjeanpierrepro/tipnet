@@ -8,6 +8,11 @@ import { addDays, todayISO } from '../../app/js/math.js';
 
 const AMOUNT = /That isn’t an amount\. Use numbers and one decimal point, like 12\.50\./;
 const today = () => businessDate(new Date(), 6);
+/** Type into a box and leave it (as tabbing on does): a typo's message shows once the box is left. */
+const typeOut = (page, input, value) => {
+  page.type(input, value);
+  page.leave(input);
+};
 const key = (page, k) => page.must(page.$('[data-focus-key="' + k + '"]'), k);
 const submit = (page) => page.click(page.$('form button[type=submit]'));
 /** The error line next to a box: found through the box's aria-describedby, so a hidden or unlinked message fails. */
@@ -38,11 +43,11 @@ test('Tonight: a typo in the total, hours, sales or cash box blocks Save, shows 
     const hours = key(page, 'night-pay-p1');
     const cash = key(page, 'night-cash');
     const sales = key(page, 'night-sales');
-    page.type(hours, '7');
-    page.type(sales, '1000');
+    typeOut(page, hours, '7');
+    typeOut(page, sales, '1000');
     // total
     for (const bad of ['1.2.3', '12abc', '1,2,3', '$', '1..2']) {
-      page.type(total, bad);
+      typeOut(page, total, bad);
       assert.match(errOf(page, total), AMOUNT, bad);
       assert.equal(invalid(total), true, bad);
       assert.match(
@@ -55,31 +60,31 @@ test('Tonight: a typo in the total, hours, sales or cash box blocks Save, shows 
       assert.equal(page.state().nights.length, 0, bad + ' is not saved');
       assert.equal(page.doc.activeElement, total, 'focus goes to the box');
     }
-    page.type(total, '1,250.50');
+    typeOut(page, total, '1,250.50');
     assert.equal(errOf(page, total), '');
     assert.equal(invalid(total), false);
     assert.match(page.$('.result').textContent, /Made tonight\$1,250\.50/);
     // cash
-    page.type(cash, '1.2.3');
+    typeOut(page, cash, '1.2.3');
     assert.match(page.text(), AMOUNT);
     assert.equal(invalid(cash), true);
     submit(page);
     assert.equal(page.state().nights.length, 0);
     assert.equal(page.doc.activeElement, cash);
-    page.type(cash, '40');
+    typeOut(page, cash, '40');
     assert.equal(invalid(cash), false);
     // sales
-    page.type(sales, '10.0.0');
+    typeOut(page, sales, '10.0.0');
     assert.equal(invalid(sales), true);
     assert.match(errOf(page, sales), AMOUNT);
     submit(page);
     assert.equal(page.state().nights.length, 0);
     assert.equal(page.doc.activeElement, sales);
-    page.type(sales, '1000');
+    typeOut(page, sales, '1000');
     assert.equal(invalid(sales), false);
     // hours
     for (const bad of ['1.2.3', '7..5', '7:3:3:3', '7h abc']) {
-      page.type(hours, bad);
+      typeOut(page, hours, bad);
       assert.match(page.text(), /Hours should be a number, like 6 or 7:30\./, bad);
       submit(page);
       assert.equal(page.state().nights.length, 0, bad);
@@ -93,7 +98,7 @@ test('Tonight: a typo in the total, hours, sales or cash box blocks Save, shows 
         bad,
       );
     }
-    page.type(hours, '7:30');
+    typeOut(page, hours, '7:30');
     assert.equal(invalid(key(page, 'night-pay-p1')), false, 'fixed: no longer marked');
     submit(page);
     const n = page.state().nights;
@@ -118,20 +123,20 @@ test('Tonight, tips mode: the tips box refuses a typo, and so does an amount in 
   });
   try {
     const total = key(page, 'night-total');
-    page.type(key(page, 'night-pay-p1'), '6');
-    page.type(total, '1.2.3');
+    typeOut(page, key(page, 'night-pay-p1'), '6');
+    typeOut(page, total, '1.2.3');
     assert.match(errOf(page, total), AMOUNT);
     submit(page);
     assert.equal(page.state().nights.length, 0);
-    page.type(total, '350');
+    typeOut(page, total, '350');
     page.click(page.button('+ Add other pay'));
     const bonus = key(page, 'night-pay-bonus');
-    page.type(bonus, '5.5.5');
+    typeOut(page, bonus, '5.5.5');
     assert.match(page.text(), /Bonus: That isn’t an amount\./);
     submit(page);
     assert.equal(page.state().nights.length, 0);
     assert.equal(page.doc.activeElement, bonus);
-    page.type(bonus, '25');
+    typeOut(page, bonus, '25');
     submit(page);
     const n = page.state().nights[0];
     assert.equal(n.tips, 350);
@@ -157,24 +162,24 @@ test('Pay periods night editor: a typo is refused with a message and the saved n
     const total = key(page, 'edit-1-total');
     const cash = key(page, 'edit-1-cash');
     const hours = key(page, 'edit-1-pay-p1');
-    page.type(total, '1.2.3');
+    typeOut(page, total, '1.2.3');
     assert.match(errOf(page, total), AMOUNT);
     assert.match(page.text(), /Fix the amount marked above to see the estimate\./);
     page.click(page.button('Save changes'));
     assert.equal(page.state().nights[0].total, 300, 'not stored');
     assert.equal(page.doc.activeElement, total);
-    page.type(total, '320');
-    page.type(cash, '5,0,0');
+    typeOut(page, total, '320');
+    typeOut(page, cash, '5,0,0');
     assert.equal(invalid(cash), true);
     page.click(page.button('Save changes'));
     assert.equal(page.state().nights[0].cash, 50, 'not stored');
     assert.equal(page.doc.activeElement, cash);
-    page.type(cash, '60');
-    page.type(hours, '6..5');
+    typeOut(page, cash, '60');
+    typeOut(page, hours, '6..5');
     page.click(page.button('Save changes'));
     assert.match(page.text(), /Hours should be a number/);
     assert.equal(page.state().nights[0].pay.p1, 6);
-    page.type(hours, '6.5');
+    typeOut(page, hours, '6.5');
     page.click(page.button('Save changes'));
     const n = page.state().nights[0];
     assert.deepEqual([n.total, n.cash, n.pay.p1], [320, 60, 6.5]);
@@ -200,14 +205,14 @@ test('Check my accuracy: a typo in the paycheck amount compares nothing; the fix
   try {
     page.tab('periods');
     const actual = page.must(page.$('#cal-actual'), 'actual');
-    page.type(actual, '1.2.3');
+    typeOut(page, actual, '1.2.3');
     assert.match(errOf(page, actual), AMOUNT);
     assert.equal(invalid(actual), true);
     page.click(page.$('#cal-run'));
     assert.equal(page.doc.activeElement, actual);
     assert.equal(page.$('#cal-apply'), null, 'nothing to apply');
     assert.equal(page.state().workplaces[0].calib.length, 0);
-    page.type(actual, '400');
+    typeOut(page, actual, '400');
     assert.equal(invalid(actual), false);
     page.click(page.$('#cal-run'));
     assert.ok(page.$('#cal-apply') || page.$('#cal-keep'), 'the comparison is shown');
@@ -224,23 +229,23 @@ test('guided setup: a typo in gross pay, a deduction, the main rate or a tip-out
   const page = await boot();
   try {
     page.tab('setup');
-    page.type(page.$$('input[type=date]', page.app)[0], '2026-09-01');
+    typeOut(page, page.$$('input[type=date]', page.app)[0], '2026-09-01');
     const gross = page.$('input[placeholder="e.g. 2,000"]', page.app);
     // step 1: gross pay
-    page.type(gross, '1.2.3');
+    typeOut(page, gross, '1.2.3');
     assert.match(errOf(page, gross), AMOUNT);
     assert.equal(invalid(gross), true);
     page.click(page.button('Next'));
     assert.match(page.text(), /1\. Pay period and gross/, 'still on step 1');
     assert.equal(page.doc.activeElement, gross);
     assert.notEqual((page.state().settings.guidedDraft.profile || {}).gross, 1.2, 'not stored as 1.2');
-    page.type(gross, '1,500');
+    typeOut(page, gross, '1,500');
     assert.equal(invalid(gross), false);
     page.click(page.button('Next'));
     assert.equal(page.state().settings.guidedDraft.profile.gross, 1500);
     // step 2: a deduction
     const ded = page.must(page.$('input[id^="da-"]'), 'deduction');
-    page.type(ded, '12abc');
+    typeOut(page, ded, '12abc');
     assert.match(errOf(page, ded), AMOUNT);
     page.click(page.button('Next'));
     assert.match(page.text(), /Deductions/);
@@ -249,24 +254,24 @@ test('guided setup: a typo in gross pay, a deduction, the main rate or a tip-out
       page.state().settings.guidedDraft.profile.deductions.every((d) => d.amount !== 12),
       'not stored as 12',
     );
-    page.type(ded, '150,5');
+    typeOut(page, ded, '150,5');
     assert.equal(invalid(ded), false);
     page.click(page.button('Next'));
     // step 3: the main rate, then a tip-out
     const rate = byId(page, 'pr-p1');
-    page.type(rate, '12.5.0');
+    typeOut(page, rate, '12.5.0');
     assert.match(errOf(page, rate), AMOUNT);
     page.click(page.button('Finish setup'));
     assert.equal(page.state().workplaces[0].setupDone, undefined, 'not finished');
     assert.equal(page.doc.activeElement, rate);
-    page.type(rate, '12.50');
+    typeOut(page, rate, '12.50');
     page.click(byId(page, 'to-on'));
     const tv = page.must(page.$('input[id^="tv-"]'), 'tip-out amount');
-    page.type(tv, '1.2.3');
+    typeOut(page, tv, '1.2.3');
     assert.match(errOf(page, tv), /That isn’t a percent\./);
     page.click(page.button('Finish setup'));
     assert.notEqual(page.state().workplaces[0].setupDone, true, 'not finished');
-    page.type(tv, '15');
+    typeOut(page, tv, '15');
     page.click(page.button('Finish setup'));
     const w = page.state().workplaces[0];
     assert.equal(w.setupDone, true);
@@ -301,7 +306,7 @@ test('Setup draft: typos in gross, a deduction, a job rate and a tip-out amount 
     const good = boxes.map(([i]) => i.value);
     for (const [input, label] of boxes) {
       const was = input.value;
-      page.type(input, '1.2.3');
+      typeOut(page, input, '1.2.3');
       assert.match(
         errOf(page, input),
         label === 'Percent of tips' ? /That isn’t a percent\./ : AMOUNT,
@@ -318,20 +323,20 @@ test('Setup draft: typos in gross, a deduction, a job rate and a tip-out amount 
         label,
       );
       assert.match(page.text(page.$('.save-bar')), /You have changes that aren’t saved yet\./, label);
-      page.type(input, was);
+      typeOut(page, input, was);
       assert.equal(invalid(input), false, label + ' fixed');
     }
     // after all that, the draft still holds the last good numbers and saves unchanged
     boxes.forEach(([i], k) => assert.equal(i.value, good[k]));
     // a typo left in a box next to a good change: Save stays off and nothing is applied
-    page.type(gross, '2,100');
-    page.type(boxes[1][0], '1,2,3');
+    typeOut(page, gross, '2,100');
+    typeOut(page, boxes[1][0], '1,2,3');
     page.click(byId(page, 'draft-save'));
     const w = () => page.state().workplaces[0].profile;
     assert.equal(w().gross, 2000, 'nothing saved');
     assert.equal(w().deductions[0].amount, 100);
     assert.equal(byId(page, 'draft-save').disabled, true);
-    page.type(boxes[1][0], '125.50');
+    typeOut(page, boxes[1][0], '125.50');
     await page.saveSetup();
     assert.equal(w().gross, 2100);
     assert.equal(w().deductions[0].amount, 125.5);
@@ -352,16 +357,16 @@ test('Setup draft: the shifts box and a non-taxable amount refuse typos too', as
   try {
     page.openSetup();
     const shifts = page.byText('.field', 'Shifts you worked', page.app).querySelector('input');
-    page.type(shifts, '5.5.5');
+    typeOut(page, shifts, '5.5.5');
     assert.match(errOf(page, shifts), /That isn’t a number of shifts\./);
     assert.equal(byId(page, 'draft-save').disabled, true);
-    page.type(shifts, '5');
+    typeOut(page, shifts, '5');
     assert.equal(invalid(shifts), false);
     const nt = byId(page, 'na-x1');
-    page.type(nt, '2o');
+    typeOut(page, nt, '2o');
     assert.match(errOf(page, nt), AMOUNT);
     assert.equal(byId(page, 'draft-save').disabled, true);
-    page.type(nt, '25');
+    typeOut(page, nt, '25');
     assert.equal(invalid(nt), false);
     await page.saveSetup();
     const p = page.state().workplaces[0].profile;

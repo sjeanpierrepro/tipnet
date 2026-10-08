@@ -9,6 +9,11 @@ const PERCENT = 'That isn’t a percent. Use something like 15 or 1.25.';
 const AMOUNT = /That isn’t an amount\./;
 const DEV = 'http://localhost/?unlock=dev';
 const byId = (page, id) => page.must(page.$('#' + id), id);
+/** Type into a box and leave it (as tabbing on does): a typo's message shows once the box is left. */
+const typeOut = (page, input, value) => {
+  page.type(input, value);
+  page.leave(input);
+};
 const key = (page, k) => page.must(page.$('[data-focus-key="' + k + '"]'), k);
 const errOf = (page, input) => {
   const ids = (input.getAttribute('aria-describedby') || '').split(/\s+/);
@@ -29,11 +34,11 @@ test('Setup: a tip-out percent box takes "15%" and says percent when it is wrong
     page.openSetup();
     const amt = byId(page, 'tv-t1');
     const saved = () => page.state().workplaces[0].profile.tipouts[0];
-    page.type(amt, '1.25 %');
+    typeOut(page, amt, '1.25 %');
     assert.equal(errOf(page, amt), '');
-    page.type(amt, '1.2.3');
+    typeOut(page, amt, '1.2.3');
     assert.equal(errOf(page, amt), PERCENT);
-    page.type(amt, '15%');
+    typeOut(page, amt, '15%');
     assert.equal(errOf(page, amt), '');
     await page.saveSetup();
     assert.equal(saved().value, 15);
@@ -41,11 +46,11 @@ test('Setup: a tip-out percent box takes "15%" and says percent when it is wrong
     page.openSetup();
     const amt2 = byId(page, 'tv-t1');
     const mode = byId(page, 'tm-t1');
-    page.type(amt2, '15%');
+    typeOut(page, amt2, '15%');
     mode.value = 'flat';
     page.change(mode);
     assert.match(errOf(page, amt2), AMOUNT, '15% is not dollars');
-    page.type(amt2, '$ 12.50');
+    typeOut(page, amt2, '$ 12.50');
     assert.equal(errOf(page, amt2), '');
     await page.saveSetup();
     assert.equal(saved().value, 12.5);
@@ -66,17 +71,17 @@ test('Tonight: "$ 12.50", "+12" and "7h 30m." are accepted and saved as 12.5, 12
   try {
     const total = key(page, 'night-total');
     const hours = key(page, 'night-pay-p1');
-    page.type(hours, '7h 30m.');
-    page.type(total, '$ 12.50');
+    typeOut(page, hours, '7h 30m.');
+    typeOut(page, total, '$ 12.50');
     assert.equal(errOf(page, total), '');
     page.click(page.$('form button[type=submit]'));
     const n = page.state().nights;
     assert.equal(n.length, 1);
     assert.equal(n[0].total, 12.5);
     assert.equal(n[0].pay.p1, 7.5);
-    page.type(total, '+12');
+    typeOut(page, total, '+12');
     assert.equal(errOf(page, total), '');
-    page.type(total, '12.50$');
+    typeOut(page, total, '12.50$');
     assert.equal(errOf(page, total), '');
   } finally {
     await page.close();
@@ -106,18 +111,18 @@ test('Budget: a bill’s due day takes "15th", "1st", "2nd", "3rd" and refuses "
       ['3rd', 3],
       ['21st', 21],
     ]) {
-      page.type(box('name'), 'Bill ' + text);
-      page.type(box('amount'), '50');
-      page.type(box('dueDay'), text);
+      typeOut(page, box('name'), 'Bill ' + text);
+      typeOut(page, box('amount'), '50');
+      typeOut(page, box('dueDay'), text);
       assert.equal(errOf(page, box('dueDay')), '', text);
       page.click(page.button('Add bill'));
       assert.equal(page.state().budget.bills.length, ++want, text);
       assert.equal(page.state().budget.bills[want - 1].dueDay, d, text);
     }
     for (const bad of ['15abc', '1.2.3']) {
-      page.type(box('name'), 'Bad');
-      page.type(box('amount'), '50');
-      page.type(box('dueDay'), bad);
+      typeOut(page, box('name'), 'Bad');
+      typeOut(page, box('amount'), '50');
+      typeOut(page, box('dueDay'), bad);
       assert.match(errOf(page, box('dueDay')), /That isn’t a day\./, bad);
       page.click(page.button('Add bill'));
       assert.equal(page.state().budget.bills.length, want, bad);

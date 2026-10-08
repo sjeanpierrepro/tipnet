@@ -223,8 +223,10 @@ const typoBoxes = () =>
   boxes.filter((b) => b.input.isConnected && !b.input.closest('[hidden]') && b.typo(b.input.value));
 function guard(input, f, typo = moneyTypo) {
   boxes.push({ input, f, typo });
-  watchTypo(input, f, typo);
+  watchTypo(input, f, typo); // the message waits for a pause in typing or for the box to be left
 }
+/** Next, Finish or Save was pressed: every box with a typo shows its message now. */
+const showTypos = () => typoBoxes().forEach((b) => flagTypo(b.input, b.f, b.typo));
 const labelOf = (f) =>
   (f.querySelector('label') ? f.querySelector('label').textContent : '')
     .replace(/\s*\(optional\)\s*$/, '')
@@ -465,11 +467,11 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
       else if (d > 21) de = 'Payday is more than 21 days after the pay period ends. Check the date.';
     }
     fDelay.setError(de);
-    fShifts.setError(
-      shiftsTypo(shifts.value) || (moneyOf(shifts.value) < 0 ? 'Shifts can’t be negative.' : ''),
-    );
-    if (moneyTypo(gross.value)) fGross.setError(moneyTypo(gross.value));
-    else ctx.gate(fGross, moneyOf(gross.value) > 0 ? '' : 'Gross pay is needed to work out your tax rate.');
+    // A typo's message is its box's own (guard): after a pause in typing, or at once on Next / Finish (card.validate).
+    if (!shiftsTypo(shifts.value))
+      fShifts.setError(moneyOf(shifts.value) < 0 ? 'Shifts can’t be negative.' : '');
+    if (!moneyTypo(gross.value))
+      ctx.gate(fGross, moneyOf(gross.value) > 0 ? '' : 'Gross pay is needed to work out your tax rate.');
     // The end date sets the period length when present; say so if it doesn't match the schedule picked.
     const len = lengthFromDates(p) ? dayDiff(p.periodStart, p.periodEnd) + 1 : 0;
     const cal = calendarMode(p);
@@ -575,6 +577,8 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
   card.validate = () => {
     ctx.showAll = true;
     validate();
+    flagTypo(shifts, fShifts, shiftsTypo);
+    flagTypo(gross, fGross);
     return !!(
       Number.isFinite(parseISO(start.value)) &&
       moneyOf(gross.value) > 0 &&
@@ -2017,8 +2021,11 @@ function guided(root, ctx) {
       : null;
   const next = el('button', { type: 'button', class: 'btn' }, guidedStep === 2 ? 'Finish setup' : 'Next');
   next.addEventListener('click', () => {
-    const typo = typoBoxes()[0]; // its message is already shown by the box
-    if (typo) return typo.input.focus();
+    const typo = typoBoxes()[0];
+    if (typo) {
+      showTypos(); // at once (while typing they wait for a pause)
+      return typo.input.focus();
+    }
     const bad = body.filter((c) => !c.validate());
     if (bad.length) {
       const i = bad.map((c) => c.firstInvalid()).find(Boolean);
@@ -2540,6 +2547,7 @@ function saveBar(S, w, ctx) {
     if (!saveOpen()) {
       sync();
       const typo = typoBoxes()[0];
+      showTypos(); // at once (while typing they wait for a pause)
       if (typo) typo.input.focus();
       return;
     }

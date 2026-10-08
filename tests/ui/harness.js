@@ -167,6 +167,12 @@ function makePage(win, doc, app) {
     change(input) {
       input.dispatchEvent(new win.Event('change', { bubbles: true }));
     },
+    /** Leave a box (blur), as tabbing on or tapping elsewhere does: a typo's message waiting for a pause shows then. */
+    leave(input) {
+      if (doc.activeElement === input) return input.blur();
+      input.dispatchEvent(new win.Event('blur'));
+      input.dispatchEvent(new win.Event('focusout', { bubbles: true }));
+    },
     /** Press a key. happy-dom has no implicit form submission, so Enter in a text field clicks the form's submit button (as browsers do) unless the page handled the key. */
     key(node, k) {
       const ev = new win.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true });

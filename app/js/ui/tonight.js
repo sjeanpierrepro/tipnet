@@ -67,6 +67,8 @@ import {
   uid,
   debounce,
   bus,
+  typoLater,
+  errorTone,
 } from './common.js';
 
 // One in-progress entry per restaurant (restaurant id -> draft). They survive tab and restaurant switches, so a half-typed
@@ -454,6 +456,11 @@ export function entryProblem(p, d, when = 'tonight') {
   if (t < 0) return 'Tips can’t be a negative number.';
   return '';
 }
+/** True when an hoursProblem result is about text that isn't a number (not, say, more than 24 hours). */
+function hoursTypoIn(p, d, bad) {
+  const row = bad.msg && bad.id != null ? typeById(p, bad.id) : null;
+  return !!row && !!(row.unit === 'amt' ? moneyTypo(d.pay[row.id]) : hoursTypo(d.pay[row.id]));
+}
 /**
  * The first typed amount that isn't a number ("1.2.3", "12abc"), else null: {where: 'total'|'sales'|'hours'|'cash', msg, id?}.
  * Boxes that are not on screen (sales when nobody gets a % of sales) are not looked at. The live preview shows this
@@ -467,9 +474,7 @@ export function typoProblem(p, d) {
     if (sales) return { where: 'sales', msg: sales };
   }
   const bad = hoursProblem(p, d);
-  const row = bad.msg && bad.id != null ? typeById(p, bad.id) : null;
-  if (row && (row.unit === 'amt' ? moneyTypo(d.pay[row.id]) : hoursTypo(d.pay[row.id])))
-    return { where: 'hours', msg: bad.msg, id: bad.id };
+  if (hoursTypoIn(p, d, bad)) return { where: 'hours', msg: bad.msg, id: bad.id };
   const cash = cashCheck(d, p);
   if (cash.status === 'typo') return { where: 'cash', msg: cash.message };
   return null;
@@ -598,14 +603,18 @@ export function nightFields(
   } = {},
 ) {
   syncDraft(d, p);
+  // A typo (text that isn't a number) is flagged after a pause in typing or when its box is left (typoLater), so "$",
+  // "7:" or "1," on the way to "$45", "7:30" or "1,250" never is, and politely (no alert). Fixing it clears it at once.
+  // What Save refuses is shown at once, as an alert (showEntryProblem). Other messages (more than 24 hours, cash over
+  // the tips) are shown as before.
   let refresh = () => {};
   const onInput = () => {
     refresh();
     onInputRaw();
-    // a typo in the tips/total box is flagged as it is typed (the screen's own callback just cleared any older message)
-    const typo = moneyTypo(d.total);
-    if (typo) setTotalError(typo);
+    totalLater(moneyTypo(d.total)); // also clears what Save said about the box, once anything is typed
   };
+  /** A box was left: its waiting typo message is shown now. */
+  const flushTypos = () => [totalLater, salesLater, hoursLater, cashLater].forEach((l) => l.flush());
   const ts = tipoutSetup(d.tipoutSnap || p);
   const after = ts.on && ts.basis === 'after';
   const people = draftTipouts(d, p); // the people who can be ticked tonight
@@ -622,6 +631,7 @@ export function nightFields(
       set(input.value);
       onInput();
     });
+    input.addEventListener('blur', flushTypos);
     return input;
   };
 
@@ -637,10 +647,17 @@ export function nightFields(
     },
   );
   let totalNode;
-  const errEl = el('p', { class: 'field-error', hidden: true, role: 'alert', id: totalInput.id + '-err' });
+  const errEl = el('p', {
+    class: 'field-error',
+    hidden: true,
+    'aria-live': 'polite',
+    id: totalInput.id + '-err',
+  });
   const hintId = totalInput.id + '-hint';
   totalInput.setAttribute('aria-describedby', hintId); // the hint is read with the field, after the error when there is one
-  const setTotalError = (m) => {
+  /** alert: what Save refused (role="alert"); else a polite message (a typo flagged after a pause in typing). */
+  const setTotalError = (m, alert = false) => {
+    errorTone(errEl, alert && !!m);
     errEl.hidden = !m;
     errEl.textContent = m || '';
     totalNode.toggleAttribute('data-invalid', !!m);
@@ -669,6 +686,7 @@ export function nightFields(
     );
   }
 
+  const totalLater = typoLater((m) => setTotalError(m));
   const kids = [totalNode];
   /* ----- who was tipped out tonight (everyone ticked to start), and tonight's sales for a % of sales tip-out ----- */
   const salesInput = bind(
@@ -920,9 +938,13 @@ export function nightFields(
   };
   drawOther();
   kids.push(otherHost);
-  const hoursErr = el('p', { class: 'field-error', hidden: true, role: 'alert', id: uid('hrs-err') });
-  /** The hours message, and the box it is about marked invalid and linked to it (id: its pay type, when known). */
-  const setHoursError = (m, id = m ? hoursProblem(p, d).id : null) => {
+  const hoursErr = el('p', { class: 'field-error', hidden: true, 'aria-live': 'polite', id: uid('hrs-err') });
+  /**
+   * The hours message, and the box it is about marked invalid and linked to it (id: its pay type, when known).
+   * alert: what Save refused (role="alert"); else polite.
+   */
+  const setHoursError = (m, { id = m ? hoursProblem(p, d).id : null, alert = false } = {}) => {
+    errorTone(hoursErr, alert && !!m);
     hoursErr.hidden = !m;
     hoursErr.textContent = m || '';
     // before the fields are put together (the first refresh) the boxes are still in kids
@@ -947,6 +969,7 @@ export function nightFields(
     }
   };
   kids.push(hoursErr);
+  const hoursLater = typoLater((m) => setHoursError(m));
 
   const cash = bind(
     moneyInput({ placeholder: '—', 'data-focus-key': key + '-cash' }),
@@ -1005,23 +1028,30 @@ export function nightFields(
   db.onInput = onInput;
   const { input: date, field: dateField, today } = db;
   kids.push(dateField);
-  refresh = () => {
+  const salesLater = typoLater((m) => salesField.setError(m));
+  const cashLater = typoLater((m) => cashField.setError(m));
+  /** now: show every message at once (the fields were just drawn); else typos wait for a pause in typing. */
+  refresh = (now = false) => {
     // the sales box shows only while someone ticked tonight gets a % of sales (then it is needed)
     const needSales = salesNeeded(d, p);
     salesField.hidden = !needSales;
-    if (needSales && moneyTypo(d.sales)) salesField.setError(moneyTypo(d.sales));
-    else if (!needSales || typedAmount(d.sales) != null) salesField.setError('');
+    const st = needSales ? moneyTypo(d.sales) : '';
+    if (st) salesLater(st, now);
+    else if (!needSales || typedAmount(d.sales) != null || salesLater.up()) salesLater('');
+    else salesLater.cancel(); // blank: Save asks for the sales (its message stays)
     const cc = cashCheck(d, p, paySnap());
-    cashField.setError(cc.message);
+    cashLater(cc.message, now || cc.status !== 'typo');
     offField.hidden = cc.status !== 'ok';
     offCb.checked = !!d.cashOffPayroll;
     rateLines.forEach(({ t, line }) => {
       line.textContent = rateText(t, d.pay[t.id]);
     });
-    setHoursError(hoursProblem(p, d).msg);
+    const hp = hoursProblem(p, d);
+    hoursLater(hp.msg, now || !hoursTypoIn(p, d, hp));
     dateField.setError(dateProblem(d.date, today));
   };
-  refresh();
+  refresh(true);
+  totalLater(moneyTypo(d.total), true);
   if (into) {
     // drawn again in place: the date box never leaves the page
     [...into.children].forEach((c) => {
@@ -1037,11 +1067,24 @@ export function nightFields(
     dateBox: db,
     totalInput,
     totalNode,
-    setTotalError,
-    setHoursError,
+    /** Save's messages (shown at once; total and hours as alerts). */
+    setTotalError: (m, alert) => {
+      totalLater.cancel();
+      setTotalError(m, alert);
+    },
+    setHoursError: (m, opts) => {
+      hoursLater.cancel();
+      setHoursError(m, opts);
+    },
     setDateError: (m) => dateField.setError(m),
-    setSalesError: (m) => salesField.setError(m),
-    setCashError: (m) => cashField.setError(m),
+    setSalesError: (m) => {
+      salesLater.cancel();
+      salesField.setError(m);
+    },
+    setCashError: (m) => {
+      cashLater.cancel();
+      cashField.setError(m);
+    },
     refresh,
     focusPay: (id) => focusKey(key + '-pay-' + id),
     focusDate: () => date.focus(),
@@ -1050,13 +1093,13 @@ export function nightFields(
   };
 }
 
-/** Show an entryCheck problem on the fields and move focus to it. */
+/** Show an entryCheck problem on the fields at once (Save was pressed; total and hours as alerts) and move focus to it. */
 export function showEntryProblem(f, prob) {
   if (prob.where === 'total') {
-    f.setTotalError(prob.msg);
+    f.setTotalError(prob.msg, true);
     f.totalInput.focus();
   } else if (prob.where === 'hours') {
-    f.setHoursError(prob.msg);
+    f.setHoursError(prob.msg, { alert: true });
     if (prob.id != null) f.focusPay(prob.id);
   } else if (prob.where === 'cash') {
     f.setCashError(prob.msg);
@@ -1487,7 +1530,6 @@ export function render(root) {
     onInput: () => {
       savedMsg.textContent = '';
       clear(dupHost);
-      fields.setTotalError('');
       if (d.date !== shownDate) {
         shownDate = d.date;
         syncSnap();
