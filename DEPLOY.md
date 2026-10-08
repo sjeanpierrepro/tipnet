@@ -8,7 +8,7 @@ The app is already live on GitHub Pages. To push a new version to your staff:
 2. **Commit to main** with a short message (like "Fix budget calculations").
 3. **Push origin** (top bar).
 4. Open GitHub in your browser and go to your repository **Actions** tab. A green check appears in 1 to 2 minutes.
-5. Tell staff to open TipNet. They will see "Update available: Refresh". Tap it.
+5. Tell staff to open TipNet. They will see "Update available: Refresh" at the bottom of the page. Tap it.
 
 **Important:** Before you push, bump `VERSION` in `app/sw.js`. Change the number at the end (for example, if it says `tipnet-v16`, change it to `tipnet-v17`; always one higher than what is there now). Without this, phones keep their old cached version.
 

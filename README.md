@@ -52,7 +52,7 @@ npx --yes serve app
 
 Then open the address it prints (like `http://localhost:3000`).
 
-A plain refresh does **not** always show your changes, because the service worker serves the saved copy of the app. After an update is deployed, the app shows "Update available: Refresh"; tap it to load the new version. For local development, either bump `VERSION` in `app/sw.js`, or open DevTools > Application > Service workers and tick **Update on reload**.
+A plain refresh does **not** always show your changes, because the service worker serves the saved copy of the app. After an update is deployed, the app shows "Update available: Refresh" at the bottom of the page, just above the TipNet Budget card; tap it to load the new version. For local development, either bump `VERSION` in `app/sw.js`, or open DevTools > Application > Service workers and tick **Update on reload**.
 
 ## How to deploy TipNet
 

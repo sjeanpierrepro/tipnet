@@ -26,6 +26,12 @@ test('Budget card: at the very bottom of Tonight, Pay periods and Setup; Coming 
       assert.equal(page.byText('button', 'I have a license key', teaser(page)), null, t + ': no key button');
       assert.equal(page.$$('a', teaser(page)).length, 0, t + ': no buy links');
       assert.equal(page.$$('h2', teaser(page)).length, 1);
+      // two buttons (owner request): "See what's inside" and "Upgrade"
+      assert.deepEqual(
+        page.$$('button', teaser(page)).map((b) => b.textContent.trim()),
+        ['See what’s inside', 'Upgrade'],
+        t,
+      );
     }
     assert.equal(page.tabHidden('budget'), true);
     // "See what's inside" opens the preview although the tab stays hidden
@@ -37,29 +43,64 @@ test('Budget card: at the very bottom of Tonight, Pay periods and Setup; Coming 
     assert.equal(page.$('#license-key'), null, 'no key box while payments are off');
     assert.equal(page.$('#budget-teaser'), null, 'no card on the Budget page');
     assert.equal(page.doc.activeElement, page.$('#app h1'));
+    // the preview has its own Upgrade button: it goes to the "Unlock Budget" card (Coming soon for now)
+    page.click(page.must(page.$('#budget-preview-upgrade'), 'preview Upgrade'));
+    assert.equal(page.doc.activeElement, page.$('#budget-upgrade-h'));
+    assert.match(page.text(page.$('#budget-upgrade')), /Coming soon/);
     page.tab('tonight');
     assert.equal(selected(page), 'tonight');
     assert.ok(teaser(page));
+    // "Upgrade" on the card goes straight there too
+    page.click(page.button('Upgrade', teaser(page)));
+    assert.equal(selected(page), 'budget');
+    assert.equal(page.tabHidden('budget'), true, 'the tab stays hidden');
+    assert.equal(page.doc.activeElement, page.$('#budget-upgrade-h'));
   } finally {
     await page.close();
   }
 });
 
-test('Budget card: payments on shows the buy buttons and "I have a license key" focuses the key box', async () => {
+test('Budget card: payments on, "Upgrade" goes straight to the plans and the key box', async () => {
   const page = await boot({ seed: setUp(), payments: true });
+  const ids = BILLING.productIds;
   try {
     BILLING.checkout.monthly = 'https://example.test/m';
     BILLING.checkout.yearly = 'https://example.test/y';
+    BILLING.productIds = [123]; // a live store has its product ids filled in
     page.tab('periods');
     const box = teaser(page);
     assert.ok(box && isLast(page));
     assert.doesNotMatch(page.text(box), /Coming soon/);
-    const links = page.$$('a', box);
-    assert.equal(links.length, 2);
-    assert.equal(links[0].getAttribute('href'), 'https://example.test/m');
-    page.click(page.button('I have a license key', box));
+    assert.equal(page.$$('a', box).length, 0, 'the plans are one tap away, on the Unlock Budget card');
+    page.click(page.button('Upgrade', box));
     assert.equal(selected(page), 'budget');
-    assert.equal(page.doc.activeElement, page.$('#license-key'));
+    assert.equal(page.doc.activeElement, page.$('#budget-upgrade-h'));
+    const links = page.$$('a', page.$('#budget-upgrade'));
+    assert.deepEqual(
+      links.map((a) => a.getAttribute('href')),
+      ['https://example.test/m', 'https://example.test/y'],
+    );
+    assert.ok(page.$('#license-key'), 'the key box is right there');
+  } finally {
+    BILLING.productIds = ids;
+    BILLING.checkout.monthly = '';
+    BILLING.checkout.yearly = '';
+    await page.close();
+  }
+});
+
+test('"Update available" sits at the bottom of the page, right above the TipNet Budget card', async () => {
+  const page = await boot({ seed: setUp() });
+  try {
+    const bar = page.must(page.doc.getElementById('update-bar'), 'bar');
+    assert.equal(bar.hidden, true);
+    bar.hidden = false; // as the service worker code does when an update is waiting
+    for (const t of ['tonight', 'periods', 'setup']) {
+      page.tab(t);
+      assert.equal(bar.parentElement, page.app, t + ': inside the page');
+      assert.equal(bar.nextElementSibling, teaser(page), t + ': right above the Budget card');
+      assert.ok(isLast(page), t + ': the card is still last');
+    }
   } finally {
     await page.close();
   }

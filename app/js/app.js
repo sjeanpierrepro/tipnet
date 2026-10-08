@@ -113,6 +113,21 @@ function errorScreen(root) {
   );
 }
 
+/**
+ * "Update available" sits at the bottom of the page, right above the "TipNet Budget" card (or last when there is none),
+ * not at the top (owner request). The bar is one element kept here: every redraw empties #app, so it is put back.
+ */
+let updateBarEl = null;
+/** The bar, found once while it is still in the page (afterwards it may sit outside it, between redraws). */
+const updateBarOf = () => updateBarEl || (updateBarEl = document.getElementById('update-bar'));
+function placeUpdateBar(root = document.getElementById('app')) {
+  const bar = updateBarOf();
+  if (!bar || bar.hidden || !root) return;
+  const teaser = root.querySelector('#budget-teaser');
+  if (teaser) teaser.before(bar);
+  else root.append(bar);
+}
+
 function render() {
   storage.lockFinished(); // a pay period that ended while the app was open locks before anything is drawn from Setup
   const root = document.getElementById('app');
@@ -147,6 +162,7 @@ function render() {
         root.textContent = 'Something went wrong. Reload the page.';
       }
     }
+    placeUpdateBar(root);
   });
   window.scrollTo(0, y);
 }
@@ -208,16 +224,21 @@ function wireTabs() {
 /* ---------- service worker + update bar (never auto-reloads) ---------- */
 function setupServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
-  const bar = document.getElementById('update-bar');
+  const bar = updateBarOf();
   const btn = document.getElementById('update-refresh');
   let waiting = null,
     offered = false,
     askedHere = false,
     reloading = false;
+  const show = () => {
+    if (!bar) return;
+    bar.hidden = false;
+    placeUpdateBar();
+  };
   const offer = (w) => {
     waiting = w;
     offered = true;
-    if (bar) bar.hidden = false;
+    show();
   };
   if (btn) {
     btn.addEventListener('click', async () => {
@@ -244,7 +265,7 @@ function setupServiceWorker() {
     if (act === 'ignore') return;
     if (act === 'offer') {
       waiting = null; // the new version is already in charge: Refresh just reloads
-      if (bar) bar.hidden = false;
+      show();
       return;
     }
     reloading = true;

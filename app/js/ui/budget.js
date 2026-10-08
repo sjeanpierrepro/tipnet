@@ -238,7 +238,7 @@ export function openPreview(id) {
   bus.go('budget', { preview: true });
   const t = (id && document.getElementById(id)) || document.querySelector('#app h1');
   if (!t) return;
-  if (t.tagName === 'H1') t.setAttribute('tabindex', '-1');
+  if (/^H[1-6]$/.test(t.tagName)) t.setAttribute('tabindex', '-1'); // a heading takes focus only this way
   try {
     t.scrollIntoView({ block: 'center' });
   } catch (e) {
@@ -246,51 +246,31 @@ export function openPreview(id) {
   }
   t.focus();
 }
+/** The "Unlock Budget" card's heading: where every Upgrade button goes (the plans, or "Coming soon" while payments are off). */
+const UPGRADE_H = 'budget-upgrade-h';
+const upgradeBtn = (id) =>
+  el(
+    'button',
+    { type: 'button', class: 'btn btn-block', id, onclick: () => openPreview(UPGRADE_H) },
+    'Upgrade',
+  );
 
 /**
  * The calm "TipNet Budget" card at the very bottom of Tonight, Pay periods and Setup, only while this device has no
- * unlocked Budget. One card, no popups. Payments off: "Coming soon" instead of the buy buttons and the key box.
+ * unlocked Budget. One card, no popups, two buttons (owner request): "See what's inside" opens the preview, "Upgrade"
+ * goes straight to its "Unlock Budget" card (the plans and the key box; "Coming soon" while payments are off).
  */
 export function upgradeTeaser() {
   if (unlocked()) return null;
-  const on = paymentsOn();
   const p = BILLING.prices;
-  const btn = (text, cls, onclick, id) =>
-    el('button', { type: 'button', class: 'btn ' + cls + ' btn-block', onclick, id }, text);
-  const buy = (plan, text) =>
-    checkoutUrl(plan)
-      ? el(
-          'a',
-          {
-            class: plan === 'yearly' ? 'btn btn-block' : 'btn btn-secondary btn-block',
-            href: checkoutUrl(plan),
-            target: '_blank',
-            rel: 'noopener noreferrer',
-          },
-          text,
-        )
-      : el(
-          'button',
-          {
-            type: 'button',
-            class: plan === 'yearly' ? 'btn btn-block' : 'btn btn-secondary btn-block',
-            disabled: true,
-          },
-          text,
-        );
   return el(
     'section',
     { class: 'card stack upsell', id: 'budget-teaser', 'aria-labelledby': 'budget-teaser-h' },
     el('h2', { id: 'budget-teaser-h' }, 'TipNet Budget'),
     el('p', null, 'Plan your bills, spending and savings around your take-home.'),
     el('p', null, el('strong', null, p.monthly + ' a month or ' + p.yearly + ' a year')),
-    on
-      ? el(
-          'div',
-          { class: 'stack-sm' },
-          buy('monthly', p.monthly + ' a month'),
-          buy('yearly', p.yearly + ' a year'),
-        )
+    paymentsOn()
+      ? null
       : el(
           'p',
           { class: 'hint' },
@@ -300,10 +280,17 @@ export function upgradeTeaser() {
     el(
       'div',
       { class: 'stack-sm' },
-      btn('See what’s inside', 'btn-secondary', () => openPreview(null), 'budget-teaser-see'),
-      on
-        ? btn('I have a license key', 'btn-secondary', () => openPreview('license-key'), 'budget-teaser-key')
-        : null,
+      el(
+        'button',
+        {
+          type: 'button',
+          class: 'btn btn-secondary btn-block',
+          id: 'budget-teaser-see',
+          onclick: () => openPreview(null),
+        },
+        'See what’s inside',
+      ),
+      upgradeBtn('budget-teaser-upgrade'),
     ),
   );
 }
@@ -337,8 +324,8 @@ function upgradeCard() {
   if (!paymentsOn())
     return el(
       'section',
-      { class: 'card stack' },
-      el('h2', null, 'Unlock Budget'),
+      { class: 'card stack', id: 'budget-upgrade', 'aria-labelledby': UPGRADE_H },
+      el('h2', { id: UPGRADE_H }, 'Unlock Budget'),
       el('p', { class: 'note' }, p.monthly + ' a month or ' + p.yearly + ' a year.'),
       el('p', null, el('strong', null, 'Coming soon')),
       el(
@@ -392,8 +379,8 @@ function upgradeCard() {
   });
   return el(
     'section',
-    { class: 'card stack' },
-    el('h2', null, 'Unlock Budget'),
+    { class: 'card stack', id: 'budget-upgrade', 'aria-labelledby': UPGRADE_H },
+    el('h2', { id: UPGRADE_H }, 'Unlock Budget'),
     el(
       'p',
       { class: 'note' },
@@ -438,6 +425,7 @@ function lockedView(S) {
         null,
         'It also shows what your next paycheck will likely cover. All numbers are estimates from what you enter. It is a planning aid, not financial advice.',
       ),
+      upgradeBtn('budget-preview-upgrade'),
     ),
     stale
       ? el(
