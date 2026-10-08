@@ -1,4 +1,4 @@
-// Several tip-outs (owner request): % of tips, % of sales or flat, from cash or payroll; migration of the old single tip-out.
+// Several tip-outs (owner request): % of tips or flat, from cash or payroll; migration of the old single tip-out.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as M from '../app/js/math.js';
@@ -6,7 +6,7 @@ import { migrate, encodeBackup, decodeBackup, pinTipouts } from '../app/js/stora
 
 const today = '2026-09-20';
 const BARBACK = { id: 't1', k: 'barback', who: 'Barback', mode: 'pctTips', value: 15, from: 'cash' };
-const RUNNER = { id: 't2', k: 'runner', who: 'Runner', mode: 'pctSales', value: 1.25, from: 'payroll' };
+const RUNNER = { id: 't2', k: 'runner', who: 'Runner', mode: 'flat', value: 12.5, from: 'payroll' };
 const P = (list = [BARBACK, RUNNER], basis = 'before') => ({
   ...M.exampleProfile(today),
   tipout: { on: true, basis },
@@ -19,18 +19,17 @@ const night = (extra = {}) => ({
   cash: 210,
   pay: { p1: 8 },
   tipouts: { t1: true, t2: true },
-  sales: 1000,
   ...extra,
 });
 
-test('two people: 15% of tips from cash and 1.25% of sales through payroll, cents exact', () => {
+test('two people: 15% of tips from cash and $12.50 flat through payroll, cents exact', () => {
   const c = M.computeNight(night(), P(), 10);
   assert.equal(c.tips, 489);
   assert.deepEqual(
     c.tipouts.map((l) => [l.who, l.mode, l.amount, l.from]),
     [
       ['Barback', 'pctTips', 73.35, 'cash'],
-      ['Runner', 'pctSales', 12.5, 'payroll'],
+      ['Runner', 'flat', 12.5, 'payroll'],
     ],
   );
   assert.equal(c.tipout, 85.85);
@@ -101,13 +100,15 @@ test('cash paid out is capped by the cash entered; no cash entered keeps the nul
   assert.equal(n.tipout, 85.85);
 });
 
-test('% of sales with no sales entered counts nothing and says sales are needed', () => {
-  const c = M.computeNight(night({ sales: undefined }), P(), 10);
-  assert.equal(c.tipoutNeedsSales, true);
-  assert.equal(c.tipout, 73.35);
-  assert.equal(M.salesCents({ sales: '' }), null);
-  assert.equal(M.salesCents({ sales: '1,000' }), 100); // parseFloat: callers clean first
-  assert.equal(M.salesCents({ sales: 1234.565 }), 123457);
+test('% of sales is gone: a person saved with it (development data only) counts as % of tips, sales are ignored', () => {
+  const p = P([{ ...RUNNER, mode: 'pctSales', value: 1.25 }]);
+  const c = M.computeNight(night({ tipouts: { t2: true }, sales: 1000 }), p, 10);
+  assert.deepEqual(
+    c.tipouts.map((l) => [l.mode, l.amount]),
+    [['pctTips', 6.11]],
+  );
+  assert.equal('tipoutNeedsSales' in c, false);
+  assert.deepEqual(M.TIPOUT_MODES, ['pctTips', 'flat']);
 });
 
 test('"the number I enter is after tip-out": nothing is taken out; switched off: nothing either', () => {
@@ -231,26 +232,25 @@ test('migration: an old tip-out becomes one Barback, switched off too (it keeps 
 test('migration: new fields are cleaned (who, mode, value, from), hostile ids rewritten the same everywhere', () => {
   const S = oldState({ on: true, basis: 'before' });
   S.workplaces[0].profile.tipouts = [
-    { id: 'r<1>', k: 'runner', who: '  Runner  ', mode: 'pctSales', value: '1.22', from: 'payroll' },
+    { id: 'r<1>', k: 'runner', who: '  Runner  ', mode: 'pctSales', value: '1.22', from: 'payroll' }, // an unknown mode now
     { id: 'x', k: 'nope', who: '', mode: 'weird', value: -3, from: 'bank' },
     'junk',
   ];
   S.nights[0].tipouts = { 'r<1>': true, x: 'yes' };
-  S.nights[0].sales = '980.5';
+  S.nights[0].sales = '980.5'; // sales are no longer kept
   const out = migrate(S, { today });
   const list = out.workplaces[0].profile.tipouts;
   assert.equal(list.length, 2);
   assert.match(list[0].id, /^[A-Za-z0-9_-]+$/);
   assert.deepEqual(
     { ...list[0], id: 'id' },
-    { id: 'id', k: 'runner', who: 'Runner', mode: 'pctSales', value: 1.22, from: 'payroll' },
+    { id: 'id', k: 'runner', who: 'Runner', mode: 'pctTips', value: 1.22, from: 'payroll' },
   );
   assert.deepEqual(list[1], { id: 'x', k: 'other', who: 'Other', mode: 'pctTips', value: 0, from: 'cash' });
   assert.deepEqual(out.nights[0].tipouts, { [list[0].id]: true, x: false });
-  assert.equal(out.nights[0].sales, 980.5);
-  // a night without sales gets none; one without tip-out choices gets its barback choice for the people set up now
+  assert.equal('sales' in out.nights[0], false);
+  // a night without tip-out choices gets its barback choice for the people set up now
   const plain = migrate(oldState({ on: true, mode: 'pct', value: 15 }), { today });
-  assert.equal('sales' in plain.nights[0], false);
   assert.deepEqual(plain.nights[0].tipouts, { t1: true });
 });
 
@@ -261,11 +261,9 @@ test('migration: old backup codes restore with the tip-out list; new ones round-
   assert.deepEqual(S.workplaces[0].profile.tipouts, [{ ...BARBACK, value: 12.5 }]);
   S.workplaces[0].profile.tipouts.push({ ...RUNNER });
   S.nights[0].tipouts = { t1: true, t2: false };
-  S.nights[0].sales = 700;
   const back = decodeBackup(encodeBackup(S));
   assert.deepEqual(back.workplaces[0].profile.tipouts, [{ ...BARBACK, value: 12.5 }, RUNNER]);
   assert.deepEqual(back.nights[0].tipouts, { t1: true, t2: false });
-  assert.equal(back.nights[0].sales, 700);
 });
 
 test('locked periods never change: an old single-tip-out snapshot keeps working after migration and Setup edits', () => {

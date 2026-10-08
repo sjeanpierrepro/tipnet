@@ -73,8 +73,6 @@ import {
   typoProblem,
   alignNight,
   peopleOf,
-  salesMissing,
-  tipoutHow,
   draftTipouts,
 } from './tonight.js';
 
@@ -299,11 +297,7 @@ function editor(S, n) {
     }
     const night = build();
     const c = computeNight(night, p, shiftsFor(night));
-    // a % of sales tip-out with no sales counts $0: said here too (Save asks for the sales, as Tonight does)
-    const missing = salesMissing(c)
-      .map((l) => ' ' + l.who + ' (' + tipoutHow(l) + ') isn’t counted until you enter the night’s sales.')
-      .join('');
-    preview.textContent = 'Estimated take-home for this night: ' + money(c.net) + '.' + missing;
+    preview.textContent = 'Estimated take-home for this night: ' + money(c.net) + '.';
     if (quiet !== true) speak();
   };
   // A locked night shows the rates it keeps, unless "Recalculate with current Setup" is ticked. A job its snapshot doesn't
@@ -623,17 +617,6 @@ function editor(S, n) {
   return form;
 }
 
-/**
- * A row's line when someone ticked that night gets a % of sales and the night has no sales: their tip-out counts $0
- * until the sales are added (Edit asks for them). Else null.
- */
-function salesNote(c) {
-  const who = salesMissing(c).map((l) => l.who);
-  return who.length
-    ? el('div', { class: 'hint night-sales-missing' }, 'sales missing: ' + who.join(', ') + ' not counted')
-    : null;
-}
-
 /** A row's line about its pay period: counted in another one, or a picked one the schedule no longer has. Else null. */
 function weekNote(n, p) {
   if (nightPeriodStale(p, n))
@@ -690,7 +673,6 @@ function nightRow(S, w, n, shifts) {
       { class: 'main' },
       el('div', null, fmtDate(n.date)),
       el('div', { class: 'hint' }, nightSub(n, c, p)),
-      salesNote(c),
       weekNote(n, p),
       n.note
         ? el(
@@ -774,30 +756,6 @@ const NOT_FINAL_TEXT =
   'This pay period is still in progress, so there is no paycheck to compare yet. Come back once it ends and the check lands.';
 const MATCHED_TEXT = 'Your estimate matched — no change needed.';
 const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
-/** "A", "A and B", "A, B and C". */
-const listOf = (xs) =>
-  xs.length > 1 ? xs.slice(0, -1).join(', ') + ' and ' + xs[xs.length - 1] : xs[0] || '';
-/** At most this many night dates are named when sales are missing; the rest are counted ("and 3 more nights"). */
-const SALES_DATES_SHOWN = 5;
-/**
- * Check my accuracy refused (calibrate 'missingSales', handled like missing cash): which nights need their sales and
- * who isn't counted on them. nights: calibrate's salesNights [{date, who}].
- */
-function salesMissingText(nights) {
-  const dates = nights.slice(0, SALES_DATES_SHOWN).map((x) => fmtShort(x.date));
-  const more = nights.length - dates.length;
-  if (more > 0) dates.push(plural(more, 'more night'));
-  const who = [...new Set(nights.flatMap((x) => x.who))].map((name) => name + '’s');
-  return (
-    'Add sales for ' +
-    listOf(dates) +
-    ' in Pay periods first; ' +
-    listOf(who) +
-    ' % of sales isn’t counted on ' +
-    (nights.length === 1 ? 'it' : 'them') +
-    ', so the check can’t be predicted.'
-  );
-}
 const points = (x) => (x > 0 ? '+' : x < 0 ? '−' : '') + Math.abs(x * 100).toFixed(2) + ' points';
 function focusId(id) {
   const n = document.getElementById(id);
@@ -1093,7 +1051,6 @@ function calibCard(S, today) {
             ' no cash amount, so the check can’t be predicted. Add cash to every night first.',
         );
       }
-      if (r.reason === 'missingSales') return show(salesMissingText(r.salesNights));
       return show('Pick a pay period with nights in it and enter the check amount.');
     }
     // Within 0.5% of the check and implying the current rate: nothing to adjust, nothing to ask, nothing recorded.

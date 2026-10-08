@@ -11,7 +11,7 @@ import { TYPO_PAUSE_MS } from '../../app/js/ui/common.js';
 const today = todayISO();
 const key = (page, k) => page.must(page.$('[data-focus-key="' + k + '"]'), k);
 const AMOUNT = /That isn’t an amount\. Use numbers and one decimal point, like 12\.50\./;
-const RUNNER = { id: 't2', k: 'runner', who: 'Runner', mode: 'pctSales', value: 1.25, from: 'payroll' };
+const RUNNER = { id: 't2', k: 'runner', who: 'Runner', mode: 'flat', value: 12.5, from: 'payroll' };
 const BARBACK = { id: 't1', k: 'barback', who: 'Barback', mode: 'pctTips', value: 15, from: 'cash' };
 const seed = (mutate) =>
   realState((S) => {
@@ -73,7 +73,6 @@ test('Tonight: typing 7:30, $45 and 1,250 key by key raises no message on the wa
     assert.deepEqual(shown(page), []);
     typeKeys(page, key(page, 'night-total'), '$45', none('tips'));
     typeKeys(page, key(page, 'night-total'), '1,250', none('tips'));
-    typeKeys(page, key(page, 'night-sales'), '$3,000', none('sales'));
     typeKeys(page, key(page, 'night-cash'), '$1,00', none('cash'));
     mock.timers.tick(TYPO_PAUSE_MS);
     assert.deepEqual(shown(page), []);
@@ -125,7 +124,6 @@ test('Tonight: leaving the box shows its typo at once; Save refuses a typo at on
     const total = key(page, 'night-total');
     const cash = key(page, 'night-cash');
     page.type(key(page, 'night-pay-p1'), '7');
-    page.type(key(page, 'night-sales'), '3000');
     page.type(cash, '1.2.3');
     assert.deepEqual(shown(page), []);
     page.leave(cash);

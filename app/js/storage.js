@@ -282,7 +282,7 @@ function cleanTipoutSetup(src) {
         id: uniqueId(x.id, seen, 't', i + 1),
         k,
         who: who || preset.name,
-        mode: TIPOUT_MODES.includes(x.mode) ? x.mode : x.mode === 'flat' ? 'flat' : 'pctTips',
+        mode: TIPOUT_MODES.includes(x.mode) ? x.mode : 'pctTips', // any other mode reads as % of tips
         value: Math.max(0, numOr0(x.value)),
         from: x.from === 'payroll' || x.from === 'check' ? 'payroll' : 'cash',
       };
@@ -398,13 +398,6 @@ function cleanNights(list) {
       }
       // whether "I tip out" was on when the night was saved (nights without it get it after locking: pinTipoutOn)
       if (typeof n.tipoutOn === 'boolean') o.tipoutOn = n.tipoutOn;
-      // tonight's sales, for a % of sales tip-out
-      if (
-        (typeof n.sales === 'number' || (typeof n.sales === 'string' && n.sales.trim() !== '')) &&
-        Number.isFinite(parseFloat(n.sales)) &&
-        num(n.sales) >= 0
-      )
-        o.sales = Math.round(num(n.sales) * 100) / 100;
       if (n.cashOffPayroll === true && hasCash) o.cashOffPayroll = true;
       if (typeof n.tips === 'number' && Number.isFinite(n.tips) && n.tips >= 0)
         o.tips = Math.round(n.tips * 100) / 100;
@@ -575,7 +568,6 @@ const NIGHT_KEYS = [
   'workplaceId',
   'tipouts',
   'tipoutOn',
-  'sales',
   'cashOffPayroll',
   'tips',
   'note',

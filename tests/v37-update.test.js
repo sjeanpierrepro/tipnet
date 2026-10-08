@@ -1,5 +1,5 @@
 // Updating from v37 (one tip-out per restaurant): a v37 page still open after the update rewrites the whole saved state
-// with v37's own loading rules when it saves, and those drop the tip-out list, who was ticked each night and sales. The
+// with v37's own loading rules when it saves, and those drop the tip-out list and who was ticked each night. The
 // service worker reloads every window when it takes over from before v38 (tests/ui/sw.test.js); as a fallback, a list of
 // one person on % of tips or flat is also written in the old single shape (math.savedTipout), which v37 keeps.
 import test from 'node:test';
@@ -16,7 +16,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const V37 = '1090d93'; // tipnet-v37, the version live before v38
 const today = '2026-10-08';
 const BARBACK = { id: 't1', k: 'barback', who: 'Barback', mode: 'pctTips', value: 15, from: 'cash' };
-const RUNNER = { id: 't2', k: 'runner', who: 'Runner', mode: 'pctSales', value: 1.25, from: 'payroll' };
+const RUNNER = { id: 't2', k: 'runner', who: 'Runner', mode: 'flat', value: 12.5, from: 'payroll' };
 const clone = (x) => JSON.parse(JSON.stringify(x));
 
 // Pay periods of 14 days from Sep 7: Sep 7-20 and Sep 21 - Oct 4 are finished on Oct 8, Oct 5-18 is running.
@@ -113,8 +113,7 @@ test('savedTipout: a list of one on % of tips or flat is also written in the old
     from: 'check',
   });
   assert.deepEqual(M.savedTipout(false, 'before', [BARBACK]).value, 15, 'switched off: still there');
-  // % of sales (v37 has no sales), several people, nobody: only the switch and basis
-  assert.deepEqual(M.savedTipout(true, 'before', [RUNNER]), { on: true, basis: 'before' });
+  // several people, nobody: only the switch and basis
   assert.deepEqual(M.savedTipout(true, 'before', [BARBACK, RUNNER]), { on: true, basis: 'before' });
   assert.deepEqual(M.savedTipout(false, 'nonsense', []), { on: false, basis: 'before' });
   // a snapshot carries them too
@@ -161,10 +160,9 @@ test('a save puts the old fields back in step after Setup changed the list (the 
   p.tipouts.push({ ...RUNNER }); // a second person: v37 can't hold that
   await s.flush();
   assert.deepEqual(saved(), { on: true, basis: 'before' });
-  p.tipouts.shift(); // only the runner (% of sales) left
+  p.tipouts.shift(); // only the runner ($12.50 flat through payroll) left
   await s.flush();
-  assert.deepEqual(saved(), { on: true, basis: 'before' });
-  p.tipouts[0].mode = 'flat';
+  assert.deepEqual(saved(), { on: true, basis: 'before', mode: 'flat', value: 12.5, from: 'check' });
   p.tipouts[0].value = 25;
   await s.flush();
   assert.deepEqual(saved(), { on: true, basis: 'before', mode: 'flat', value: 25, from: 'check' });

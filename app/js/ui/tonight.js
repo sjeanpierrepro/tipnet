@@ -25,7 +25,6 @@ import {
   tippedOut,
   alignTicks,
   nightTicks,
-  salesCents,
   matchPeople,
   isFinal,
   nightsInPeriod,
@@ -157,27 +156,11 @@ function useSnap(d, p, snap) {
   d.tipouts = next;
   return true;
 }
-/** True when someone ticked tonight is tipped out a % of sales: the entry then needs tonight's sales. */
-export const salesNeeded = (d, p) => draftTipouts(d, p).some((r) => r.mode === 'pctSales' && ticked(d, r));
-export const SALES_MSG = 'Enter tonight’s sales for the % of sales tip-out.';
-/** when: 'tonight' | 'that night'. */
-const salesMsg = (when) =>
-  when === 'tonight' ? SALES_MSG : 'Enter ' + when + '’s sales for the % of sales tip-out.';
-/**
- * The people ticked on a night (a computeNight result) who get a % of sales while it has no sales: their line counts $0
- * until the sales are entered, so the screens say so instead of leaving them out silently.
- */
-export const salesMissing = (c) =>
-  c && c.tipoutNeedsSales ? (c.tipouts || []).filter((l) => l.mode === 'pctSales') : [];
-/** Saved nights at restaurant wid that follow Setup (not locked) where person r is ticked and no sales were entered. */
-export const nightsWithoutSales = (S, wid, r) =>
-  S.nightsExample ? [] : nightsOf(S, wid).filter((n) => !n.snap && tippedOut(n, r) && salesCents(n) == null);
 /** "15%" / "1.25%": a tip-out percentage as typed. */
 const pctText = (v) => String(Math.round(num(v) * 1000) / 1000) + '%';
-/** "15% of tips", "1.25% of sales", "$20 flat": what one person gets. */
+/** "15% of tips", "$20 flat": what one person gets. */
 export function tipoutHow(r) {
-  if (r.mode === 'flat') return money(num(r.value)) + ' flat';
-  return pctText(r.value) + (r.mode === 'pctSales' ? ' of sales' : ' of tips');
+  return r.mode === 'flat' ? money(num(r.value)) + ' flat' : pctText(r.value) + ' of tips';
 }
 
 /** Drop the in-progress entry and the example view (e.g. after Erase everything or Restore). */
@@ -220,7 +203,6 @@ export function blankDraft(S, p) {
     rows: main ? [main.id] : [],
     showOther: false,
     tipouts: {}, // who was tipped out tonight (recipient id -> false when unticked); everyone is ticked to start
-    sales: '',
     cashOffPayroll: !!p.cashOffPayroll, // pre-ticked from the restaurant's Setup default until tonight's box is touched
     date: tonightOf(S),
   };
@@ -250,7 +232,6 @@ export function draftFromNight(n, p) {
     rows: [],
     showOther: false,
     tipouts: {},
-    sales: n.sales == null ? '' : String(n.sales),
     tipoutSnap: n.snap || null, // a locked night ticks its own tip-out people
     tipoutOn: nightTipout(n, p).on, // whether tip-outs were on when it was saved: Setup's switch doesn't change it
     cashOffPayroll: !!n.cashOffPayroll,
@@ -326,8 +307,8 @@ export function liveNight(d, id, p, { snap: lockedWith } = {}) {
     pay,
     barback: false, // anyone ticked (below), for older copies of the app
   };
-  // Who was tipped out tonight (everyone ticked unless unticked), and tonight's sales when a ticked person gets a % of them.
-  // With no boxes on screen (tip-outs off or "after tip-out") nobody is (see alignNight).
+  // Who was tipped out tonight (everyone ticked unless unticked). With no boxes on screen (tip-outs off or "after
+  // tip-out") nobody is (see alignNight).
   const people = draftTipouts(d, p);
   if (people.length) {
     const m = {};
@@ -336,10 +317,6 @@ export function liveNight(d, id, p, { snap: lockedWith } = {}) {
     });
     night.tipouts = m;
     night.barback = people.some((r) => m[r.id]);
-    if (salesNeeded(d, p)) {
-      const s = typedAmount(d.sales);
-      if (s != null && s >= 0) night.sales = round2(s);
-    }
   }
   night.tipoutOn = draftSetup(d, p).on; // the night keeps whether tip-outs were on, whatever Setup says later
   if (d.cashOffPayroll && cash !== '') night.cashOffPayroll = true;
@@ -370,7 +347,6 @@ export function storedNight(d, p, id, { snap } = {}) {
   };
   if (ln.tipouts) out.tipouts = ln.tipouts;
   out.tipoutOn = ln.tipoutOn;
-  if (ln.sales != null) out.sales = ln.sales;
   if (ln.cashOffPayroll) out.cashOffPayroll = true;
   if (tipsMode(p) && hasTips(ln)) out.tips = ln.tips;
   return out;
@@ -383,8 +359,8 @@ export function storedNight(d, p, id, { snap } = {}) {
  * snapshot. cur: the saved night it replaces or edits (null for a new night). See alignTicks: the choices on screen are
  * carried over to target and the rest of cur's map is kept. No boxes on screen (tip-outs switched off or "after
  * tip-out"): a new night (or the part added to one) had nobody tipped out, so everyone in target is false (a night saved
- * while tip-outs were off never becomes tipped out); an edited or replaced night keeps what it had (its map, barback and
- * sales), so nobody's tick changes. Changes out; returns it.
+ * while tip-outs were off never becomes tipped out); an edited or replaced night keeps what it had (its map and barback),
+ * so nobody's tick changes. Changes out; returns it.
  */
 export function alignNight(out, d, p, cur, target) {
   const shownList = draftTipouts(d, p);
@@ -400,16 +376,11 @@ export function alignNight(out, d, p, cur, target) {
     if (cur.tipouts && typeof cur.tipouts === 'object') out.tipouts = { ...cur.tipouts };
     else delete out.tipouts;
     out.barback = !!cur.barback;
-    if (cur.sales != null) out.sales = cur.sales;
-    else delete out.sales;
     return out;
   }
   const m = alignTicks(cur ? nightTicks(cur, target) : {}, out.tipouts || {}, shownList, target);
   out.tipouts = m;
   if (target.length) out.barback = target.some((r) => m[r.id] === true);
-  // someone the night is worked out with (not on screen) still gets a % of sales: keep the sales it had
-  if (out.sales == null && cur && cur.sales != null && target.some((r) => r.mode === 'pctSales' && m[r.id]))
-    out.sales = cur.sales;
   return out;
 }
 /** The people a saved night is worked out with: its snapshot's when it is locked, else the restaurant's Setup. */
@@ -494,17 +465,12 @@ function hoursTypoIn(p, d, bad) {
   return !!row && !!(row.unit === 'amt' ? moneyTypo(d.pay[row.id]) : hoursTypo(d.pay[row.id], unitOf(row)));
 }
 /**
- * The first typed amount that isn't a number ("1.2.3", "12abc"), else null: {where: 'total'|'sales'|'hours'|'cash', msg, id?}.
- * Boxes that are not on screen (sales when nobody gets a % of sales) are not looked at. The live preview shows this
- * instead of numbers, and saving refuses it.
+ * The first typed amount that isn't a number ("1.2.3", "12abc"), else null: {where: 'total'|'hours'|'cash', msg, id?}.
+ * The live preview shows this instead of numbers, and saving refuses it.
  */
 export function typoProblem(p, d) {
   const total = moneyTypo(d.total);
   if (total) return { where: 'total', msg: total };
-  if (salesNeeded(d, p)) {
-    const sales = moneyTypo(d.sales);
-    if (sales) return { where: 'sales', msg: sales };
-  }
   const bad = hoursProblem(p, d);
   if (hoursTypoIn(p, d, bad)) return { where: 'hours', msg: bad.msg, id: bad.id };
   const cash = cashCheck(d, p);
@@ -512,9 +478,8 @@ export function typoProblem(p, d) {
   return null;
 }
 /**
- * Everything that blocks saving, in the order the person meets it: {where: 'total'|'hours'|'sales'|'date', msg, id?} or
- * null. 'sales': someone ticked tonight is tipped out a % of sales and tonight's sales aren't entered.
- * today: the business date for tonight (dates may be at most one day after it).
+ * Everything that blocks saving, in the order the person meets it: {where: 'total'|'hours'|'cash'|'date', msg, id?} or
+ * null. today: the business date for tonight (dates may be at most one day after it).
  */
 export function entryCheck(p, d, { when = 'tonight', today = todayISO() } = {}) {
   const typo = typoProblem(p, d);
@@ -527,11 +492,6 @@ export function entryCheck(p, d, { when = 'tonight', today = todayISO() } = {}) 
   if (bad.msg) return { where: 'hours', msg: bad.msg, id: bad.id };
   if (tipsMode(p) && !(num(liveNight(d, 'check', p).total) > 0))
     return { where: 'total', msg: 'Enter your tips or your hours first.' };
-  if (salesNeeded(d, p)) {
-    const s = typedAmount(d.sales);
-    if (s == null) return { where: 'sales', msg: salesMsg(when) };
-    if (s < 0) return { where: 'sales', msg: 'Sales can’t be a negative number.' };
-  }
   const dp = dateProblem(d.date, today);
   if (dp) return { where: 'date', msg: dp };
   return null;
@@ -553,7 +513,7 @@ export function mergeNights(a, b, p) {
   const out = { ...a, total: round2(nightTotal(a, p) + tb), cash, pay };
   delete out.tips;
   // Tip-outs: someone tipped out in either part was tipped out that night (b's ticks are already for a's people, see
-  // alignNight); sales add up. An added part with no boxes on screen (tip-outs switched off or "after tip-out") says
+  // alignNight). An added part with no boxes on screen (tip-outs switched off or "after tip-out") says
   // nothing about who was tipped out: the night keeps its own choices.
   if (b.tipouts) {
     const m = {};
@@ -565,7 +525,6 @@ export function mergeNights(a, b, p) {
     out.tipouts = m;
     out.barback = !!(a.barback || b.barback);
   }
-  if (a.sales != null || b.sales != null) out.sales = round2(num(a.sales) + num(b.sales));
   // cash skipped payroll only if every part of the night's cash did (a part with no cash doesn't count)
   const offA = !!a.cashOffPayroll || a.cash == null,
     offB = !!b.cashOffPayroll || b.cash == null;
@@ -653,7 +612,7 @@ export function nightFields(
     totalLater(moneyTypo(d.total)); // also clears what Save said about the box, once anything is typed
   };
   /** A box was left: its waiting typo message is shown now. */
-  const flushTypos = () => [totalLater, salesLater, hoursLater, cashLater].forEach((l) => l.flush());
+  const flushTypos = () => [totalLater, hoursLater, cashLater].forEach((l) => l.flush());
   const ts = draftSetup(d, p);
   const after = ts.on && ts.basis === 'after';
   const people = draftTipouts(d, p); // the people who can be ticked tonight
@@ -727,17 +686,7 @@ export function nightFields(
 
   const totalLater = typoLater((m) => setTotalError(m));
   const kids = [totalNode];
-  /* ----- who was tipped out tonight (everyone ticked to start), and tonight's sales for a % of sales tip-out ----- */
-  const salesInput = bind(
-    moneyInput({ id: uid('sales'), placeholder: '0', 'data-focus-key': key + '-sales' }),
-    () => d.sales || '',
-    (v) => {
-      d.sales = v;
-    },
-  );
-  const salesField = field('Sales tonight ($)', salesInput, {
-    hint: 'Your sales for the night, from your checkout report.',
-  });
+  /* ----- who was tipped out tonight (everyone ticked to start) ----- */
   if (people.length) {
     const boxes = people.map((r) => {
       const cb = el('input', {
@@ -764,7 +713,6 @@ export function nightFields(
         el('legend', null, 'Tipped out tonight:'),
         el('div', { class: 'tipout-checks' }, boxes),
       ),
-      salesField,
     );
   }
 
@@ -1067,17 +1015,9 @@ export function nightFields(
   db.onInput = onInput;
   const { input: date, field: dateField, today } = db;
   kids.push(dateField);
-  const salesLater = typoLater((m) => salesField.setError(m));
   const cashLater = typoLater((m) => cashField.setError(m));
   /** now: show every message at once; else typos wait for a pause in typing. */
   refresh = (now = false) => {
-    // the sales box shows only while someone ticked tonight gets a % of sales (then it is needed)
-    const needSales = salesNeeded(d, p);
-    salesField.hidden = !needSales;
-    const st = needSales ? moneyTypo(d.sales) : '';
-    if (st) salesLater(st, now);
-    else if (!needSales || typedAmount(d.sales) != null || salesLater.up()) salesLater('');
-    else salesLater.cancel(); // blank: Save asks for the sales (its message stays)
     const cc = cashCheck(d, p, paySnap());
     cashLater(cc.message, now || cc.status !== 'typo');
     offField.hidden = cc.status !== 'ok';
@@ -1117,10 +1057,6 @@ export function nightFields(
       setHoursError(m, opts);
     },
     setDateError: (m) => dateField.setError(m),
-    setSalesError: (m) => {
-      salesLater.cancel();
-      salesField.setError(m);
-    },
     setCashError: (m) => {
       cashLater.cancel();
       cashField.setError(m);
@@ -1128,7 +1064,6 @@ export function nightFields(
     refresh,
     focusPay: (id) => focusKey(key + '-pay-' + id),
     focusDate: () => date.focus(),
-    focusSales: () => salesInput.focus(),
     focusCash: () => cash.focus(),
   };
 }
@@ -1144,9 +1079,6 @@ export function showEntryProblem(f, prob) {
   } else if (prob.where === 'cash') {
     f.setCashError(prob.msg);
     f.focusCash();
-  } else if (prob.where === 'sales') {
-    f.setSalesError(prob.msg);
-    f.focusSales();
   } else {
     f.setDateError(prob.msg);
     f.focusDate();
@@ -1188,7 +1120,7 @@ export function resultCard(c, w, note, hoursMissing = false) {
   ];
   if (c.extra) rows.push(bullet('Extra pay (bonus etc.)', '+' + money(c.extra)));
   if (c.nontax) rows.push(bullet('Non-taxable tonight (no tax)', '+' + money(c.nontax)));
-  // one line per person tipped out tonight: "Runner (1.25% of sales) −$12.50"
+  // one line per person tipped out tonight: "Runner (15% of tips) −$60.60"
   (c.tipouts || []).forEach((l) => {
     if (l.amount > 0) rows.push(bullet(l.who + ' (' + tipoutHow(l) + ')', minus(l.amount)));
   });
@@ -1207,16 +1139,6 @@ export function resultCard(c, w, note, hoursMissing = false) {
     ),
     el('dl', { class: 'breakdown' }, rows),
   ];
-  // A % of sales tip-out counts $0 until tonight's sales are typed: said, never left out silently (Save asks for them).
-  salesMissing(c).forEach((l) =>
-    kids.push(
-      el(
-        'p',
-        { class: 'note', 'data-tipout-needs-sales': String(l.id) },
-        l.who + ' (' + tipoutHow(l) + '): enter tonight’s sales to count it.',
-      ),
-    ),
-  );
   if (c.tipoutScaled)
     kids.push(
       el(

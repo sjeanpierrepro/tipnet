@@ -25,7 +25,7 @@ const invalid = (input) => input.getAttribute('aria-invalid') === 'true';
 
 const tipouts = [
   { id: 't1', k: 'barback', who: 'Barback', mode: 'pctTips', value: 15, from: 'cash' },
-  { id: 't2', k: 'runner', who: 'Runner', mode: 'pctSales', value: 1.25, from: 'payroll' },
+  { id: 't2', k: 'runner', who: 'Runner', mode: 'flat', value: 12.5, from: 'payroll' },
 ];
 const tonightSeed = (mode = 'total') =>
   realState((S) => {
@@ -36,15 +36,13 @@ const tonightSeed = (mode = 'total') =>
     S.workplaces[0].profile.payTypes[0].unit = 'hr';
   });
 
-test('Tonight: a typo in the total, hours, sales or cash box blocks Save, shows a message, and is never stored', async () => {
+test('Tonight: a typo in the total, hours or cash box blocks Save, shows a message, and is never stored', async () => {
   const page = await boot({ seed: tonightSeed() });
   try {
     const total = key(page, 'night-total');
     const hours = key(page, 'night-pay-p1');
     const cash = key(page, 'night-cash');
-    const sales = key(page, 'night-sales');
     typeOut(page, hours, '7');
-    typeOut(page, sales, '1000');
     // total
     for (const bad of ['1.2.3', '12abc', '1,2,3', '$', '1..2']) {
       typeOut(page, total, bad);
@@ -73,15 +71,6 @@ test('Tonight: a typo in the total, hours, sales or cash box blocks Save, shows 
     assert.equal(page.doc.activeElement, cash);
     typeOut(page, cash, '40');
     assert.equal(invalid(cash), false);
-    // sales
-    typeOut(page, sales, '10.0.0');
-    assert.equal(invalid(sales), true);
-    assert.match(errOf(page, sales), AMOUNT);
-    submit(page);
-    assert.equal(page.state().nights.length, 0);
-    assert.equal(page.doc.activeElement, sales);
-    typeOut(page, sales, '1000');
-    assert.equal(invalid(sales), false);
     // hours
     for (const bad of ['1.2.3', '7..5', '7:3:3:3', '7h abc']) {
       typeOut(page, hours, bad);
@@ -107,7 +96,6 @@ test('Tonight: a typo in the total, hours, sales or cash box blocks Save, shows 
     assert.equal(n.length, 1);
     assert.equal(n[0].total, 1250.5);
     assert.equal(n[0].cash, 40);
-    assert.equal(n[0].sales, 1000);
     assert.equal(n[0].pay.p1, 7.5);
   } finally {
     await page.close();

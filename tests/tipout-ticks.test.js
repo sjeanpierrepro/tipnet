@@ -186,17 +186,15 @@ test('loading: a night with no list in a finished period with locked nights is p
 test('same-date Add with tip-outs off or "after tip-out" (no boxes): the night keeps who it had', () => {
   const p = prof([BARBACK, RUNNER]);
   p.tipout.on = false;
-  const a = night('a', '2026-10-06', { tipouts: { t1: true, t2: false }, sales: 800 });
+  const a = night('a', '2026-10-06', { tipouts: { t1: true, t2: false } });
   // the added part has no boxes: no map, and the draft's barback default (true)
   const b = { id: 'x', date: '2026-10-06', total: 100, cash: null, pay: { p1: 1 }, barback: true };
   const m = mergeNights(a, b, p);
   assert.deepEqual(m.tipouts, { t1: true, t2: false });
-  assert.equal(m.sales, 800);
   assert.equal(m.total, 600);
   // with boxes, ticks still add up (someone tipped out in either part was tipped out that night)
-  const m2 = mergeNights(a, { ...b, tipouts: { t1: false, t2: true }, sales: 50 }, p);
+  const m2 = mergeNights(a, { ...b, tipouts: { t1: false, t2: true } }, p);
   assert.deepEqual(m2.tipouts, { t1: true, t2: true });
-  assert.equal(m2.sales, 850);
 });
 
 /* ---------- Setup Save: a person removed and added again (second v38 review) ---------- */

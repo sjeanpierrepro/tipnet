@@ -313,17 +313,15 @@ for (const [what, tipout] of [
   });
 }
 
-test('d) Tonight Replace and Add while tip-outs are off keep the night’s ticks and sales', async () => {
+test('d) Tonight Replace and Add while tip-outs are off keep the night’s ticks', async () => {
   const page = await boot({ seed: offSeed({ on: false, basis: 'before' }) });
   try {
     const date = nightOf(page, 'n1').date;
-    nightOf(page, 'n1').sales = 900;
     page.tab('periods');
     page.tab('tonight');
     retype(page, date);
     page.click(page.button('Replace it'));
     assert.deepEqual(nightOf(page, 'n1').tipouts, { t1: true, t2: false });
-    assert.equal(nightOf(page, 'n1').sales, 900);
     page.type(key(page, 'night-total'), '50');
     page.type(key(page, 'night-pay-p1'), '1');
     page.type(key(page, 'night-date'), date);

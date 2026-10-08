@@ -57,7 +57,7 @@ self.addEventListener('install', (event) => {
 /**
  * A cache left by a version before v38 ('tipnet-v1' ... 'tipnet-v37'). Its pages may still be open: one that keeps the
  * old code (something typed there and not saved) rewrites the whole saved state on its next save, and that old code
- * drops v38's tip-outs (the people, who was ticked each night, sales).
+ * drops v38's tip-outs (the people, who was ticked each night).
  */
 function beforeV38(name) {
   const m = /^tipnet-v(\d+)$/.exec(name);

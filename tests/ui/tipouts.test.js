@@ -1,5 +1,5 @@
-// Several tip-outs on screen: Setup rows (add, remove + Undo, Save), Tonight's "Tipped out tonight" boxes and sales field,
-// the result lines, the Pay periods editor and the same-date Add.
+// Several tip-outs on screen: Setup rows (add, remove + Undo, Save), Tonight's "Tipped out tonight" boxes, the result
+// lines, the Pay periods editor and the same-date Add. There is no "% of sales" and no sales box any more.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { boot, realState } from './harness.js';
@@ -7,7 +7,7 @@ import { todayISO, addDays } from '../../app/js/math.js';
 
 const today = todayISO();
 const BARBACK = { id: 't1', k: 'barback', who: 'Barback', mode: 'pctTips', value: 15, from: 'cash' };
-const RUNNER = { id: 't2', k: 'runner', who: 'Runner', mode: 'pctSales', value: 1.25, from: 'payroll' };
+const RUNNER = { id: 't2', k: 'runner', who: 'Runner', mode: 'flat', value: 12.5, from: 'payroll' };
 const seed = (list = [BARBACK, RUNNER], mutate) =>
   realState((S) => {
     S.workplaces[0].setupDone = true;
@@ -16,13 +16,12 @@ const seed = (list = [BARBACK, RUNNER], mutate) =>
     if (mutate) mutate(S);
   });
 const key = (page, k) => page.must(page.$('[data-focus-key="' + k + '"]'), k);
-const salesField = (page) => key(page, 'night-sales').closest('.field');
 const lines = (page) =>
   page
     .$$('.result dl.breakdown > div', page.app)
     .map((d) => (d.children[0].textContent + ' ' + d.children[1].textContent).replace(/\s+/g, ' ').trim());
 
-test('tonight: one box per person (ticked), the sales field while a % of sales person is ticked, result lines', async () => {
+test('tonight: one box per person (ticked), no sales box, result lines', async () => {
   const page = await boot({ seed: seed() });
   try {
     const legend = page.byText('legend', 'Tipped out tonight:');
@@ -31,25 +30,19 @@ test('tonight: one box per person (ticked), the sales field while a % of sales p
     const rn = key(page, 'night-tipout-t2');
     assert.equal(bb.checked, true);
     assert.equal(rn.checked, true);
-    assert.match(page.$('label[for="' + rn.id + '"]').textContent, /Runner1\.25% of sales/);
-    assert.equal(salesField(page).hidden, false, 'Runner is ticked and gets a % of sales');
+    assert.match(page.$('label[for="' + rn.id + '"]').textContent, /Runner\$12\.50 flat/);
+    assert.equal(page.$('[data-focus-key="night-sales"]'), null, 'no sales box');
+    assert.doesNotMatch(page.text(), /sales/i);
     page.type(key(page, 'night-total'), '585');
     page.type(key(page, 'night-pay-p1'), '8');
     page.type(key(page, 'night-cash'), '210');
-    // Save without sales: plain message, focus on the sales box, nothing saved
-    page.click(page.button('Save night'));
-    assert.match(page.text(), /Enter tonight’s sales for the % of sales tip-out\./);
-    assert.equal(page.doc.activeElement, key(page, 'night-sales'));
-    assert.equal(page.state().nights.length, 0);
-    page.type(key(page, 'night-sales'), '1000');
     assert.ok(lines(page).includes('Barback (15% of tips) −$73.35'), lines(page).join(' | '));
-    assert.ok(lines(page).includes('Runner (1.25% of sales) −$12.50'), lines(page).join(' | '));
+    assert.ok(lines(page).includes('Runner ($12.50 flat) −$12.50'), lines(page).join(' | '));
     assert.match(page.text(), /Cash tips collected \(before paying the barback\)/);
     assert.match(page.text(), /Cash you keep\$136\.65/);
-    // unticking the runner hides the sales field and drops the line
+    // unticking the runner drops the line
     rn.checked = false;
     page.change(rn);
-    assert.equal(salesField(page).hidden, true);
     assert.equal(
       lines(page).some((l) => l.startsWith('Runner')),
       false,
@@ -59,19 +52,18 @@ test('tonight: one box per person (ticked), the sales field while a % of sales p
     page.click(page.button('Save night'));
     const n = page.state().nights[0];
     assert.deepEqual(n.tipouts, { t1: true, t2: true });
-    assert.equal(n.sales, 1000);
+    assert.equal('sales' in n, false);
     assert.equal(n.barback, true);
   } finally {
     await page.close();
   }
 });
 
-test('tonight: unticked people are saved as such; no sales are kept when nobody gets a % of sales', async () => {
+test('tonight: unticked people are saved as such', async () => {
   const page = await boot({ seed: seed() });
   try {
     page.type(key(page, 'night-total'), '585');
     page.type(key(page, 'night-pay-p1'), '8');
-    page.type(key(page, 'night-sales'), '900');
     const rn = key(page, 'night-tipout-t2');
     rn.checked = false;
     page.change(rn);
@@ -88,7 +80,6 @@ test('tonight: "after tip-out" or tip-outs off shows no boxes; scaled tip-outs s
   const page = await boot({ seed: seed(undefined, (S) => (S.workplaces[0].profile.tipout.basis = 'after')) });
   try {
     assert.equal(page.byText('legend', 'Tipped out tonight:'), null);
-    assert.equal(page.$('[data-focus-key="night-sales"]'), null);
   } finally {
     await page.close();
   }
@@ -119,9 +110,15 @@ test('setup: Tip-outs card rows, + Add someone, decimals, remove + Undo, Save st
     const id = sel.id.slice(3);
     page.type(page.$('#tv-' + id), '1.22');
     const mode = page.$('#tm-' + id);
-    mode.value = 'pctSales';
-    page.change(mode);
-    assert.match(page.$('#tv-' + id).closest('.field').textContent, /Percent of sales/);
+    // two ways to tip out: a % of my tips or a flat amount a night
+    assert.deepEqual(
+      [...mode.options].map((o) => [o.value, o.textContent]),
+      [
+        ['pctTips', '% of my tips'],
+        ['flat', 'Flat $ a night'],
+      ],
+    );
+    assert.match(page.$('#tv-' + id).closest('.field').textContent, /Percent of tips/);
     const from = page.$('#tf-' + id);
     from.value = 'payroll';
     page.change(from);
@@ -148,7 +145,7 @@ test('setup: Tip-outs card rows, + Add someone, decimals, remove + Undo, Save st
       list.map((r) => [r.k, r.who, r.mode, r.value, r.from]),
       [
         ['barback', 'Barback', 'pctTips', 15, 'cash'],
-        ['runner', 'Runner', 'pctSales', 1.22, 'payroll'],
+        ['runner', 'Runner', 'pctTips', 1.22, 'payroll'],
         ['other', 'Sushi bar', 'flat', 20, 'cash'],
       ],
     );
@@ -183,7 +180,7 @@ test('setup: an empty amount keeps Save disabled with a plain reason; switching 
   }
 });
 
-test('pay periods editor: the night’s boxes and sales round-trip; a same-date Add adds the sales', async () => {
+test('pay periods editor: the night’s boxes round-trip; a same-date Add ticks who was tipped out in either part', async () => {
   const date = addDays(today, -1);
   const page = await boot({
     seed: seed(undefined, (S) => {
@@ -196,7 +193,6 @@ test('pay periods editor: the night’s boxes and sales round-trip; a same-date 
           pay: { p1: 8 },
           barback: true,
           tipouts: { t1: false, t2: true },
-          sales: 800,
           workplaceId: 'w1',
         },
       ];
@@ -211,26 +207,24 @@ test('pay periods editor: the night’s boxes and sales round-trip; a same-date 
     const rn = key(page, 'edit-n1-tipout-t2');
     assert.equal(bb.checked, false);
     assert.equal(rn.checked, true);
-    assert.equal(key(page, 'edit-n1-sales').value, '800');
     bb.checked = true;
     page.change(bb);
-    page.type(key(page, 'edit-n1-sales'), '950');
     page.click(page.button('Save changes'));
     const n = page.state().nights[0];
     assert.deepEqual(n.tipouts, { t1: true, t2: true });
-    assert.equal(n.sales, 950);
     // Tonight on the same date: Add puts the two together
     page.tab('tonight');
     page.type(key(page, 'night-total'), '200');
     page.type(key(page, 'night-pay-p1'), '2');
-    page.type(key(page, 'night-sales'), '50');
+    const rt = key(page, 'night-tipout-t2');
+    rt.checked = false;
+    page.change(rt);
     const d = key(page, 'night-date');
     page.type(d, date);
     page.click(page.button('Save night'));
     page.click(page.button('Add to that night'));
     const merged = page.state().nights;
     assert.equal(merged.length, 1);
-    assert.equal(merged[0].sales, 1000);
     assert.deepEqual(merged[0].tipouts, { t1: true, t2: true });
   } finally {
     await page.close();

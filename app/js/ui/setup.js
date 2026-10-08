@@ -71,7 +71,7 @@ import {
 } from '../storage.js';
 import { renderBackup, renderInstall, fileSaver } from './backup.js';
 import { buildIcs, makeUid, timeLabel, daysLabel, DAY_NAMES } from '../ics.js';
-import { redateDraft, dropDraft, nightsWithoutSales } from './tonight.js';
+import { redateDraft, dropDraft } from './tonight.js';
 
 let guidedStep = 0;
 // The restaurant the guided flow is running for (null = none). It stays set once the flow starts, even after the first
@@ -232,7 +232,7 @@ const moneyOf = (v) => {
   const n = readMoney(v);
   return Number.isFinite(n) ? n : 0;
 };
-/** A tip-out amount box: a percent for the two "% of" modes (a trailing "%" is fine), dollars for "flat". */
+/** A tip-out amount box: a percent for "% of my tips" (a trailing "%" is fine), dollars for "flat". */
 const readAmt = (v, r) => readMoney(v, { percent: r.mode !== 'flat' });
 const amtTypo = (v, r) => (r.mode === 'flat' ? moneyTypo(v) : percentTypo(v));
 const shiftsTypo = (v) =>
@@ -1356,8 +1356,7 @@ function tipoutCard(ctx) {
   const listErr = el('p', { class: 'field-error', role: 'alert', hidden: true, id: 'to-err' });
   const amountFields = []; // [{r, f, input}] for the rows on screen
   const exampleValue = ph && Array.isArray(ph.tipouts) && ph.tipouts[0] ? ph.tipouts[0].value : null;
-  const amountLabel = (r) =>
-    r.mode === 'flat' ? 'Dollars a night' : r.mode === 'pctSales' ? 'Percent of sales' : 'Percent of tips';
+  const amountLabel = (r) => (r.mode === 'flat' ? 'Dollars a night' : 'Percent of tips');
   const rowProblem = (r) =>
     !(num(r.value) > 0)
       ? 'Enter how much, or remove ' + r.who + '.'
@@ -1368,25 +1367,8 @@ function tipoutCard(ctx) {
     const n = document.getElementById(id);
     if (n) n.focus();
   };
-  /**
-   * Someone switched to (or added as) a % of sales: the saved nights that follow Setup with them ticked and no sales count
-   * $0 for them until the sales are added in Pay periods. '' when there are none.
-   */
-  const salesHintText = (r) => {
-    if (!to.on || to.basis === 'after' || r.mode !== 'pctSales' || !ctx.w) return '';
-    const k = nightsWithoutSales(ctx.S, ctx.w.id, r).length;
-    if (!k) return '';
-    return k === 1
-      ? '1 saved night without sales counts $0 for ' + r.who + ' until you add its sales in Pay periods.'
-      : k +
-          ' saved nights without sales count $0 for ' +
-          r.who +
-          ' until you add their sales in Pay periods.';
-  };
-  const salesHints = []; // one updater per row on screen
   const drawRows = () => {
     clear(rowsHost);
-    salesHints.length = 0;
     amountFields.length = 0;
     p.tipouts.forEach((r) => {
       const who = el('select', { id: 'tw-' + r.id });
@@ -1420,7 +1402,6 @@ function tipoutCard(ctx) {
       const mode = select(
         [
           ['pctTips', '% of my tips'],
-          ['pctSales', '% of sales'],
           ['flat', 'Flat $ a night'],
         ],
         r.mode,
@@ -1434,17 +1415,7 @@ function tipoutCard(ctx) {
         r.from === 'payroll' ? 'payroll' : 'cash',
         { id: 'tf-' + r.id },
       );
-      // read with the How choice, and said when it changes (a status line)
-      const salesHint = el('p', { class: 'hint', id: 'tsh-' + r.id, role: 'status' });
-      const showSalesHint = () => {
-        const t = salesHintText(r);
-        salesHint.hidden = !t;
-        if (salesHint.textContent !== t) salesHint.textContent = t;
-      };
-      showSalesHint();
-      salesHints.push(showSalesHint);
-      mode.setAttribute('aria-describedby', salesHint.id);
-      kids.push(el('div', { class: 'grid-2' }, fAmt, field('How', mode)), salesHint);
+      kids.push(el('div', { class: 'grid-2' }, fAmt, field('How', mode)));
       kids.push(field('Paid', from));
       const rm = el(
         'button',
@@ -1473,7 +1444,6 @@ function tipoutCard(ctx) {
       mode.addEventListener('change', () => {
         r.mode = mode.value;
         fAmt.querySelector('label').textContent = amountLabel(r);
-        showSalesHint();
         // "15%" is fine for a percent mode and a typo for dollars: look at the text again
         if (!flagTypo(amt, fAmt, (v) => amtTypo(v, r))) r.value = Math.max(0, readAmt(amt.value, r) || 0);
         ctx.touch(false);
@@ -1592,7 +1562,6 @@ function tipoutCard(ctx) {
   });
   basis.addEventListener('change', () => {
     to.basis = basis.value;
-    salesHints.forEach((f) => f()); // "after tip-out": nothing is taken out, so nothing to say
     ctx.touch(false);
   });
   drawRows();

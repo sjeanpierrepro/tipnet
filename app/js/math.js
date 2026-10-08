@@ -409,18 +409,18 @@ export function periodNontax(p, ns) {
   return s ? periodTerms(s).nontax : nontaxRecurring(p);
 }
 
-/* ---------- tip-outs (several people: % of tips, % of sales or flat) ---------- */
+/* ---------- tip-outs (several people: % of tips or flat) ---------- */
 /*
  * Per restaurant: profile.tipout = {on, basis} ("I tip out", and whether the number typed each night is before or after
  * tip-out) and profile.tipouts = [{id, k, who, mode, value, from}]:
  *   k: preset (barback, runner, busser, bar, host, kitchen, other); who: the name shown (a custom name for "other").
- *   mode: 'pctTips' (value % of tonight's tips), 'pctSales' (value % of tonight's sales) or 'flat' ($ value a night).
+ *   mode: 'pctTips' (value % of tonight's tips) or 'flat' ($ value a night). Any other mode is read as 'pctTips'.
  *   from: 'cash' (paid out of the cash tips) or 'payroll'.
  * Older data has one tip-out {on, mode: 'pct'|'flat', value, basis, from: 'cash'|'check'}: that is one Barback (also
  * while it is off, when it has an amount: legacyTipouts); those fields are still written next to a list of one that fits
- * them (savedTipout). A night says who was tipped out with night.tipouts = {recipientId: true|false}; older nights only have night.barback (true: everyone,
- * false: nobody). night.sales: tonight's sales, for the % of sales tip-outs. night.tipoutOn: whether "I tip out" was on
- * when the night was saved (nightTipout): the switch never changes a night already logged.
+ * them (savedTipout). A night says who was tipped out with night.tipouts = {recipientId: true|false}; older nights only
+ * have night.barback (true: everyone, false: nobody). night.tipoutOn: whether "I tip out" was on when the night was saved
+ * (nightTipout): the switch never changes a night already logged.
  */
 export const TIPOUT_PRESETS = [
   { k: 'barback', name: 'Barback' },
@@ -431,7 +431,7 @@ export const TIPOUT_PRESETS = [
   { k: 'kitchen', name: 'Kitchen' },
   { k: 'other', name: 'Other' },
 ];
-export const TIPOUT_MODES = ['pctTips', 'pctSales', 'flat'];
+export const TIPOUT_MODES = ['pctTips', 'flat'];
 /**
  * The people one old single tip-out stood for: one Barback. Switched off it still is (v37 kept the amount while it was
  * off, so ticking "I tip out" brings it back; nothing is taken out while it is off); off with no amount: nobody.
@@ -591,31 +591,16 @@ export function tipoutsTonight(src, night) {
   if (!ts.on || ts.basis !== 'before') return [];
   return ts.list.filter((r) => tippedOut(night, r));
 }
-/** Tonight's sales in cents, or null when none were entered. */
-export function salesCents(night) {
-  const v = night && night.sales;
-  if (v === '' || v == null) return null;
-  const n = parseFloat(v);
-  return Number.isFinite(n) && n >= 0 ? toCents(n) : null;
-}
 /**
- * The tip-out lines for one night, in cents: {lines: [{id, k, who, mode, value, from, cents}], totalC, cashC, scaled,
- * needsSales}. pctTips: tips x value %; pctSales: sales x value % (0 until sales are entered: needsSales); flat: value.
- * Each line is rounded to the cent. When the lines add up to more than the tips, they are scaled down proportionally so
+ * The tip-out lines for one night, in cents: {lines: [{id, k, who, mode, value, from, cents}], totalC, cashC, scaled}.
+ * pctTips: tips x value %; flat: value. Each line is rounded to the cent. When the lines add up to more than the tips, they are scaled down proportionally so
  * they add up to the tips exactly (scaled: true). cashC: the part paid out of cash.
  */
 export function tipoutLines(ts, night, tipsC) {
-  const sales = salesCents(night);
-  let needsSales = false;
   const lines = tipoutsTonight(ts, night).map((r) => {
     const v = Math.max(0, num(r.value));
     const mode = TIPOUT_MODES.includes(r.mode) ? r.mode : 'pctTips';
-    let c = 0;
-    if (mode === 'flat') c = toCents(v);
-    else if (mode === 'pctSales') {
-      if (sales == null) needsSales = true;
-      else c = toCents(((sales / 100) * v) / 100);
-    } else c = toCents(((tipsC / 100) * v) / 100);
+    const c = mode === 'flat' ? toCents(v) : toCents(((tipsC / 100) * v) / 100);
     return {
       id: r.id,
       k: r.k,
@@ -642,7 +627,7 @@ export function tipoutLines(ts, night, tipsC) {
   }
   const totalC = lines.reduce((s, l) => s + l.cents, 0);
   const cashC = lines.filter((l) => l.from === 'cash').reduce((s, l) => s + l.cents, 0);
-  return { lines, totalC, cashC, scaled, needsSales };
+  return { lines, totalC, cashC, scaled };
 }
 
 /* ---------- one night (6.4) ---------- */
@@ -709,7 +694,7 @@ function basePayWith(night, T) {
  * A locked night (night.snap) uses its snapshot's rates, pay types, tip-out, fixed total and shift count instead.
  * Returns dollars rounded to cents:
  * {total, basePay, hours, extra, extraTax, tips, tipout, tipouts (one line per person tipped out tonight:
- *  {id, k, who, mode, value, from, cents, amount}), tipoutScaled, tipoutNeedsSales, kept, tax, fixedPerShift, net,
+ *  {id, k, who, mode, value, from, cents, amount}), tipoutScaled, kept, tax, fixedPerShift, net,
  *  fromCash, cashInHand (null if no cash entered), onCheck (null), fedOnTips, r, locked,
  *  cashOffPayroll (true when the night is marked and cash is entered), cashTipsKept, taxOnCashToSetAside}
  * night.cashOffPayroll: the cash tips were not run through payroll, so no withholding was taken out of them. Payroll
@@ -760,7 +745,6 @@ export function computeNight(night, p, shifts) {
     tipout: d(tipoutC),
     tipouts: TO.lines.map((l) => ({ ...l, amount: d(l.cents) })),
     tipoutScaled: TO.scaled,
-    tipoutNeedsSales: TO.needsSales,
     kept: d(keptC),
     tax: d(taxC),
     fixedPerShift: d(fixedC),
@@ -842,9 +826,7 @@ export const SUSPECT_ERROR = 0.25;
 export const MATCH_ERROR = 0.005;
 /**
  * calibrate(profile, nights, idx, actual, today?, shifts?)
- * Does not mutate. Returns {ok:false, reason:'nonights'|'noactual'|'notFinal'|'missingCash'|'missingSales', missingCash}
- * ('missingSales' also has missingSales: how many nights, and salesNights: [{id, date, who: [names]}] oldest first, the
- * nights where someone ticked gets a % of sales and no sales were entered)
+ * Does not mutate. Returns {ok:false, reason:'nonights'|'noactual'|'notFinal'|'missingCash', missingCash}
  * or {ok:true, pred, actual, err, rNew, rOld, rateOverride, uncapped, capped, change,
  *     nightsLogged, expectedShifts, expectedSource, missingNights, suspect, T, C, F}.
  *   rNew: the rate the check implies, within 0..MAX_RATE (always computed). matched: |err| < MATCH_ERROR and
@@ -874,25 +856,6 @@ export function calibrate(p, nights, idx, actual, today = todayISO(), shifts, ra
   const cs = ns.map((night) => computeNight(night, p, n));
   const missing = cs.filter((c) => c.cashInHand == null).length;
   if (missing) return { ok: false, reason: 'missingCash', missingCash: missing };
-  // A ticked % of sales person counts $0 on a night without sales (tipoutNeedsSales): the prediction would be too
-  // high and drag the rate the wrong way, so it is refused like missing cash, naming the nights and who.
-  const salesNights = [];
-  cs.forEach((c, i) => {
-    if (c.tipoutNeedsSales)
-      salesNights.push({
-        id: ns[i].id,
-        date: ns[i].date,
-        who: c.tipouts.filter((l) => l.mode === 'pctSales').map((l) => l.who),
-      });
-  });
-  if (salesNights.length)
-    return {
-      ok: false,
-      reason: 'missingSales',
-      missingCash: 0,
-      missingSales: salesNights.length,
-      salesNights,
-    };
   let T = 0,
     Tt = 0,
     C = 0,
