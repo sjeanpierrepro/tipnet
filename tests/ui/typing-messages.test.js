@@ -43,6 +43,8 @@ const errOf = (page, input) => {
   const e = ids.map((i) => page.doc.getElementById(i)).find((n) => n && n.classList.contains('field-error'));
   return e && !e.hidden ? e : null;
 };
+/** Its text (so a failing check never prints a whole DOM node). */
+const msgOf = (page, input) => (errOf(page, input) ? errOf(page, input).textContent : '');
 const invalid = (input) => input.getAttribute('aria-invalid') === 'true';
 /** Type text one key at a time, a short gap between keys (well under the pause). */
 function typeKeys(page, input, text, after = () => {}) {
@@ -99,7 +101,7 @@ test('Tonight: a typo is flagged after a pause in typing, politely and linked to
     page.type(total, '1.2.34');
     assert.match(errOf(page, total).textContent, AMOUNT);
     page.type(total, '1.2');
-    assert.equal(errOf(page, total), null);
+    assert.equal(msgOf(page, total), '');
     assert.equal(invalid(total), false);
     // hours: a typo waits the same way
     page.type(hours, '7..5');
@@ -111,7 +113,7 @@ test('Tonight: a typo is flagged after a pause in typing, politely and linked to
     assert.equal(h.getAttribute('aria-live'), 'polite');
     assert.equal(invalid(hours), true);
     page.type(hours, '7.5');
-    assert.equal(errOf(page, hours), null);
+    assert.equal(msgOf(page, hours), '');
     // more than 24 hours is not a typo: said at once
     page.type(hours, '30');
     assert.match(errOf(page, hours).textContent, /more than 24 hours/);
@@ -133,7 +135,7 @@ test('Tonight: leaving the box shows its typo at once; Save refuses a typo at on
       false,
     );
     page.type(cash, '100');
-    assert.equal(errOf(page, cash), null);
+    assert.equal(msgOf(page, cash), '');
     // Save right after typing a typo (no pause, box not left): refused at once, as an alert, nothing stored
     page.type(total, '5.0.0');
     page.click(page.button('Save night'));
@@ -198,8 +200,8 @@ test('Setup: a typo in a box is flagged after a pause, but Save is off at once',
     page.type(gross, '$');
     assert.equal(page.$('#draft-save').disabled, true, 'Save refuses the typo at once');
     assert.match(page.text(page.$('#draft-reasons')), /Gross pay/);
-    assert.equal(errOf(page, gross), null, 'no message mid-typing');
-    typeKeys(page, gross, '$2,100', () => assert.equal(errOf(page, gross), null));
+    assert.equal(msgOf(page, gross), '', 'no message mid-typing');
+    typeKeys(page, gross, '$2,100', () => assert.equal(msgOf(page, gross), ''));
     page.type(gross, '2.1.0');
     mock.timers.tick(TYPO_PAUSE_MS);
     assert.match(errOf(page, gross).textContent, AMOUNT);
@@ -209,15 +211,15 @@ test('Setup: a typo in a box is flagged after a pause, but Save is off at once',
     );
     // a tip-out percent: "15%" on the way is fine, "1.5.%" is flagged after the pause
     const amt = key(page, 'tv-t1');
-    typeKeys(page, amt, '15%', () => assert.equal(errOf(page, amt), null));
+    typeKeys(page, amt, '15%', () => assert.equal(msgOf(page, amt), ''));
     page.type(amt, '1.5.');
-    assert.equal(errOf(page, amt), null);
+    assert.equal(msgOf(page, amt), '');
     mock.timers.tick(TYPO_PAUSE_MS);
     assert.match(errOf(page, amt).textContent, /percent/);
     // shifts (checked again by the card on every change): also only after the pause
     const shifts = page.byText('.field', 'Shifts', page.app).querySelector('input');
     page.type(shifts, '1,2,3');
-    assert.equal(errOf(page, shifts), null);
+    assert.equal(msgOf(page, shifts), '');
     mock.timers.tick(TYPO_PAUSE_MS);
     assert.match(errOf(page, shifts).textContent, /number of shifts/);
   });
@@ -231,9 +233,9 @@ test('Budget: "Money you have right now" flags a typo after a pause, not on "$" 
     async (page) => {
       page.tab('budget');
       const input = page.must(page.$('#budget-balance'), 'balance');
-      typeKeys(page, input, '$1,500', () => assert.equal(errOf(page, input), null));
+      typeKeys(page, input, '$1,500', () => assert.equal(msgOf(page, input), ''));
       page.type(input, '1.5.0');
-      assert.equal(errOf(page, input), null);
+      assert.equal(msgOf(page, input), '');
       mock.timers.tick(TYPO_PAUSE_MS);
       assert.match(errOf(page, input).textContent, AMOUNT);
       assert.equal(errOf(page, input).getAttribute('role'), null);
