@@ -74,11 +74,16 @@ export function parseMoney(v) {
 }
 
 /** "7.5" -> 7.5, "7,5" -> 7.5 (a lone comma before 1-2 digits is a decimal), "7:30" -> 7.5, "7h 30m" -> 7.5, junk -> 0.
+ *  Text the screens refuse ("1.2.3", "12abc", "seven", "7h abc") is NaN too, so the row is skipped; blank and the
+ *  placeholders n/a, na, none, - are 0 (no hours).
  *  Never negative (a negative cell is caught by looksNegative). "1,250" or "1,250.5" is ambiguous (thousands? decimal?)
  *  and returns NaN so the caller can reject the row. The shared parser from inputs.js, in its strict mode. */
 export function parseHours(v) {
+  if (hoursPlaceholder(v)) return 0;
   return Math.abs(parseHoursInput(v, { strict: true }));
 }
+/** "n/a", "na", "none", "-", "--" in an hours cell: the common spreadsheet way to say "no hours", read as blank. */
+const hoursPlaceholder = (v) => /^(?:n\/a|na|none|[-–—]+)$/i.test(String(v == null ? '' : v).trim());
 
 const validYMD = (y, m, d) => {
   if (m < 1 || m > 12 || d < 1 || d > 31) return false;
@@ -269,7 +274,11 @@ export function buildNights(rows, mapping, opts = {}) {
       return;
     }
     // A negative amount or hours (refund, void, typo) is not a night we can trust: skip the row and say why.
-    const negHours = mapping.hours != null && useHours && looksNegative(r[mapping.hours]);
+    const negHours =
+      mapping.hours != null &&
+      useHours &&
+      !hoursPlaceholder(r[mapping.hours]) &&
+      looksNegative(r[mapping.hours]);
     if (
       (cash != null && cash < 0) ||
       (card != null && card < 0) ||

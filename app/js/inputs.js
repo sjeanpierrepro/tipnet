@@ -86,12 +86,21 @@ export function negativeCheckReason(c) {
 const HOURS_UNIT = 'h(?:ours?|rs?)?';
 // "7h30", "7h 30", "7h 30m": the minutes after the unit may skip the "m".
 const HM_RE = new RegExp(
-  `^(\\d+(?:\\.\\d+)?)\\s*${HOURS_UNIT}\\s*(?:(\\d+)\\s*(?:m(?:in(?:ute)?s?)?)?)?$`,
+  `^(\\d+(?:\\.\\d+)?|\\.\\d+)\\s*${HOURS_UNIT}\\s*(?:(\\d+)\\s*(?:m(?:in(?:ute)?s?)?)?)?$`,
   'i',
 );
 const CLOCK_RE = new RegExp(`^(\\d+):(\\d{1,2})(?::\\d{1,2})?(?:\\s*${HOURS_UNIT})?$`, 'i'); // "7:30", "7:30 hrs"
 const FRACS = { '½': 0.5, '¼': 0.25, '¾': 0.75, '1/2': 0.5, '1/4': 0.25, '3/4': 0.75 };
-const FRAC_RE = /^(?:(\d+)\s*)?(½|¼|¾|1\/2|1\/4|3\/4)$/; // "7½", "7 1/2", "1/2"
+const FRAC_RE = new RegExp(`^(?:(\\d+)\\s*)?(½|¼|¾|1/2|1/4|3/4)(?:\\s*${HOURS_UNIT})?$`, 'i'); // "7½", "7 1/2", "7½h"
+/**
+ * A decimal comma before 1-2 digits becomes a point, with or without a unit after it ("7,5", "7,5h", "7,5 hrs").
+ * withShifts: a trailing "shift"/"shifts" is dropped too ("1 shift"), for a Shifts box.
+ */
+function normHours(s, withShifts = false) {
+  if (withShifts) s = s.replace(/\s*shifts?$/i, '');
+  const m = /^(\d*),(\d{1,2})(\s*h(?:ours?|rs?)?)?$/i.exec(s);
+  return m ? m[1] + '.' + m[2] + (m[3] || '') : s;
+}
 /** A period after the unit ("8hrs.") or after a plain number ("7.5.") is dropped. */
 function dropEndPeriod(s) {
   if (/^\d.*[a-z]\.$/i.test(s) || /^\d+(?:\.\d+)?\.$/.test(s)) return s.slice(0, -1);
@@ -101,11 +110,12 @@ export function parseHoursInput(v, { strict = false } = {}) {
   let s = String(v == null ? '' : v).trim();
   const neg = /^[-−]/.test(s);
   if (neg) s = s.slice(1).trim();
-  s = dropEndPeriod(s);
+  s = normHours(dropEndPeriod(s), !strict); // a Shifts box reads "1 shift"; a CSV hours cell does not
   const sign = neg ? -1 : 1;
   let x;
-  if (/^\d*,\d{1,2}$/.test(s)) s = s.replace(',', '.');
-  else if (strict && (/^\d*,\d+(?:\.\d+)?$/.test(s) || /^\d+(?:,\d{3})+(?:\.\d+)?$/.test(s))) return NaN;
+  // CSV import: text the screens refuse ("1.2.3", "12abc", "seven") is NaN so the row is skipped, never read as its digits.
+  if (strict && !hoursShape(s)) return NaN;
+  if (strict && (/^\d*,\d+(?:\.\d+)?$/.test(s) || /^\d+(?:,\d{3})+(?:\.\d+)?$/.test(s))) return NaN;
   if ((x = CLOCK_RE.exec(s))) return sign * (+x[1] + +x[2] / 60);
   if ((x = HM_RE.exec(s))) return sign * (+x[1] + (x[2] ? +x[2] / 60 : 0));
   if ((x = FRAC_RE.exec(s))) return sign * (+(x[1] || 0) + FRACS[x[2]]);
@@ -151,17 +161,16 @@ export function percentTypo(text) {
   return n !== null && Number.isNaN(n) ? 'That isn’t a percent. Use something like 15 or 1.25.' : '';
 }
 /** True when parseHoursInput reads this text as it was meant (blank counts: nothing typed is not a typo). */
-function hoursShape(text) {
+function hoursShape(text, unit = 'hours') {
   let s = String(text == null ? '' : text).trim();
   if (s === '') return true;
   if (/^[-−]/.test(s)) s = s.slice(1).trim();
-  s = dropEndPeriod(s);
-  if (/^\d*,\d{1,2}$/.test(s)) s = s.replace(',', '.');
+  s = normHours(dropEndPeriod(s), unit === 'shifts');
   return CLOCK_RE.test(s) || HM_RE.test(s) || FRAC_RE.test(s) || /^(?:\d+\.?\d*|\.\d+)$/.test(s);
 }
 /** '' when an hours/shifts box is blank or readable, else a short message. unit: 'hours' | 'shifts'. */
 export function hoursTypo(text, unit = 'hours') {
-  if (hoursShape(text)) return '';
+  if (hoursShape(text, unit)) return '';
   return unit === 'shifts'
     ? 'That isn’t a number of shifts. Use something like 1 or 1.5.'
     : 'That isn’t a number of hours. Use something like 7.5 or 7:30.';

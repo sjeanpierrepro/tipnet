@@ -89,7 +89,9 @@ function typedAmount(v) {
 /** The typed amount, 0 when blank or a typo (a typo never counts as a number; the screens refuse it before saving). */
 export const moneyNum = (v) => typedAmount(v) ?? 0;
 /** Hours typed in an hours/shifts box: null when blank or a typo. */
-const hoursOf = (v) => (hasHoursText(v) && !hoursTypo(v) ? parseHoursInput(v) : null);
+// unit: the box's pay unit; a Shifts box also reads "1 shift".
+const unitOf = (t) => (t && t.unit === 'hr' ? 'hours' : 'shifts');
+const hoursOf = (v, unit = 'hours') => (hasHoursText(v) && !hoursTypo(v, unit) ? parseHoursInput(v) : null);
 /** The business date "tonight" belongs to (the Late nights rule). */
 const tonightOf = (S) => businessDate(new Date(), cutoffFromSettings(S && S.settings));
 
@@ -280,7 +282,7 @@ function draftPay(d, p) {
     if (d.pay[k] === '' || d.pay[k] == null) return;
     const t = p && typeById(p, k);
     if (t && t.unit !== 'amt') {
-      const h = hoursOf(d.pay[k]);
+      const h = hoursOf(d.pay[k], unitOf(t));
       if (h == null || h < 0) return;
       pay[k] = String(Math.round(h * 10000) / 10000);
     } else if (typedAmount(d.pay[k]) != null) pay[k] = String(typedAmount(d.pay[k]));
@@ -422,7 +424,14 @@ export function hoursProblem(p, d) {
     }
     const what = t.unit === 'hr' ? 'Hours' : 'Shifts';
     const forName = many ? ' for ' + payName(t, p.payTypes.indexOf(t)) : '';
-    if (hoursTypo(v)) return { msg: what + forName + ' should be a number, like 6 or 7:30.', id: t.id };
+    if (hoursTypo(v, unitOf(t)))
+      return {
+        msg:
+          what +
+          forName +
+          (t.unit === 'hr' ? ' should be a number, like 6 or 7:30.' : ' should be a number, like 1 or 2.'),
+        id: t.id,
+      };
     const h = parseHoursInput(v);
     if (h < 0) return { msg: what + ' can’t be a negative number' + forName + '.', id: t.id };
     if (t.unit !== 'hr') continue;
@@ -459,7 +468,7 @@ export function entryProblem(p, d, when = 'tonight') {
 /** True when an hoursProblem result is about text that isn't a number (not, say, more than 24 hours). */
 function hoursTypoIn(p, d, bad) {
   const row = bad.msg && bad.id != null ? typeById(p, bad.id) : null;
-  return !!row && !!(row.unit === 'amt' ? moneyTypo(d.pay[row.id]) : hoursTypo(d.pay[row.id]));
+  return !!row && !!(row.unit === 'amt' ? moneyTypo(d.pay[row.id]) : hoursTypo(d.pay[row.id], unitOf(row)));
 }
 /**
  * The first typed amount that isn't a number ("1.2.3", "12abc"), else null: {where: 'total'|'sales'|'hours'|'cash', msg, id?}.
@@ -737,7 +746,7 @@ export function nightFields(
     const r = rateOf(t);
     if (!(r > 0)) return 'No rate in Setup for this job, so it adds no pay.';
     const unit = t.unit === 'shift' ? '/shift' : '/h';
-    const h = hoursOf(v);
+    const h = hoursOf(v, unitOf(t));
     return money(r) + unit + (h != null && h >= 0 ? ' → ' + money(round2(h * r)) : '');
   };
   let rootEl = null;
