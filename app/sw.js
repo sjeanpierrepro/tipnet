@@ -1,6 +1,7 @@
 /* TipNet service worker. Bump VERSION on every release so clients fetch a fresh shell.
    It does NOT skipWaiting on its own: the page shows "Update available: Refresh" and
-   posts {type:'SKIP_WAITING'} (or the string 'SKIP_WAITING') when the user agrees. */
+   posts {type:'SKIP_WAITING'} (or the string 'SKIP_WAITING') when the user agrees. Only when it takes over from a
+   version before v38 does it reload the open windows itself (see activate). */
 const VERSION = 'tipnet-v38';
 
 const SHELL = [
@@ -54,16 +55,48 @@ self.addEventListener('install', (event) => {
   );
 });
 
+/**
+ * A cache left by a version before v38 ('tipnet-v1' ... 'tipnet-v37'). Its pages may still be open: one that keeps the
+ * old code (something typed there and not saved) rewrites the whole saved state on its next save, and that old code
+ * drops v38's tip-outs (the people, who was ticked each night, sales).
+ */
+function beforeV38(name) {
+  const m = /^tipnet-v(\d+)$/.exec(name);
+  return !!m && Number(m[1]) < 38;
+}
+
+/**
+ * Reload every open window at its own address. Each navigation is started, not waited for: it only finishes once the
+ * page has loaded, and the page's requests wait for this activation to end.
+ */
+function reloadWindows() {
+  return self.clients
+    .matchAll({ type: 'window', includeUncontrolled: true })
+    .then((list) =>
+      list.forEach((c) => {
+        // rejects for a window this worker doesn't control (and throws where navigate() is missing): that one is skipped
+        Promise.resolve()
+          .then(() => c.navigate(c.url))
+          .catch(() => {});
+      }),
+    )
+    .catch(() => {});
+}
+
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        Promise.all(
-          keys.filter((k) => k.startsWith('tipnet-') && k !== VERSION).map((k) => caches.delete(k)),
-        ),
+    caches.keys().then((keys) => {
+      const fromOld = keys.some(beforeV38); // looked at before the old caches go
+      return Promise.all(
+        keys.filter((k) => k.startsWith('tipnet-') && k !== VERSION).map((k) => caches.delete(k)),
       )
-      .then(() => self.clients.claim()),
+        .then(() => self.clients.claim())
+        .then(() => {
+          // Taking over from before v38: no window keeps running the old code (a half-typed entry there is lost, which
+          // beats an old save wiping the tip-out setup). From v38 on, an update never reloads a window by itself.
+          if (fromOld) return reloadWindows();
+        });
+    }),
   );
 });
 

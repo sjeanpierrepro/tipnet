@@ -43,10 +43,24 @@ const offline = async () => {
   throw new TypeError('offline');
 };
 
-/** A fresh worker in a sandbox. net(url, init) is the fake network. */
-function load(net = offline) {
+/**
+ * A fresh worker in a sandbox. net(url, init) is the fake network. windows: the open pages' URLs (WindowClients);
+ * navigate(url) on one is recorded in calls.navigated and returns nav(url) (default: resolves right away; nav: null =
+ * a browser without navigate()). version: run the worker as another release (e.g. a future 'tipnet-v39').
+ */
+function load(net = offline, { windows = [ORIGIN + '/'], nav = async () => null, version } = {}) {
   const stores = new Map(); // cache name -> Map(url -> response)
-  const calls = { fetch: [], added: [], claimed: 0, skipped: 0, deleted: [], posted: [], background: [] };
+  const calls = {
+    fetch: [],
+    added: [],
+    claimed: 0,
+    skipped: 0,
+    deleted: [],
+    posted: [],
+    background: [],
+    navigated: [],
+    order: [], // 'delete <name>', 'claim', 'navigate <url>' as they happen
+  };
   const handlers = {};
   const open = (name) => {
     if (!stores.has(name)) stores.set(name, new Map());
@@ -68,6 +82,7 @@ function load(net = offline) {
     keys: async () => [...stores.keys()],
     delete: async (name) => {
       calls.deleted.push(name);
+      calls.order.push('delete ' + name);
       return stores.delete(name);
     },
     match: async (req) => {
@@ -84,8 +99,19 @@ function load(net = offline) {
     clients: {
       claim: async () => {
         calls.claimed++;
+        calls.order.push('claim');
       },
-      matchAll: async () => [{ postMessage: (m) => calls.posted.push(m) }],
+      matchAll: async () =>
+        windows.map((url) => {
+          const c = { url, type: 'window', postMessage: (m) => calls.posted.push(m) };
+          if (nav)
+            c.navigate = (to) => {
+              calls.navigated.push(to);
+              calls.order.push('navigate ' + to);
+              return nav(to);
+            };
+          return c;
+        }),
     },
     skipWaiting: () => {
       calls.skipped++;
@@ -105,7 +131,11 @@ function load(net = offline) {
       return net(req.url, init);
     },
   });
-  vm.runInContext(src, ctx, { filename: 'sw.js' });
+  const line = /^const VERSION = '[^']*';/m;
+  assert.ok(!version || line.test(src), 'VERSION line not found in sw.js');
+  vm.runInContext(version ? src.replace(line, `const VERSION = '${version}';`) : src, ctx, {
+    filename: 'sw.js',
+  });
   return {
     stores,
     calls,
@@ -200,6 +230,86 @@ test('sw: activate deletes only other tipnet- caches and claims clients', async 
   assert.deepEqual(sw.calls.deleted.sort(), ['tipnet-v1', 'tipnet-v14']);
   assert.deepEqual([...sw.stores.keys()].sort(), [version, 'other-app', 'workbox-x'].sort());
   assert.equal(sw.calls.claimed, 1);
+});
+
+test('sw: taking over from a version before v38 reloads every open window at its own address', async () => {
+  const pages = [ORIGIN + '/', ORIGIN + '/index.html?tab=periods'];
+  const sw = load(offline, { windows: pages });
+  const version = sw.get('VERSION');
+  ['tipnet-v37', version].forEach((n) => sw.open(n));
+  await sw.lifecycle('activate');
+  await later();
+  assert.deepEqual(sw.calls.navigated, pages, 'each window to its own URL');
+  // after the old cache is gone and the new version controls the windows
+  assert.deepEqual(sw.calls.order, ['delete tipnet-v37', 'claim', ...pages.map((u) => 'navigate ' + u)]);
+  assert.deepEqual([...sw.stores.keys()], [version]);
+  // much older versions too, and a later version that takes over straight from v37 (v38 never installed there)
+  for (const [caches, as] of [
+    [['tipnet-v9', 'other-app'], undefined],
+    [['tipnet-v37'], 'tipnet-v39'],
+  ]) {
+    const old = load(offline, { windows: pages, version: as });
+    [...caches, old.get('VERSION')].forEach((n) => old.open(n));
+    await old.lifecycle('activate');
+    await later();
+    assert.deepEqual(old.calls.navigated, pages, caches.join(', ') + ' -> ' + old.get('VERSION'));
+    assert.equal(old.calls.order.indexOf('claim'), old.calls.order.length - pages.length - 1, 'claim first');
+  }
+});
+
+test('sw: from v38 on, a new version never reloads a window (no forced reload while someone types)', async () => {
+  for (const [before, as] of [
+    [['tipnet-v38'], 'tipnet-v39'], // a future v39 taking over from v38
+    [['tipnet-v39', 'tipnet-v38'], 'tipnet-v40'],
+    [['tipnet-v38'], undefined], // v38 itself: only its own cache
+    [[], undefined], // first install
+    [['tipnet-v41', 'tipnet-v100'], undefined],
+    [['other-app', 'tipnet-vX', 'old-tipnet-v1'], undefined], // not TipNet version caches
+  ]) {
+    const sw = load(offline, { version: as });
+    [...before, sw.get('VERSION')].forEach((n) => sw.open(n));
+    await sw.lifecycle('activate');
+    await later();
+    const label = before.join(', ') + ' -> ' + sw.get('VERSION');
+    assert.deepEqual(sw.calls.navigated, [], label);
+    assert.equal(sw.calls.claimed, 1, label);
+    assert.deepEqual(
+      sw.calls.deleted.sort(),
+      before.filter((k) => k.startsWith('tipnet-') && k !== sw.get('VERSION')).sort(),
+      label,
+    );
+  }
+});
+
+test('sw: the reload never holds up activation, and a window that can’t be navigated is skipped', async () => {
+  // navigate() only settles once the page has loaded, which waits for activation: activate must not wait for it
+  const stuck = load(offline, { nav: () => new Promise(() => {}) });
+  stuck.open('tipnet-v37');
+  await stuck.lifecycle('activate');
+  await later();
+  assert.equal(stuck.calls.navigated.length, 1);
+  // a window that isn't controlled (navigate rejects, or throws): activation still succeeds and the others still reload
+  for (const nav of [
+    async () => {
+      throw new TypeError('not controlled');
+    },
+    () => {
+      throw new TypeError('not controlled');
+    },
+  ]) {
+    const failing = load(offline, { windows: [ORIGIN + '/a', ORIGIN + '/b'], nav });
+    failing.open('tipnet-v30');
+    await failing.lifecycle('activate');
+    await later();
+    assert.deepEqual(failing.calls.navigated, [ORIGIN + '/a', ORIGIN + '/b']);
+    assert.equal(failing.calls.claimed, 1);
+  }
+  // a browser without navigate(): nothing to reload, activation still succeeds
+  const none = load(offline, { nav: null });
+  none.open('tipnet-v37');
+  await none.lifecycle('activate');
+  await later();
+  assert.deepEqual(none.calls.order, ['delete tipnet-v37', 'claim']);
 });
 
 test('sw: SKIP_WAITING (object or string) skips waiting; other messages do not', () => {
