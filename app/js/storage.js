@@ -13,6 +13,7 @@ import {
   TIPOUT_PRESETS,
   TIPOUT_MODES,
 } from './math.js';
+import { TIME_RE, UID_RE, cleanDays } from './ics.js';
 import { emptyBudget, migrateBudget } from './budget.js';
 
 // 4 = v38 (establishments' tip-out people, pinned nights). migrate() reads every older version; data from a NEWER version
@@ -31,7 +32,8 @@ const STATE_KEY = 'state';
  *               pay schedule, paystub, jobs, tip-out and entry mode (profile) and its own "Check my accuracy" history (calib).
  *   nights:     [{..., workplaceId}]  every night belongs to one restaurant.
  *   settings:   {theme:'auto'|'light'|'dark', lastTab, activeWorkplaceId, periodsFilter?, dayCutoffHour?, guidedDraft?,
- *                lastBackupAt?, backupNudgeUntil?, nightsSinceBackup?, backupNightsAt?, iosNoteSeen?, wordingV38?, entitlement?}
+ *                lastBackupAt?, backupNudgeUntil?, nightsSinceBackup?, backupNightsAt?, iosNoteSeen?, wordingV38?, entitlement?,
+ *                reminder?: {time:'HH:MM', days:[0-6, Monday first], addedAt, uid, seq}}
  *               (shared by every restaurant)
  *   budget:     see budget.js (shared: bills are paid from all money; a goal may name the restaurant it is saved from, fundedBy).
  *   profileExample / nightsExample: first-run example mode; only ever about the first restaurant.
@@ -438,6 +440,26 @@ function cleanSettings(x, ids) {
     if (g.noDeductions === true) d.noDeductions = true;
     if (isObj(g.profile)) d.profile = cleanProfile(g.profile, { startFallback: '', entryDefault: 'tips' });
     out.guidedDraft = d;
+  }
+  // Nightly reminder (the calendar event last added): a valid one is kept, anything else dropped.
+  const r = s.reminder;
+  if (
+    isObj(r) &&
+    TIME_RE.test(r.time) &&
+    UID_RE.test(r.uid) &&
+    Number.isInteger(r.seq) &&
+    r.seq >= 0 &&
+    r.seq < 1e7
+  ) {
+    const days = cleanDays(r.days);
+    if (
+      days.length &&
+      days.length === r.days.length &&
+      typeof r.addedAt === 'number' &&
+      r.addedAt > 0 &&
+      r.addedAt < 1e14
+    )
+      out.reminder = { time: r.time, days, addedAt: r.addedAt, uid: r.uid, seq: r.seq };
   }
   // Backups: when the last backup code or file was made (ms), and until when the "Last backup" reminder is dismissed.
   const ms = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0 && v < 1e14;

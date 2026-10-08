@@ -14,6 +14,7 @@ All the numbers stay on your phone or computer. Your bar cannot see them. No acc
 - **Setup stays tidy**: once set up, Setup shows each establishment as one line with a short summary. Tap it to edit, then **Save** (or **Cancel**); leaving with unsaved changes asks first. Shared settings are one line each and apply right away.
 - **Non-taxable earnings**: reimbursements and allowances your stub lists as non-taxable are left out of the tax rate; the ones on every check are added to your estimate without tax.
 - **Track accuracy**: At the end of a pay period, enter your actual paycheck and let TipNet learn. Each check you compare brings the next estimate closer.
+- **Nightly reminder**: in Setup, pick a time and the days you work and tap **Add to my calendar**. Your phone's calendar then reminds you each night to log in TipNet (TipNet has no server, so the reminder is a calendar event).
 - **Install like an app**: Tap "Install to home screen" in your browser. It works on iPhone, Android, Windows, and Mac.
 
 ## How to run TipNet

@@ -181,8 +181,8 @@ export function eraseEverything() {
 /* ---------- backup files ---------- */
 /** Hands a file to the browser as a download (a Blob and a link with download=). Tests replace save. */
 export const fileSaver = {
-  save(name, text) {
-    const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  save(name, text, type = 'application/json') {
+    const url = URL.createObjectURL(new Blob([text], { type }));
     const a = el('a', { href: url, download: name, hidden: true });
     document.body.append(a);
     a.click();

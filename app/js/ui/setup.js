@@ -69,7 +69,8 @@ import {
   lockFinished,
   flush,
 } from '../storage.js';
-import { renderBackup, renderInstall } from './backup.js';
+import { renderBackup, renderInstall, fileSaver } from './backup.js';
+import { buildIcs, makeUid, timeLabel, daysLabel, DAY_NAMES } from '../ics.js';
 import { redateDraft, dropDraft, nightsWithoutSales } from './tonight.js';
 
 let guidedStep = 0;
@@ -1661,6 +1662,74 @@ function cutoffCard(ctx) {
   return el('section', { class: 'card stack' }, el('h2', null, 'Late nights'), f);
 }
 
+/* ============ nightly reminder (a calendar event) ============ */
+const reminderText = (r) => (r ? 'Added: ' + timeLabel(r.time) + ', ' + daysLabel(r.days) : 'Not added yet');
+function reminderCard(ctx) {
+  const S = ctx.S;
+  const cur = S.settings.reminder;
+  const time = el('input', { type: 'time', id: 'rem-time', 'data-focus-key': 'rem-time' });
+  time.value = cur ? cur.time : '02:00';
+  const boxes = DAY_NAMES.map((name, i) => {
+    const cb = el('input', { type: 'checkbox', id: 'rem-day-' + i, 'data-focus-key': 'rem-day-' + i });
+    cb.checked = cur ? cur.days.includes(i) : true;
+    return el('label', { class: 'check', for: 'rem-day-' + i }, cb, ' ' + name);
+  });
+  const days = () => DAY_NAMES.map((_, i) => i).filter((i) => boxes[i].querySelector('input').checked);
+  const msg = el('p', { class: 'field-error', id: 'rem-err', role: 'alert', hidden: true });
+  const last = el('p', { class: 'hint', id: 'rem-last' }, reminderText(cur));
+  const add = el(
+    'button',
+    { type: 'button', class: 'btn btn-secondary', id: 'rem-add' },
+    'Add to my calendar',
+  );
+  add.addEventListener('click', () => {
+    const d = days();
+    if (!d.length) {
+      msg.textContent = 'Tick at least one day.';
+      msg.hidden = false;
+      return;
+    }
+    if (!time.value) {
+      msg.textContent = 'Pick a time.';
+      msg.hidden = false;
+      return;
+    }
+    msg.hidden = true;
+    const prev = S.settings.reminder;
+    const uid = prev ? prev.uid : makeUid();
+    const seq = prev ? prev.seq + 1 : 0;
+    const now = new Date();
+    const text = buildIcs({
+      time: time.value,
+      days: d,
+      uid,
+      sequence: seq,
+      now,
+      url: location.origin + location.pathname,
+    });
+    S.settings.reminder = { time: time.value, days: d, addedAt: now.getTime(), uid, seq };
+    save();
+    fileSaver.save('tipnet-reminder.ics', text, 'text/calendar;charset=utf-8');
+    last.textContent = reminderText(S.settings.reminder);
+    toast('Reminder file saved. Open it to add it to your calendar.');
+  });
+  return el(
+    'section',
+    { class: 'card stack' },
+    el('h2', null, 'Nightly reminder'),
+    field('Time', time),
+    el('div', { class: 'cluster', role: 'group', 'aria-label': 'Days you work' }, boxes),
+    msg,
+    add,
+    last,
+    el(
+      'p',
+      { class: 'hint' },
+      "Your phone's calendar will remind you at this time to log tonight in TipNet. To change it later, add a new one here and delete the old reminder in your calendar.",
+    ),
+  );
+}
+
 /* ============ theme ============ */
 function themeCard(ctx) {
   const S = ctx.S;
@@ -2776,6 +2845,12 @@ function fullPage(root, S, active) {
       ),
       foldRow('cutoff', 'Late nights', cutoffText, inner(cutoffCard(ctx))),
       foldRow('theme', 'Appearance', themeText, inner(themeCard(ctx))),
+      foldRow(
+        'reminder',
+        'Nightly reminder',
+        () => reminderText(getState().settings.reminder),
+        inner(reminderCard(ctx)),
+      ),
       foldRow('install', 'Install TipNet', () => 'Open it like an app', inner(installHost.firstElementChild)),
       foldRow('backup', 'Backups', lastBackup, inner(backupHost.firstElementChild)),
       sub
