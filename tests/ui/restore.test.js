@@ -181,10 +181,27 @@ test('restore: a code from a newer TipNet is refused with a plain message, and n
     page.tab('setup');
     const before = JSON.stringify(page.state());
     page.type(page.must(page.$('#bk-code'), '#bk-code'), toCode(S));
-    page.click(page.button('Restore from code'));
-    page.click(page.button('Tap again to replace what is here'));
+    // refused on the FIRST tap (the before check of arm): no "Tap again to replace what is here" for a code that cannot restore
+    const btn = page.button('Restore from code');
+    page.click(btn);
     assert.match(page.text(), /This backup was made by a newer version of TipNet\./);
+    assert.equal(btn.textContent, 'Restore from code', 'not armed');
+    assert.equal(btn.hasAttribute('data-armed'), false);
     assert.equal(JSON.stringify(page.state()), before);
+    // a code that isn't TipNet data, and one that can't be read: the same, each with its own message
+    page.type(page.$('#bk-code'), toCode({ workplaces: [], nights: [] }));
+    page.click(btn);
+    assert.match(page.text(), /This isn’t a TipNet backup\. Nothing was changed\./);
+    assert.equal(btn.textContent, 'Restore from code');
+    page.type(page.$('#bk-code'), 'abc');
+    page.click(btn);
+    assert.match(page.text(), /That code didn’t work/);
+    assert.equal(btn.textContent, 'Restore from code');
+    assert.equal(JSON.stringify(page.state()), before);
+    // a good code still asks twice
+    page.type(page.$('#bk-code'), toCode(realState()));
+    page.click(btn);
+    assert.equal(btn.textContent, 'Tap again to replace what is here');
   } finally {
     await page.close();
   }

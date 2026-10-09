@@ -369,17 +369,17 @@ export function renderBackup(host, { restoreOnly = false } = {}) {
     bus.stateReplaced(restoreOnly ? { to: 'tonight' } : undefined); // from the first-launch Setup: straight to Tonight
   };
   const restore = el('button', { type: 'button', class: 'btn btn-secondary btn-small' });
+  const codeError = (e) =>
+    e && e.message === 'newer-backup'
+      ? NEWER_BACKUP_MSG
+      : e && e.message === 'not-tipnet'
+        ? NOT_TIPNET_MSG
+        : 'That code didn’t work. Copy the whole code and try again.';
   const doRestore = () => {
     try {
       restored(restoreFromCode(box.value));
     } catch (e) {
-      say(
-        e && e.message === 'newer-backup'
-          ? NEWER_BACKUP_MSG
-          : e && e.message === 'not-tipnet'
-            ? NOT_TIPNET_MSG
-            : 'That code didn’t work. Copy the whole code and try again.',
-      );
+      say(codeError(e));
     }
   };
   if (hasReal)
@@ -387,6 +387,17 @@ export function renderBackup(host, { restoreOnly = false } = {}) {
       label: 'Restore from code',
       armedLabel: 'Tap again to replace what is here',
       onConfirm: doRestore,
+      // A code that can't be restored (made by a newer TipNet, not TipNet data, or unreadable) is refused on the first
+      // tap, with its reason, instead of asking "Tap again to replace what is here" first. Nothing is changed.
+      before: () => {
+        try {
+          decodeBackup(box.value);
+          return true;
+        } catch (e) {
+          say(codeError(e));
+          return false;
+        }
+      },
     });
   else {
     restore.textContent = 'Restore from code';
