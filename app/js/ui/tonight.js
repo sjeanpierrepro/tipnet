@@ -265,8 +265,11 @@ export function draftFromNight(n, p) {
   draftTipouts(d, p).forEach((r) => {
     d.tipouts[r.id] = tippedOut(n, r);
   });
+  // Its amounts as the math reads them (pinPay): a night saved without its hours gets its main job's usual amount, from
+  // its snapshot when it is locked (not today's Setup, which may differ), so saving it unchanged keeps its money.
+  const amounts = { ...n, pay: pinPay(n, p) };
   p.payTypes.forEach((t, i) => {
-    const a = payAmount(n, t, i);
+    const a = payAmount(amounts, t, i);
     if (payKind(t, i) === 'job') {
       if (a > 0) {
         d.rows.push(t.id);
@@ -280,7 +283,7 @@ export function draftFromNight(n, p) {
   const main = p.payTypes[0];
   if (!d.rows.length && main) {
     d.rows = [main.id];
-    d.pay[main.id] = String(payAmount(n, main, 0));
+    d.pay[main.id] = String(payAmount(amounts, main, 0));
   }
   return d;
 }
