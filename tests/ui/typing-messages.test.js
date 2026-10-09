@@ -22,7 +22,7 @@ const seed = (mutate) =>
       periodStart: start,
       periodEnd: addDays(start, 13),
       freq: 14,
-      tipout: { on: true, basis: 'before' },
+      tipout: { on: true },
       tipouts: [{ ...BARBACK }, { ...RUNNER }],
     };
     if (mutate) mutate(S);

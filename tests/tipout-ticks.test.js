@@ -17,7 +17,7 @@ const prof = (list) => ({
   periodEnd: '2026-09-20',
   freq: 14,
   shifts: 10,
-  tipout: { on: true, basis: 'before' },
+  tipout: { on: true },
   tipouts: list.map((x) => ({ ...x })),
 });
 // $500 made, 8 hours at $12 = $96 pay, so $404 tips: 15% for the barback is $60.60

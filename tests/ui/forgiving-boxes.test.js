@@ -26,7 +26,7 @@ test('Setup: a tip-out percent box takes "15%" and says percent when it is wrong
     seed: realState((S) => {
       const p = S.workplaces[0].profile;
       S.workplaces[0].setupDone = true;
-      p.tipout = { on: true, basis: 'before' };
+      p.tipout = { on: true };
       p.tipouts = [{ id: 't1', k: 'barback', who: 'Barback', mode: 'pctTips', value: 10, from: 'cash' }];
     }),
   });

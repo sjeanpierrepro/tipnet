@@ -35,8 +35,7 @@ Grab your latest paystub. The first time, TipNet opens in **Setup**. (Moving fro
 **Step 3: Your jobs and pay**
 - **Jobs:** add every job you do where you work and what it pays: for example **Bartender** $12 per hour, **Prep** $10 per hour, **Supervisor / shift lead** $15 per hour, **Training**, or a **Private event / banquet** paid per shift. The first job is your main job. Tap **+ Add a job** for each extra one. Not in the list? Pick **Other job** and type its name.
 - **Other pay** (only if you get it): **Overtime** (filled in at 1.5 times your main job's rate), **Holiday pay**, a **shift lead / supervisor differential** (the extra per hour on top), **Paid time off / sick pay**, **Bonus**, **Commission**, or a **Service charge / auto-gratuity** (that one is wages, not tips). The **Non-taxable** kinds (like a mileage reimbursement for one night) are added to that night's take-home without tax.
-- **The number I type each night is:** leave **Just my tips (cash + card)** picked, and TipNet adds your hourly pay. Pick **Everything** if you'd rather type tips plus hourly pay. Switching later doesn't change nights you already saved.
-- **Tip-outs:** tick **I tip out** if you share tips. Tap **+ Add someone you tip out** for each person or station (Barback, Runner, Busser, Bar, Host, Kitchen, or Other with its own name). For each one pick how much: a **% of my tips**, a **% of sales** (like 1.25%; decimals are fine) or a **flat $ a night**, and whether it comes **from my cash** or **through payroll**. **The number I enter is** says whether what you type each night is before or after tipping out.
+- **Tip-outs:** tick **I tip out** if you share tips. Tap **+ Add someone you tip out** for each person or station (Barback, Runner, Busser, Bar, Host, Kitchen, or Other with its own name). For each one pick how much: a **% of my tips** (decimals are fine, like 1.25%) or a **flat $ a night**, and whether it comes **from my cash** or **through payroll**. Each night you enter your tips before tipping out, and TipNet takes the tip-outs out. Don't tip out? Leave **I tip out** unticked: the tips you enter are what you keep.
 
 Tap **Finish setup**.
 
@@ -59,14 +58,14 @@ Something changed (raise, new insurance)? Update it in **Setup**. Once you are s
 
 ## 4. Every night
 
-- **Tips you made tonight:** type your tips (cash + card); TipNet adds the pay for the jobs you worked. (If you picked **Everything** in Setup, the box says **What you made tonight**: type tips plus hourly pay.)
+- **Two establishments?** First pick where you worked under **Working at:** at the top. Nothing is picked until you do, and after you save it is cleared for the next night. Each establishment keeps what you half-typed there while the app is open.
+- **CC tips** and **Cash tips:** type your credit card tips and your cash tips, before tipping out. A blank box counts as $0. TipNet adds the pay for the jobs you worked.
 - **What did you work tonight?** Your main job is already picked (with only one job, TipNet just shows it). Type the **hours** (8, 7.5 or 7:30); the rate fills in by itself. Worked a double? Tap **+ Add another job**, pick it and type its hours (for example Prep 2 hours, then Bartender 6 hours). Overtime, holiday hours or a bonus? Tap **+ Add other pay**.
 - **Cash not run through payroll:** If your bar doesn't run cash tips through payroll, tick the box; set aside the amount TipNet shows for tax time.
-- **Tipped out tonight:** everyone you tip out is ticked. Untick anyone you did not tip out tonight. If someone gets a % of sales, type **Sales tonight** (from your checkout report). Your result lists each tip-out, for example Runner (1.25% of sales) −$12.50.
-- **Cash:** if you tip anyone out of your cash, type all the cash tips you collected, before paying them (TipNet takes their cash out). Otherwise type the cash you are taking home.
+- **Tipped out tonight:** everyone you tip out is ticked. Untick anyone you did not tip out tonight. Your result lists each tip-out, for example Barback (15% of tips) −$73.35.
+- **Cash tips** are all the cash you collected: if you tip anyone out of your cash, TipNet takes their cash out.
 - Hours are typed every night, because shifts are never quite the same length.
-- Tap **Save night**.
-- **Two establishments?** The buttons at the top of Tonight pick the establishment. One tap switches the jobs, rates and pay period; what you half-typed at the other one is still there when you switch back. The message says where it was saved ("Saved to Second Spot: ...").
+- Tap **Save night** (with two establishments it says where, like **Save night at Second Spot**, and so does the message: "Saved to Second Spot: ...").
 
 You see your estimated take-home, the cash you keep, and what should land on your check. If the same date already has a night, TipNet asks whether to add to it, replace it, or save a separate night.
 
@@ -87,6 +86,8 @@ To change it later, add a new one the same way and delete the old reminder in yo
 ## Good to know
 
 - **Logging after midnight?** Before 6 a.m. it is saved as the night before.
+- **Raise or new deduction?** It changes the running pay period only; finished ones keep the numbers they were saved with. To bring a finished pay period up to date, tap **Update this pay period to today's Setup** under it in **Pay periods**. TipNet shows the take-home before and after and asks first; **Undo** puts it back.
+- **Editing an older night?** Nights saved before this version show their tips split into **CC tips** and **Cash tips**. If a night was saved without a cash amount, its tips all show as CC tips; if you add the cash, take it out of CC tips.
 - **Paycheck counted a night in another pay period?** In **Pay periods**, tap **Edit** on that night and pick the pay period it counts toward under **Counts toward the pay period that started:** (the pay period before, its own, or the next). If that changes a pay period that has already ended (for example moving a night back into the pay period that just ended), TipNet asks first. Changing a night's date moves it to that date's pay period (TipNet asks first if a finished period is involved).
 - **Your data stays on your phone.** Your bar cannot see it. Every 10 nights you log, Tonight offers **Save backup file** (tap **Not now** to be asked again 10 nights later). Keep the file somewhere safe, like your email.
 - **"Update available: Refresh"** means a new version is ready. Close any other TipNet windows or tabs, then tap **Refresh**. If your browser asks "Leave site?", choose **Leave**. Your nights are kept.

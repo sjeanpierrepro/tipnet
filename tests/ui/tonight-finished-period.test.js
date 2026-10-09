@@ -23,7 +23,7 @@ const oldSetup = () => ({
   periodEnd: end,
   freq: 14,
   shifts: 10,
-  tipout: { on: true, basis: 'before' },
+  tipout: { on: true },
   tipouts: [{ ...BARBACK }],
 });
 const lockedNight = (snapSetup = oldSetup()) => ({

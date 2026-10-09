@@ -901,7 +901,7 @@ details > summary.btn-link {
   color: inherit;
 }
 
-/* ---------- entry mode choice (Setup) and the example view (Tonight, before setup) ---------- */
+/* ---------- fieldsets (Setup, Tonight) and the example view (Tonight, before setup) ---------- */
 fieldset.field {
   border: 0;
   padding: 0;

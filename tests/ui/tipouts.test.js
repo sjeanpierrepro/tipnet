@@ -11,7 +11,7 @@ const RUNNER = { id: 't2', k: 'runner', who: 'Runner', mode: 'flat', value: 12.5
 const seed = (list = [BARBACK, RUNNER], mutate) =>
   realState((S) => {
     S.workplaces[0].setupDone = true;
-    S.workplaces[0].profile.tipout = { on: true, basis: 'before' };
+    S.workplaces[0].profile.tipout = { on: true };
     S.workplaces[0].profile.tipouts = list.map((x) => ({ ...x }));
     if (mutate) mutate(S);
   });
@@ -156,7 +156,7 @@ test('setup: Tip-outs card rows, + Add someone, decimals, remove + Undo, Save st
 
 test('setup: an empty amount keeps Save disabled with a plain reason; switching on with nobody adds one row', async () => {
   const page = await boot({
-    seed: seed([], (S) => (S.workplaces[0].profile.tipout = { on: false, basis: 'before' })),
+    seed: seed([], (S) => (S.workplaces[0].profile.tipout = { on: false })),
   });
   try {
     page.openSetup();

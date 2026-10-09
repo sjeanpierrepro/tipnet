@@ -281,7 +281,7 @@ test('Setup draft: typos in gross, a deduction, a job rate and a tip-out amount 
       S.workplaces[0].setupDone = true;
       p.gross = 2000;
       p.deductions = [{ id: 'd1', k: 'other', name: 'Health', amount: 100, mode: 'fixed' }];
-      p.tipout = { on: true, basis: 'before' };
+      p.tipout = { on: true };
       p.tipouts = [{ id: 't1', k: 'barback', who: 'Barback', mode: 'pctTips', value: 15, from: 'cash' }];
     }),
   });

@@ -698,16 +698,17 @@ export function basePay(night, p) {
   return basePayWith(night, termsOf(night, p, 1));
 }
 /**
- * Tips-only entry: the stored total for a night where `tips` (cash + card) was typed. Adds the hourly and per-shift pay for
- * the night's amounts (its snapshot's rates when it has one), rounded to cents exactly as computeNight rounds base pay.
+ * The stored total for a night whose `tips` (CC tips + Cash tips) were typed. Adds the hourly and per-shift pay for the
+ * night's amounts (its snapshot's rates when it has one), rounded to cents exactly as computeNight rounds base pay.
  * Flat "(on top)" amounts are not part of total, as always.
  */
 export const totalFromTips = (tips, night, p) =>
   fromCents(toCents(num(tips)) + toCents(basePay(night, p).pay));
 /**
- * night.tips: the tips typed in tips mode (saved next to total). An UNLOCKED night with tips follows the current pay
- * rates: its total is tips + today's base pay, so fixing a rate in Setup never turns tips into wages. A locked night
- * (snap) keeps its stored total. Nights without tips (typed as totals, imported, older saves) use total as always.
+ * night.tips: the tips typed (CC tips + Cash tips; saved next to total). An UNLOCKED night with tips follows the current
+ * pay rates: its total is tips + today's base pay, so fixing a rate in Setup never turns tips into wages. A locked night
+ * (snap) keeps its stored total. Nights without tips (typed as one total before v38, imported, older saves) use total as
+ * always.
  */
 export const hasTips = (night) =>
   !!night && typeof night.tips === 'number' && Number.isFinite(night.tips) && night.tips >= 0;

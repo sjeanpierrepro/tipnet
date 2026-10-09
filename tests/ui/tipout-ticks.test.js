@@ -20,7 +20,7 @@ const oldSetup = () => ({
   periodStart: start,
   periodEnd: addDays(start, 13),
   shifts: 10,
-  tipout: { on: true, basis: 'before' },
+  tipout: { on: true },
   tipouts: [{ ...BARBACK }],
 });
 const lockedDate = addDays(today, -20);
@@ -292,7 +292,7 @@ for (const [what, tipout] of [
 }
 
 test('d) Tonight Replace and Add while tip-outs are off keep the night’s ticks', async () => {
-  const page = await boot({ seed: offSeed({ on: false, basis: 'before' }) });
+  const page = await boot({ seed: offSeed({ on: false }) });
   try {
     const date = nightOf(page, 'n1').date;
     page.tab('periods');
@@ -333,7 +333,7 @@ test('e) Setup: Remove the barback, add a barback again and Save: the nights log
         periodStart: cur,
         periodEnd: addDays(cur, 13),
         freq: 14,
-        tipout: { on: true, basis: 'before' },
+        tipout: { on: true },
         tipouts: [{ ...BARBACK }],
       };
       S.nights = [...nights, lockedNight()]; // and a locked night of an older pay period
@@ -381,7 +381,7 @@ test('e) Setup: two barbacks removed and one added: nothing is guessed', async (
         periodStart: cur,
         periodEnd: addDays(cur, 13),
         freq: 14,
-        tipout: { on: true, basis: 'before' },
+        tipout: { on: true },
         tipouts: [{ ...BARBACK }, { ...B3 }, { ...RUNNER }],
       };
       S.nights = [

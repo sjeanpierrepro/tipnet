@@ -87,10 +87,7 @@ test('Budget unlocked (?unlock=dev on localhost): up to 5', async () => {
 test('Budget ended (or an older version): 5 establishments stay, all usable; only adding is blocked', async () => {
   const page = await boot({ seed: withPlaces(5) });
   try {
-    assert.equal(
-      page.$$('#tonight-picker [role=radio]', page.app).length,
-      5,
-    );
+    assert.equal(page.$$('#tonight-picker [role=radio]', page.app).length, 5);
     page.tab('setup');
     assert.equal(rows(page).length, 5);
     assert.equal(page.$('#wp-add').disabled, true);

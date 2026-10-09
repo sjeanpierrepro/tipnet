@@ -138,7 +138,7 @@ test('night editor: a night saved with tip-outs off shows it, keeps it, and its 
 test('night editor: no line when the night’s switch is Setup’s; "Update this pay period" takes today’s switch', async () => {
   // a locked night of a finished pay period, saved with tip-outs off; Setup has them on now
   const p = { ...exampleProfile(today), periodStart: addDays(today, -28), periodEnd: addDays(today, -15) };
-  p.tipout = { on: true, basis: 'before' };
+  p.tipout = { on: true };
   p.tipouts = [{ ...BARBACK }];
   const locked = {
     ...savedNight('n1', false, { t1: false }),

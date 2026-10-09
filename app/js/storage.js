@@ -29,7 +29,7 @@ const STATE_KEY = 'state';
 /**
  * v3 state:
  *   workplaces: [{id, name, profile, calib, setupDone?, guideSkipped?, noDeductions?}]  one per restaurant, each with its own
- *               pay schedule, paystub, jobs, tip-out and entry mode (profile) and its own "Check my accuracy" history (calib).
+ *               pay schedule, paystub, jobs and tip-outs (profile) and its own "Check my accuracy" history (calib).
  *   nights:     [{..., workplaceId}]  every night belongs to one restaurant.
  *   settings:   {theme:'auto'|'light'|'dark', lastTab, activeWorkplaceId, periodsFilter?, dayCutoffHour?, guidedDraft?,
  *                lastBackupAt?, backupNudgeUntil?, nightsSinceBackup?, backupNightsAt?, iosNoteSeen?, wordingV38?, entitlement?,
