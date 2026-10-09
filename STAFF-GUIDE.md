@@ -18,11 +18,11 @@ Always open TipNet the same way. On iPhone, Safari and the home-screen app keep 
 
 ## 3. Set up from one paystub (one time)
 
-Grab your latest paystub. The first time, TipNet opens in **Setup**. (Moving from another phone? Tap **Restore a backup code** instead. A backup made by a newer TipNet is refused until this phone has the update too: reload TipNet, then restore again.) Until setup is done, Tonight has no numbers; **See an example first** shows made-up ones.
+Grab your latest paystub. The first time, TipNet opens in **Setup**. (Moving from another phone? Tap **Restore a backup code** instead. A backup made by a newer TipNet is refused until this phone has the update too: reload TipNet, then restore again. Something that isn't a TipNet backup is refused too, and nothing here is changed.) Until setup is done, Tonight has no numbers; **See an example first** shows made-up ones.
 
 **Step 1: Pay period and gross pay**
 - **Pay period started** and **Pay period ended** (the dates on the stub)
-- **Shifts you work in a pay period** (needed: one whole number, like 10. Your fixed deductions are split evenly over these shifts, so every night of a pay period carries the same share)
+- **Shifts you work in a pay period** (needed: one whole number, like 10 or "10 shifts". Your fixed deductions are split evenly over these shifts, so every night of a pay period carries the same share)
 - **You get paid** (every week, every two weeks, twice a month on calendar halves, every 15 days, once a month on the same day, or every 30 days; twice a month and once a month follow the calendar and set the end date for you)
 - **Payday for this pay period** (optional): the pay date on your stub. Budget uses it to work out how long until you are paid. Leave it blank if you are not sure.
 - **Gross pay** (top-line gross, before anything comes out)
