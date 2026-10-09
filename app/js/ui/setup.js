@@ -179,7 +179,7 @@ function blankProfile() {
     t.rate = 0;
     t.usual = 0;
   });
-  b.tipout = { on: false, basis: 'before' };
+  b.tipout = { on: false };
   b.tipouts = [];
   b.entryMode = 'tips'; // new users type their tips; TipNet adds the hourly pay
   return b;
@@ -1338,20 +1338,11 @@ function newTipout(list) {
 }
 function tipoutCard(ctx) {
   const { p, ph } = ctx;
-  if (!p.tipout || typeof p.tipout !== 'object') p.tipout = { on: false, basis: 'before' };
+  if (!p.tipout || typeof p.tipout !== 'object') p.tipout = { on: false };
   if (!Array.isArray(p.tipouts)) p.tipouts = [];
   const to = p.tipout;
   const on = el('input', { type: 'checkbox', id: 'to-on' });
   on.checked = !!to.on;
-  const basis = select(
-    [
-      ['before', 'Before tip-out'],
-      ['after', 'After tip-out'],
-    ],
-    to.basis === 'after' ? 'after' : 'before',
-    { id: 'to-basis' },
-  );
-  const basisHint = el('p', { class: 'hint', id: 'to-basis-note' });
   const rowsHost = el('div', { class: 'stack-sm', id: 'to-rows' });
   const listErr = el('p', { class: 'field-error', role: 'alert', hidden: true, id: 'to-err' });
   const amountFields = []; // [{r, f, input}] for the rows on screen
@@ -1497,8 +1488,11 @@ function tipoutCard(ctx) {
   const fields = el(
     'div',
     { class: 'stack' },
-    field('The number I enter is', basis),
-    basisHint,
+    el(
+      'p',
+      { class: 'hint', id: 'to-how-note' },
+      'On Tonight you enter your tips before tipping out, and TipNet takes the tip-outs below out.',
+    ),
     rowsHost,
     el('div', null, add),
     listErr,
@@ -1540,11 +1534,6 @@ function tipoutCard(ctx) {
   );
   function sync() {
     fields.hidden = !to.on;
-    const bt =
-      to.basis === 'after'
-        ? 'You type what you made after tipping out, so TipNet doesn’t take the tip-outs out again.'
-        : 'TipNet takes the tip-outs below out of what you type.';
-    if (basisHint.textContent !== bt) basisHint.textContent = bt;
     amountFields.forEach(({ r, f, input }) => {
       if (!amtTypo(input.value, r)) ctx.gate(f, to.on ? rowProblem(r) : '');
     });
@@ -1559,10 +1548,6 @@ function tipoutCard(ctx) {
     if (to.on && !p.tipouts.length) p.tipouts.push(newTipout(p.tipouts));
     ctx.touch(false);
     drawRows();
-  });
-  basis.addEventListener('change', () => {
-    to.basis = basis.value;
-    ctx.touch(false);
   });
   drawRows();
   const card = el(
@@ -1580,7 +1565,7 @@ function tipoutCard(ctx) {
         el(
           'small',
           null,
-          'Barbacks, runners, bussers, the bar or the kitchen. Leave unchecked if you don’t.',
+          'Barbacks, runners, bussers, the bar or the kitchen. Leave unchecked if you don’t: the tips you enter are what you keep.',
         ),
       ),
     ),

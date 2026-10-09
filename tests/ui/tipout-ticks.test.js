@@ -267,9 +267,10 @@ const offSeed = (tipout) =>
     ];
   });
 
+// an older "after tip-out" setup loads as switched off: the same night, the same money
 for (const [what, tipout] of [
-  ['switched off', { on: false, basis: 'before' }],
-  ['"after tip-out"', { on: true, basis: 'after' }],
+  ['switched off', { on: false }],
+  ['"after tip-out" (before v38)', { on: true, basis: 'after' }],
 ]) {
   test('d) editing a night while tip-outs are ' + what + ' keeps who was tipped out', async () => {
     const page = await boot({ seed: offSeed(tipout) });
@@ -283,30 +284,18 @@ for (const [what, tipout] of [
       assert.equal(n.note, 'double shift');
       assert.deepEqual(n.tipouts, { t1: true, t2: false });
       assert.equal(page.state().nights.length, 1);
-      const p = { ...clone(page.state().workplaces[0].profile), tipout: { on: true, basis: 'before' } };
+      assert.equal(page.state().workplaces[0].profile.tipout.on, false);
+      const p = { ...clone(page.state().workplaces[0].profile), tipout: { on: true } };
       const c = computeNight(n, p, 10);
-      if (tipout.on) {
-        // switched back to "before": the runner, never tipped out that night, is still not counted ($40 flat would
-        // make it $343.24)
-        assert.deepEqual(
-          c.tipouts.map((l) => [l.who, l.amount]),
-          [['Barback', 40.4]],
-        );
-        assert.equal(c.net, 377.08);
-      } else {
-        // switched back on: the night was saved (loaded) with tip-outs off, so it stays without one (third review)
-        assert.equal(n.tipoutOn, false);
-        assert.equal(c.tipout, 0);
-      }
-      // and the hours edited while still off: still only the barback
+      // switched back on: the night was saved (loaded) with tip-outs off, so it stays without one (third review)
+      assert.equal(n.tipoutOn, false);
+      assert.equal(c.tipout, 0);
+      // and the hours edited while still off: still nobody
       page.click(editBtn(page, 'n1'));
       page.type(key(page, 'edit-n1-pay-p1'), '7.5');
       page.click(page.button('Save changes'));
       assert.deepEqual(nightOf(page, 'n1').tipouts, { t1: true, t2: false });
-      assert.deepEqual(
-        computeNight(nightOf(page, 'n1'), p, 10).tipouts.map((l) => [l.who, l.amount]),
-        tipout.on ? [['Barback', 41]] : [],
-      );
+      assert.deepEqual(computeNight(nightOf(page, 'n1'), p, 10).tipouts, []);
     } finally {
       await page.close();
     }

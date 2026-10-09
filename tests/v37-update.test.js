@@ -4,16 +4,10 @@
 // one person on % of tips or flat is also written in the old single shape (math.savedTipout), which v37 keeps.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { execFileSync } from 'node:child_process';
-import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as M from '../app/js/math.js';
 import { migrate } from '../app/js/storage.js';
+import { loadV37, V37 } from './v37.js';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const V37 = '1090d93'; // tipnet-v37, the version live before v38
 const today = '2026-10-08';
 const BARBACK = { id: 't1', k: 'barback', who: 'Barback', mode: 'pctTips', value: 15, from: 'cash' };
 const RUNNER = { id: 't2', k: 'runner', who: 'Runner', mode: 'flat', value: 12.5, from: 'payroll' };
@@ -25,7 +19,7 @@ const profile = (list, on = true) => ({
   periodStart: '2026-09-07',
   periodEnd: '2026-09-20',
   freq: 14,
-  tipout: { on, basis: 'before' },
+  tipout: { on },
   tipouts: list.map((x) => ({ ...x })),
 });
 // as Tonight saves a night: who was tipped out, and barback = anyone ticked (for older copies of the app)
@@ -50,88 +44,74 @@ const state = (p, nights) => ({
   settings: { theme: 'auto', lastTab: 'tonight', activeWorkplaceId: 'w1' },
 });
 
-/**
- * v37's storage.js and the modules it imports, from git (CI checks out the full history), written to a temp folder and
- * imported. null when git or the commit isn't there.
- */
-async function loadV37() {
-  const files = new Map();
-  try {
-    const want = ['storage.js'];
-    while (want.length) {
-      const f = want.shift();
-      if (files.has(f)) continue;
-      const src = execFileSync('git', ['show', V37 + ':app/js/' + f], {
-        cwd: ROOT,
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-      });
-      files.set(f, src);
-      for (const m of src.matchAll(/from '\.\/([\w-]+\.js)'/g)) want.push(m[1]);
-    }
-  } catch (e) {
-    return null;
-  }
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tipnet-v37-'));
-  try {
-    fs.writeFileSync(path.join(dir, 'package.json'), '{"type": "module"}');
-    files.forEach((src, f) => fs.writeFileSync(path.join(dir, f), src));
-    return await import(pathToFileURL(path.join(dir, 'storage.js')).href);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-}
-let v37 = null;
-const S37 = async () => v37 || (v37 = await loadV37());
+/** v37's storage.js (tests/v37.js), or null when git or the commit isn't there. */
+const S37 = async () => {
+  const v = await loadV37();
+  return v && v.storage;
+};
 
-/** Every night's numbers and every pay period's totals, worked out by this version. */
-function money(S) {
+/** Every night's numbers and every pay period's totals, worked out by this version (or by v37's math, Mx). */
+function money(S, Mx = M) {
   const p = S.workplaces[0].profile;
-  const idx = [...new Set(S.nights.map((n) => M.nightPeriodIndex(p, n)))].sort();
+  const idx = [...new Set(S.nights.map((n) => Mx.nightPeriodIndex(p, n)))].sort();
   return {
-    nights: S.nights.map((n) => ({ id: n.id, ...M.computeNight(n, p, 10) })),
+    nights: S.nights.map((n) => ({ id: n.id, ...Mx.computeNight(n, p, 10) })),
     periods: idx.map((i) => {
-      const { ns, ...totals } = M.periodTotals(p, S.nights, i, today);
+      const { ns, ...totals } = Mx.periodTotals(p, S.nights, i, today);
       return { nights: ns.length, ...totals };
     }),
   };
 }
+/** The money both versions show (v38 adds the tip-out lines; v37 has one tip-out). */
+const shared = (m) => ({
+  nights: m.nights.map((c) => [
+    c.id,
+    c.total,
+    c.tips,
+    c.tipout,
+    c.kept,
+    c.tax,
+    c.net,
+    c.fromCash,
+    c.cashInHand,
+    c.onCheck,
+  ]),
+  periods: m.periods,
+});
 
 test('savedTipout: a list of one on % of tips or flat is also written in the old single shape; anything else is not', () => {
-  assert.deepEqual(M.savedTipout(true, 'before', [BARBACK]), {
+  // no basis any more: v37 reads a missing one as "before tip-out", and the switch says whether anything is taken out
+  assert.deepEqual(M.savedTipout(true, [BARBACK]), {
     on: true,
-    basis: 'before',
     mode: 'pct',
     value: 15,
     from: 'cash',
   });
-  assert.deepEqual(M.savedTipout(true, 'after', [{ ...RUNNER, mode: 'flat', value: 20 }]), {
+  assert.deepEqual(M.savedTipout(true, [{ ...RUNNER, mode: 'flat', value: 20 }]), {
     on: true,
-    basis: 'after',
     mode: 'flat',
     value: 20,
     from: 'check',
   });
-  assert.deepEqual(M.savedTipout(false, 'before', [BARBACK]).value, 15, 'switched off: still there');
-  // several people, nobody: only the switch and basis
-  assert.deepEqual(M.savedTipout(true, 'before', [BARBACK, RUNNER]), { on: true, basis: 'before' });
-  assert.deepEqual(M.savedTipout(false, 'nonsense', []), { on: false, basis: 'before' });
+  assert.deepEqual(M.savedTipout(false, [BARBACK]).value, 15, 'switched off: still there');
+  // several people, nobody: only the switch
+  assert.deepEqual(M.savedTipout(true, [BARBACK, RUNNER]), { on: true });
+  assert.deepEqual(M.savedTipout(false, []), { on: false });
   // a snapshot carries them too
-  assert.deepEqual(M.snapshotFor(profile([BARBACK]), 10).tipout, M.savedTipout(true, 'before', [BARBACK]));
-  assert.deepEqual(M.snapshotFor(profile([BARBACK, RUNNER]), 10).tipout, { on: true, basis: 'before' });
+  assert.deepEqual(M.snapshotFor(profile([BARBACK]), 10).tipout, M.savedTipout(true, [BARBACK]));
+  assert.deepEqual(M.snapshotFor(profile([BARBACK, RUNNER]), 10).tipout, { on: true });
 });
 
 test('v38 reads only the list (the old fields never change a night), and loading puts them back in step with it', () => {
   const p = profile([{ ...RUNNER, mode: 'flat', value: 10 }]);
-  p.tipout = { on: true, basis: 'before', mode: 'pct', value: 50, from: 'cash' }; // out of step with the list
+  p.tipout = { on: true, mode: 'pct', value: 50, from: 'cash' }; // out of step with the list
   const n = night('a', '2026-10-06', true, { tipouts: { t2: true } });
-  const plain = { ...p, tipout: { on: true, basis: 'before' } };
+  const plain = { ...p, tipout: { on: true } };
   assert.deepEqual(M.computeNight(n, p, 10), M.computeNight(n, plain, 10));
   assert.equal(M.computeNight(n, p, 10).tipout, 10);
   const S = migrate(state(p, [n]), { today });
   assert.deepEqual(S.workplaces[0].profile.tipout, {
     on: true,
-    basis: 'before',
     mode: 'flat',
     value: 10,
     from: 'check',
@@ -156,16 +136,16 @@ test('a save puts the old fields back in step after Setup changed the list (the 
   const saved = () => JSON.parse(mem.get('tipnet.v2')).workplaces[0].profile.tipout;
   p.tipouts[0].value = 20; // Setup: the barback now gets 20%
   assert.equal(await s.flush(), true);
-  assert.deepEqual(saved(), { on: true, basis: 'before', mode: 'pct', value: 20, from: 'cash' });
+  assert.deepEqual(saved(), { on: true, mode: 'pct', value: 20, from: 'cash' });
   p.tipouts.push({ ...RUNNER }); // a second person: v37 can't hold that
   await s.flush();
-  assert.deepEqual(saved(), { on: true, basis: 'before' });
+  assert.deepEqual(saved(), { on: true });
   p.tipouts.shift(); // only the runner ($12.50 flat through payroll) left
   await s.flush();
-  assert.deepEqual(saved(), { on: true, basis: 'before', mode: 'flat', value: 12.5, from: 'check' });
+  assert.deepEqual(saved(), { on: true, mode: 'flat', value: 12.5, from: 'check' });
   p.tipouts[0].value = 25;
   await s.flush();
-  assert.deepEqual(saved(), { on: true, basis: 'before', mode: 'flat', value: 25, from: 'check' });
+  assert.deepEqual(saved(), { on: true, mode: 'flat', value: 25, from: 'check' });
   assert.equal(p.tipout, to, 'the same object');
   assert.deepEqual(to, saved());
 });
@@ -283,7 +263,7 @@ test('a v37 tip-out switched off keeps its amount on the update ($20 flat throug
   assert.deepEqual(p.tipouts, [
     { id: 't1', k: 'barback', who: 'Barback', mode: 'flat', value: 20, from: 'payroll' },
   ]);
-  assert.deepEqual(p.tipout, { on: false, basis: 'before', mode: 'flat', value: 20, from: 'check' });
+  assert.deepEqual(p.tipout, { on: false, mode: 'flat', value: 20, from: 'check' });
   // the night saved while it was off stays without a tip-out, also once it is ticked again
   assert.equal(v38.nights[0].tipoutOn, false);
   p.tipout.on = true;
@@ -295,10 +275,82 @@ test('a v37 tip-out switched off keeps its amount on the update ($20 flat throug
   p.tipout.on = false;
   const old = await S37();
   if (!old) return t.skip('git or commit ' + V37 + ' (tipnet-v37) is not available');
-  // v37 itself kept it the same way (its own migrate), and gets it back from v38 as it wrote it
-  assert.deepEqual(old.migrate(clone(raw), { today }).workplaces[0].profile.tipout, p.tipout);
-  assert.deepEqual(old.migrate(clone(v38), { today }).workplaces[0].profile.tipout, p.tipout);
+  // v37 itself kept it the same way (its own migrate), and gets it back from v38 as it wrote it (v37 adds its basis)
+  const v37Shape = { ...p.tipout, basis: 'before' };
+  assert.deepEqual(old.migrate(clone(raw), { today }).workplaces[0].profile.tipout, v37Shape);
+  assert.deepEqual(old.migrate(clone(v38), { today }).workplaces[0].profile.tipout, v37Shape);
   const after = migrate(clone(old.migrate(clone(v38), { today })), { today });
   assert.deepEqual(after.workplaces[0].profile, v38.workplaces[0].profile);
   assert.deepEqual(money(after), money(v38));
+});
+
+test('a v37 setup "after tip-out" loads as "I tip out" off: every night and pay period has the same money as in v37, and a v37 page reading it back too', async (t) => {
+  const v = await loadV37();
+  if (!v) return t.skip('git or commit ' + V37 + ' (tipnet-v37) is not available');
+  const { storage: S7, math: M7 } = v;
+  // v37 shape: one tip-out, no list. Sep 7-20 was locked "before tip-out" (15% of tips taken out), then the person
+  // switched to "after tip-out": Sep 21 - Oct 4 was locked that way, and Oct 5-18 is running with it.
+  const p = {
+    ...profile([]),
+    tipouts: undefined,
+    tipout: { on: true, mode: 'pct', value: 15, basis: 'before', from: 'cash' },
+    entryMode: 'total',
+  };
+  const raw = state(p, [
+    { ...night('a', '2026-09-10', true), tipouts: undefined },
+    { ...night('b', '2026-09-12', false), tipouts: undefined },
+    { ...night('c', '2026-09-25', true), tipouts: undefined },
+    { ...night('d', '2026-10-06', true), tipouts: undefined },
+    { ...night('e', '2026-10-07', true, { cash: null }), tipouts: undefined },
+  ]);
+  const early = S7.migrate(clone(raw), { today: '2026-09-22' }); // locks Sep 7-20 "before"
+  early.workplaces[0].profile.tipout.basis = 'after';
+  const v37 = S7.migrate(clone(early), { today }); // locks Sep 21 - Oct 4 "after"
+  assert.equal(v37.nights.find((n) => n.id === 'a').snap.tipout.basis, 'before');
+  assert.equal(v37.nights.find((n) => n.id === 'c').snap.tipout.basis, 'after');
+  const m37 = money(v37, M7);
+  assert.equal(m37.nights.find((n) => n.id === 'a').tipout, 60.6, 'locked before: the 15% came out');
+  assert.equal(m37.nights.find((n) => n.id === 'd').tipout, 0, 'after: nothing came out');
+
+  const v38 = migrate(clone(v37), { today });
+  const p38 = v38.workplaces[0].profile;
+  assert.deepEqual(p38.tipout, { on: false, mode: 'pct', value: 15, from: 'cash' }, 'off, the amount kept');
+  assert.deepEqual(p38.tipouts, [BARBACK], 'the person is kept');
+  const by = (id) => v38.nights.find((n) => n.id === id);
+  assert.deepEqual(by('c').snap.tipout, { on: false, mode: 'pct', value: 15, from: 'cash' });
+  assert.equal(by('a').snap.tipout.on, true, 'the period locked before tip-out keeps its tip-out');
+  assert.deepEqual(
+    v38.nights.map((n) => [n.id, n.tipoutOn]),
+    [
+      ['a', true],
+      ['b', true],
+      ['c', false],
+      ['d', false],
+      ['e', false],
+    ],
+  );
+  assert.deepEqual(shared(money(v38)), shared(m37), 'v38 shows what v37 showed');
+  // switching "I tip out" on later changes no night already logged (they keep tipoutOn false)
+  const on = clone(v38);
+  on.workplaces[0].profile.tipout.on = true;
+  assert.deepEqual(shared(money(on)), shared(m37));
+  // a v37 page reading the v38 save (it has no tipoutOn) works out the same money
+  const back = S7.migrate(clone(v38), { today });
+  assert.deepEqual(shared(money(back, M7)), shared(m37));
+  // and v38 reading that v37 rewrite again
+  assert.deepEqual(shared(money(migrate(clone(back), { today }))), shared(m37));
+  // loading again writes the same JSON
+  assert.equal(JSON.stringify(migrate(clone(v38), { today })), JSON.stringify(v38));
+});
+
+test('a v38 night that says tip-outs were on, with an "after tip-out" setup (test data only): loads as off, the same $0 tip-out', () => {
+  const p = { ...profile([BARBACK]), tipout: { on: true, basis: 'after' } };
+  const n = night('a', '2026-10-06', true, { tipoutOn: true });
+  const before = M.computeNight(n, p, 10);
+  assert.equal(before.tipout, 0);
+  const S = migrate(state(p, [n]), { today });
+  assert.equal(S.nights[0].tipoutOn, false);
+  assert.equal(S.nights[0].barback, false, 'for older copies of the app');
+  assert.deepEqual(S.workplaces[0].profile.tipout, { on: false, mode: 'pct', value: 15, from: 'cash' });
+  assert.equal(M.computeNight(S.nights[0], S.workplaces[0].profile, 10).net, before.net);
 });

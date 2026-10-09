@@ -261,9 +261,11 @@ function cleanNontax(list) {
     }));
 }
 /**
- * Tip-outs of a profile or a snapshot, cleaned: {tipout: {on, basis}, tipouts: [{id, k, who, mode, value, from}]}.
+ * Tip-outs of a profile or a snapshot, cleaned: {tipout: {on}, tipouts: [{id, k, who, mode, value, from}]}.
  * The old single {on, mode, value, basis, from} (no tipouts list) becomes one Barback (also while it is off, when it
  * has an amount: legacyTipouts), else an empty list.
+ * An older "after tip-out" setup (basis 'after': the tips typed had the tip-outs taken out already, so TipNet took none)
+ * becomes "I tip out" off, with its people kept: the same money (see rawAfter for the nights).
  * A list of one person on % of tips or flat also keeps that old shape in tipout (savedTipout), for v37.
  */
 const TIPOUT_KEYS = TIPOUT_PRESETS.map((x) => x.k);
@@ -287,7 +289,7 @@ function cleanTipoutSetup(src) {
         from: x.from === 'payroll' || x.from === 'check' ? 'payroll' : 'cash',
       };
     });
-  return { tipout: savedTipout(to.on, to.basis, tipouts), tipouts };
+  return { tipout: savedTipout(to.on && to.basis !== 'after', tipouts), tipouts };
 }
 function cleanDeductions(list) {
   const seen = new Set();
@@ -357,7 +359,14 @@ function cleanCalib(c) {
   }
   return o;
 }
-function cleanNights(list) {
+/**
+ * True when a raw night's tip-outs were set up "after tip-out" (before v38): its snapshot's setup when it has one that
+ * loads, else its establishment's (wasAfter: the ids of the establishments whose raw setup said so).
+ */
+const rawAfter = (n, wasAfter) =>
+  cleanSnap(n.snap) ? isObj(n.snap.tipout) && n.snap.tipout.basis === 'after' : wasAfter.has(n.workplaceId);
+/** wasAfter: see rawAfter. */
+function cleanNights(list, wasAfter = new Set()) {
   const seen = new Set();
   return (Array.isArray(list) ? list : [])
     .filter((n) => isObj(n) && validDate(n.date))
@@ -396,8 +405,12 @@ function cleanNights(list) {
           });
         o.tipouts = t;
       }
-      // whether "I tip out" was on when the night was saved (nights without it get it after locking: pinTipoutOn)
-      if (typeof n.tipoutOn === 'boolean') o.tipoutOn = n.tipoutOn;
+      // whether "I tip out" was on when the night was saved (nights without it get it after locking: pinTipoutOn). On
+      // with an "after tip-out" setup took nothing out: that is off now (and barback says nobody, for older copies).
+      if (typeof n.tipoutOn === 'boolean') {
+        o.tipoutOn = n.tipoutOn && !rawAfter(n, wasAfter);
+        if (n.tipoutOn && !o.tipoutOn) o.barback = false;
+      }
       if (n.cashOffPayroll === true && hasCash) o.cashOffPayroll = true;
       if (typeof n.tips === 'number' && Number.isFinite(n.tips) && n.tips >= 0)
         o.tips = Math.round(n.tips * 100) / 100;
@@ -508,8 +521,8 @@ function cleanProfile(p, { startFallback, entryDefault }) {
   // Non-taxable earnings on the stub (only written once there is one, so older saves look the same)
   const nt = cleanNontax(p.nontaxable);
   if (nt.length) out.nontaxable = nt;
-  // Tip-outs: the switch and basis, and the people tipped out (an old single tip-out becomes one Barback, also while it
-  // is off: legacyTipouts)
+  // Tip-outs: the switch and the people tipped out (an old single tip-out becomes one Barback, also while it is off:
+  // legacyTipouts; an older "after tip-out" setup is off)
   Object.assign(out, cleanTipoutSetup(p));
   // "Cash tips here usually aren't run through payroll": the default for each new night (false for all old data)
   out.cashOffPayroll = p.cashOffPayroll === true;
@@ -590,8 +603,8 @@ export function orderNight(n) {
  * A night with no list of who was tipped out (saved before several tip-outs) only says
  * everyone or nobody (night.barback). Pin that to the people set up now (its snapshot's people once it is locked: call
  * it after locking), in place, so someone added to Setup later is never counted on it. A night saved while tip-outs were
- * off (its night.tipoutOn) or "after tip-out" had nobody tipped out, whatever barback says (v37 and older drafts said
- * everyone): everyone is pinned as not tipped out (and barback false). Returns how many nights got a list.
+ * off (its night.tipoutOn, or an older "after tip-out" setup) had nobody tipped out, whatever barback says (v37 and older
+ * drafts said everyone): everyone is pinned as not tipped out (and barback false). Returns how many nights got a list.
  */
 export function pinTipouts(workplaces, nights) {
   const profiles = new Map(workplaces.map((w) => [w.id, w.profile]));
@@ -600,7 +613,7 @@ export function pinTipouts(workplaces, nights) {
   nights.forEach((n) => {
     if (isObj(n.tipouts)) return;
     const ts = nightTipout(n, profiles.get(n.workplaceId) || first); // its snapshot's people once locked
-    const taken = ts.on && ts.basis === 'before' && !!n.barback;
+    const taken = ts.on && !!n.barback;
     const t = {};
     ts.list.forEach((r) => {
       t[r.id] = taken;
@@ -700,6 +713,10 @@ function migrateUnsafe(input, today) {
   rawNights.forEach((n) => {
     n.workplaceId = ids[rawIdx.has(n.workplaceId) ? rawIdx.get(n.workplaceId) : 0];
   });
+  // The establishments set up "after tip-out" (before v38): they load with "I tip out" off (cleanTipoutSetup)
+  const wasAfter = new Set(
+    ids.filter((id, i) => isObj(rawW[i].profile.tipout) && rawW[i].profile.tipout.basis === 'after'),
+  );
 
   // Names in use, so the one-time rename (renameOldDefault) never makes two establishments share a name.
   const taken = new Set(
@@ -737,7 +754,7 @@ function migrateUnsafe(input, today) {
   // Lock first, then pin: an older night's "everyone or nobody" becomes the people it is worked out with (its snapshot's
   // once locked, which can be a finished period's older one; else the people set up now). Whether tip-outs were on is
   // pinned first (pinTipoutOn): a night saved while they were off is pinned as nobody tipped out.
-  const nights = lockAll(workplaces, cleanNights(rawNights), today).nights;
+  const nights = lockAll(workplaces, cleanNights(rawNights, wasAfter), today).nights;
   if (!S.nightsExample) pinTipoutOn(workplaces, nights);
   pinTipouts(workplaces, nights);
   // Old states and old backup codes have no budget: they get an empty one. Old "Paid" ticks (keyed by pay period) are
@@ -1402,7 +1419,7 @@ function syncSavedTipouts(S) {
   if (isObj(S.settings) && isObj(S.settings.guidedDraft)) profiles.push(S.settings.guidedDraft.profile);
   profiles.forEach((p) => {
     if (!isObj(p) || !isObj(p.tipout) || !Array.isArray(p.tipouts)) return;
-    const want = savedTipout(p.tipout.on, p.tipout.basis, p.tipouts);
+    const want = savedTipout(p.tipout.on, p.tipouts);
     ['mode', 'value', 'from'].forEach((k) => {
       if (k in want) p.tipout[k] = want[k];
       else delete p.tipout[k];

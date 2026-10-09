@@ -108,16 +108,16 @@ const typeById = (p, id) => (p.payTypes || []).find((t) => same(t.id, id));
 const fmtHrs = (h) => String(Math.round(h * 100) / 100);
 
 /**
- * {on, basis, list}: the tip-outs a draft is worked out with. The people and before/after: the locked night's own
- * (d.tipoutSnap, set by draftFromNight, or a finished period's snapshot on Tonight) or the restaurant's Setup. On or
+ * {on, list}: the tip-outs a draft is worked out with. The people: the locked night's own (d.tipoutSnap, set by
+ * draftFromNight, or a finished period's snapshot on Tonight) or the restaurant's Setup. On or
  * off: the night's own while it is edited (d.tipoutOn, from draftFromNight; "Recalculate with current Setup" drops it),
  * else the snapshot's or Setup's as it is now (what a new night is saved with).
  */
 export const draftSetup = (d, p) => nightTipout({ snap: d && d.tipoutSnap, tipoutOn: d && d.tipoutOn }, p);
-/** The people a draft can tick as tipped out (draftSetup): [] unless tip-outs are on and the number typed is before tip-out. */
+/** The people a draft can tick as tipped out (draftSetup): [] unless tip-outs are on. */
 export function draftTipouts(d, p) {
   const ts = draftSetup(d, p);
-  return ts.on && ts.basis === 'before' ? ts.list : [];
+  return ts.on ? ts.list : [];
 }
 /** Ticked unless unticked: everyone starts ticked on a new night. */
 const ticked = (d, r) => !(d.tipouts && d.tipouts[r.id] === false);
@@ -307,8 +307,8 @@ export function liveNight(d, id, p, { snap: lockedWith } = {}) {
     pay,
     barback: false, // anyone ticked (below), for older copies of the app
   };
-  // Who was tipped out tonight (everyone ticked unless unticked). With no boxes on screen (tip-outs off or "after
-  // tip-out") nobody is (see alignNight).
+  // Who was tipped out tonight (everyone ticked unless unticked). With no boxes on screen (tip-outs off) nobody is (see
+  // alignNight).
   const people = draftTipouts(d, p);
   if (people.length) {
     const m = {};
@@ -357,8 +357,8 @@ export function storedNight(d, p, id, { snap } = {}) {
  * (target: its snapshot's people when it is or stays locked, else Setup's), when the boxes on screen are someone else's:
  * Tonight's boxes are always Setup's, the editor's are the night's own until a recalculation or a move changes its
  * snapshot. cur: the saved night it replaces or edits (null for a new night). See alignTicks: the choices on screen are
- * carried over to target and the rest of cur's map is kept. No boxes on screen (tip-outs switched off or "after
- * tip-out"): a new night (or the part added to one) had nobody tipped out, so everyone in target is false (a night saved
+ * carried over to target and the rest of cur's map is kept. No boxes on screen (tip-outs switched off): a new night (or
+ * the part added to one) had nobody tipped out, so everyone in target is false (a night saved
  * while tip-outs were off never becomes tipped out); an edited or replaced night keeps what it had (its map and barback),
  * so nobody's tick changes. Changes out; returns it.
  */
@@ -513,8 +513,8 @@ export function mergeNights(a, b, p) {
   const out = { ...a, total: round2(nightTotal(a, p) + tb), cash, pay };
   delete out.tips;
   // Tip-outs: someone tipped out in either part was tipped out that night (b's ticks are already for a's people, see
-  // alignNight). An added part with no boxes on screen (tip-outs switched off or "after tip-out") says
-  // nothing about who was tipped out: the night keeps its own choices.
+  // alignNight). An added part with no boxes on screen (tip-outs switched off) says nothing about who was tipped out:
+  // the night keeps its own choices.
   if (b.tipouts) {
     const m = {};
     const ids = new Set([...Object.keys(a.tipouts || {}), ...Object.keys(b.tipouts)]);
@@ -613,16 +613,11 @@ export function nightFields(
   };
   /** A box was left: its waiting typo message is shown now. */
   const flushTypos = () => [totalLater, hoursLater, cashLater].forEach((l) => l.flush());
-  const ts = draftSetup(d, p);
-  const after = ts.on && ts.basis === 'after';
   const people = draftTipouts(d, p); // the people who can be ticked tonight
   const tips = tipsMode(p);
   const hintText = tips
-    ? (after ? 'Cash tips + card tips, after tip-outs.' : 'Cash tips + card tips.') +
-      ' TipNet adds the pay for the jobs below.'
-    : after
-      ? 'Cash + card tips + all hourly pay, after tip-outs.'
-      : 'Cash + card tips + all hourly pay, before anything comes out.';
+    ? 'Cash tips + card tips. TipNet adds the pay for the jobs below.'
+    : 'Cash + card tips + all hourly pay, before anything comes out.';
   const bind = (input, get, set) => {
     input.value = get();
     input.addEventListener('input', () => {
@@ -1612,8 +1607,8 @@ export function render(root) {
           part = alignNight(onto(cur), d, p, null, peopleOf(cur, p));
           return mergeNights(cur, part, p);
         });
-        // A part entered with no boxes on screen (tip-outs off or "after tip-out" tonight) says nothing about who was
-        // tipped out: the night keeps its own choices (and its own switch), so the part is said with them too.
+        // A part entered with no boxes on screen (tip-outs off tonight) says nothing about who was tipped out: the
+        // night keeps its own choices (and its own switch), so the part is said with them too.
         if (stored !== part && !draftTipouts(d, p).length)
           part = { ...part, tipouts: stored.tipouts, barback: stored.barback };
         return { stored, part };

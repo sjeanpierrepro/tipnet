@@ -111,11 +111,13 @@ test('% of sales is gone: a person saved with it (development data only) counts 
   assert.deepEqual(M.TIPOUT_MODES, ['pctTips', 'flat']);
 });
 
-test('"the number I enter is after tip-out": nothing is taken out; switched off: nothing either', () => {
+test('an older "after tip-out" setup takes nothing out, the same as switched off (also with the night saying on)', () => {
   const after = M.computeNight(night(), P(undefined, 'after'), 10);
   assert.equal(after.tipout, 0);
   assert.deepEqual(after.tipouts, []);
   assert.equal(after.cashInHand, 210);
+  assert.equal(M.computeNight(night({ tipoutOn: true }), P(undefined, 'after'), 10).tipout, 0);
+  assert.equal(M.tipoutSetup(P(undefined, 'after')).on, false);
   const p = P();
   p.tipout.on = false;
   assert.equal(M.computeNight(night(), p, 10).tipout, 0);
@@ -171,20 +173,20 @@ const oldState = (to, extra = {}) => ({
   ...extra,
 });
 
-test('migration: an old tip-out becomes one Barback, switched off too (it keeps its amount); basis is kept', () => {
+test('migration: an old tip-out becomes one Barback, switched off too (it keeps its amount); "after tip-out" is off', () => {
   const on = migrate(oldState({ on: true, mode: 'pct', value: 15, basis: 'before', from: 'cash' }), {
     today,
   });
   const p = on.workplaces[0].profile;
-  // a list of one on % of tips or flat keeps the old fields too (for v37, see savedTipout)
-  assert.deepEqual(p.tipout, { on: true, basis: 'before', mode: 'pct', value: 15, from: 'cash' });
+  // a list of one on % of tips or flat keeps the old fields too (for v37, see savedTipout); no basis any more
+  assert.deepEqual(p.tipout, { on: true, mode: 'pct', value: 15, from: 'cash' });
   assert.deepEqual(p.tipouts, [BARBACK]);
+  // "after tip-out" took nothing out: it loads as "I tip out" off, with its person kept, and its night stays at $0
   const flat = migrate(oldState({ on: true, mode: 'flat', value: 20, basis: 'after', from: 'check' }), {
     today,
   });
   assert.deepEqual(flat.workplaces[0].profile.tipout, {
-    on: true,
-    basis: 'after',
+    on: false,
     mode: 'flat',
     value: 20,
     from: 'check',
@@ -192,6 +194,10 @@ test('migration: an old tip-out becomes one Barback, switched off too (it keeps 
   assert.deepEqual(flat.workplaces[0].profile.tipouts, [
     { id: 't1', k: 'barback', who: 'Barback', mode: 'flat', value: 20, from: 'payroll' },
   ]);
+  assert.equal(flat.nights[0].tipoutOn, false);
+  assert.deepEqual(flat.nights[0].tipouts, { t1: false });
+  assert.equal(flat.nights[0].barback, false);
+  assert.equal(M.computeNight(flat.nights[0], flat.workplaces[0].profile, 10).tipout, 0);
   const off = migrate(oldState({ on: false, mode: 'pct', value: 15, basis: 'after', from: 'cash' }), {
     today,
   });
@@ -199,7 +205,6 @@ test('migration: an old tip-out becomes one Barback, switched off too (it keeps 
   // (ticking "I tip out" brings it back), and the old fields stay as v37 wrote them
   assert.deepEqual(off.workplaces[0].profile.tipout, {
     on: false,
-    basis: 'after',
     mode: 'pct',
     value: 15,
     from: 'cash',
@@ -213,7 +218,7 @@ test('migration: an old tip-out becomes one Barback, switched off too (it keeps 
     today,
   });
   assert.deepEqual(none.workplaces[0].profile.tipouts, [], 'switched off with no amount: nobody');
-  assert.deepEqual(none.workplaces[0].profile.tipout, { on: false, basis: 'before' });
+  assert.deepEqual(none.workplaces[0].profile.tipout, { on: false });
   // the night's money is the same before and after the migration
   const before = M.computeNight(
     oldState({ on: true, mode: 'pct', value: 15, from: 'cash' }).nights[0],
@@ -281,7 +286,7 @@ test('locked periods never change: an old single-tip-out snapshot keeps working 
   const before = M.computeNight(S.nights[0], S.workplaces[0].profile, 10);
   const out = migrate(S, { today });
   const n = out.nights[0];
-  assert.deepEqual(n.snap.tipout, { on: true, basis: 'before', mode: 'pct', value: 15, from: 'cash' });
+  assert.deepEqual(n.snap.tipout, { on: true, mode: 'pct', value: 15, from: 'cash' });
   assert.deepEqual(n.snap.tipouts, [BARBACK]);
   const p = out.workplaces[0].profile;
   p.tipouts.push({ ...RUNNER, mode: 'flat', value: 50 });

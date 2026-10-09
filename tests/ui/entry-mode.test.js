@@ -135,18 +135,6 @@ test('tips mode: no "below your hourly pay" warning; cash is checked against the
   }
 });
 
-test('tips mode with an after-tip-out basis says so in the hint', async () => {
-  const page = await boot({ seed: tipsState((S) => (S.workplaces[0].profile.tipout.basis = 'after')) });
-  try {
-    assert.match(
-      page.text(),
-      /Cash tips \+ card tips, after tip-outs\. TipNet adds the pay for the jobs below\./,
-    );
-  } finally {
-    await page.close();
-  }
-});
-
 test('total mode is unchanged: $585 / 8 h / $210 cash -> $420.46, cash you keep $136.65, on check $283.81', async () => {
   const page = await boot({ seed: totalState() });
   try {

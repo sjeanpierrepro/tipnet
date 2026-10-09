@@ -250,11 +250,11 @@ export const SHIFT_SOURCE_TEXT = {
 /*
  * A night can carry `snap`: the Setup numbers it was worked out with, so a later raise or a new deduction
  * never rewrites a finished pay period. Nights without one are "unlocked" and follow the current Setup.
- *   snap = {v:1, r, rf, fixed, nontax?, n, pay:[{id, rate, unit, usual?, supp?, diff?, nontax?}], tipout:{on, basis},
+ *   snap = {v:1, r, rf, fixed, nontax?, n, pay:[{id, rate, unit, usual?, supp?, diff?, nontax?}], tipout:{on},
  *           tipouts:[{id, k, who, mode, value, from}]}
  *   r: tax rate used (paystub rate or the calibrated one), rf: federal share, fixed: fixed deductions per period,
  *   n: shifts the fixed deductions were spread over, pay: pay types (usual only matters for the first), tipout/tipouts:
- *   the tip-out switch, basis and the people tipped out. Older snapshots carry the single tip-out
+ *   the tip-out switch and the people tipped out. Older snapshots carry the single tip-out
  *   {on, mode, value, basis, from}; tipoutSetup() reads both shapes. A list of one person on % of tips or flat is also
  *   written in that old shape (savedTipout), for v37.
  */
@@ -271,7 +271,7 @@ export function snapshotFor(p, shifts) {
     fixed: round2(fixedTotal(p)),
     n: shifts > 0 ? shifts : shiftsPerPeriod(p, [], todayISO()).n,
     pay: (p.payTypes || []).map(snapPayOf),
-    tipout: savedTipout(ts.on, ts.basis, ts.list), // with the old single shape too when that fits (for v37)
+    tipout: savedTipout(ts.on, ts.list), // with the old single shape too when that fits (for v37)
     tipouts: ts.list.map((x) => ({ ...x })),
   };
   // recurring non-taxable money per check (only written when there is some, so older snapshots look the same)
@@ -411,8 +411,8 @@ export function periodNontax(p, ns) {
 
 /* ---------- tip-outs (several people: % of tips or flat) ---------- */
 /*
- * Per restaurant: profile.tipout = {on, basis} ("I tip out", and whether the number typed each night is before or after
- * tip-out) and profile.tipouts = [{id, k, who, mode, value, from}]:
+ * Per restaurant: profile.tipout = {on} ("I tip out": the tips typed each night are before tip-out and TipNet takes the
+ * tip-outs out; off, what is typed is what was kept) and profile.tipouts = [{id, k, who, mode, value, from}]:
  *   k: preset (barback, runner, busser, bar, host, kitchen, other); who: the name shown (a custom name for "other").
  *   mode: 'pctTips' (value % of tonight's tips) or 'flat' ($ value a night). Any other mode is read as 'pctTips'.
  *   from: 'cash' (paid out of the cash tips) or 'payroll'.
@@ -421,6 +421,8 @@ export function periodNontax(p, ns) {
  * them (savedTipout). A night says who was tipped out with night.tipouts = {recipientId: true|false}; older nights only
  * have night.barback (true: everyone, false: nobody). night.tipoutOn: whether "I tip out" was on when the night was saved
  * (nightTipout): the switch never changes a night already logged.
+ * Before v38 the tips typed could also be "after tip-out" (tipout.basis 'after'): nothing was taken out, exactly as when
+ * the switch is off, so that is how it reads (tipoutSetup, nightTipout), and loading turns it into the switch off.
  */
 export const TIPOUT_PRESETS = [
   { k: 'barback', name: 'Barback' },
@@ -449,30 +451,36 @@ export function legacyTipouts(to) {
     },
   ];
 }
-/** {on, basis, list} for a profile or a snapshot, in either shape (see above). */
+/** True for an older "after tip-out" setup (see above): nothing is taken out, as with the switch off. */
+const afterBasis = (src) => !!(src && src.tipout && src.tipout.basis === 'after');
+/** {on, list} for a profile or a snapshot, in either shape (see above). An older "after tip-out" one is off. */
 export function tipoutSetup(src) {
   const to = (src && src.tipout) || {};
   const list = Array.isArray(src && src.tipouts) ? src.tipouts : legacyTipouts(to);
-  return { on: !!to.on, basis: to.basis === 'after' ? 'after' : 'before', list };
+  return { on: !!to.on && !afterBasis(src), list };
 }
 /**
- * {on, basis, list} one night's tip-outs are worked out with: the people and before/after of its snapshot when it is
- * locked, else Setup's (fixing a typo'd amount applies to the running pay period), and whether tip-outs were on as the
- * night was saved (night.tipoutOn, written on every save and set on loading for older nights; without one, e.g. an
- * example night, its snapshot's, else Setup's). So turning "I tip out" on or off never changes a night already logged.
+ * {on, list} one night's tip-outs are worked out with: the people of its snapshot when it is locked, else Setup's (fixing
+ * a typo'd amount applies to the running pay period), and whether tip-outs were on as the night was saved (night.tipoutOn,
+ * written on every save and set on loading for older nights; without one, e.g. an example night, its snapshot's, else
+ * Setup's). So turning "I tip out" on or off never changes a night already logged.
  */
 export function nightTipout(night, p) {
-  const ts = tipoutSetup((night && night.snap) || p);
-  return night && typeof night.tipoutOn === 'boolean' ? { ...ts, on: night.tipoutOn } : ts;
+  const src = (night && night.snap) || p;
+  const ts = tipoutSetup(src);
+  return night && typeof night.tipoutOn === 'boolean'
+    ? { ...ts, on: night.tipoutOn && !afterBasis(src) }
+    : ts;
 }
 /**
- * profile.tipout / snap.tipout as saved: {on, basis}, plus, when the list is exactly one person on % of tips or flat,
- * that tip-out in the old single shape too (mode 'pct' | 'flat', value, from 'cash' | 'check'). v37 reads only those and
- * rewrites the whole state when it saves, so a v37 page still open after the update keeps the tip-out (as one Barback)
- * instead of saving it as $0. TipNet never reads them while the list is there (tipoutSetup).
+ * profile.tipout / snap.tipout as saved: {on}, plus, when the list is exactly one person on % of tips or flat, that
+ * tip-out in the old single shape too (mode 'pct' | 'flat', value, from 'cash' | 'check'). v37 reads only those (and
+ * takes a missing basis as "before tip-out") and rewrites the whole state when it saves, so a v37 page still open after
+ * the update keeps the tip-out (as one Barback) instead of saving it as $0. TipNet never reads them while the list is
+ * there (tipoutSetup).
  */
-export function savedTipout(on, basis, list) {
-  const to = { on: !!on, basis: basis === 'after' ? 'after' : 'before' };
+export function savedTipout(on, list) {
+  const to = { on: !!on };
   const r = list.length === 1 ? list[0] : null;
   if (r && (r.mode === 'pctTips' || r.mode === 'flat')) {
     to.mode = r.mode === 'flat' ? 'flat' : 'pct';
@@ -585,10 +593,10 @@ export function carryTicks(nights, before, after) {
   });
   return { nights: out, changed };
 }
-/** The people TipNet takes a tip-out for on this night (the switch is on and the number typed is before tip-out). */
+/** The people TipNet takes a tip-out for on this night (the switch is on and they were ticked). */
 export function tipoutsTonight(src, night) {
   const ts = src && Array.isArray(src.list) ? src : tipoutSetup(src);
-  if (!ts.on || ts.basis !== 'before') return [];
+  if (!ts.on) return [];
   return ts.list.filter((r) => tippedOut(night, r));
 }
 /**
@@ -1165,7 +1173,7 @@ export function exampleProfile(today = todayISO()) {
     rateOverride: null,
     deductions: clone(EXAMPLE_DEDUCTIONS),
     payTypes: clone(EXAMPLE_PAY_TYPES),
-    tipout: { on: true, basis: 'before' },
+    tipout: { on: true },
     tipouts: [{ id: 't1', k: 'barback', who: 'Barback', mode: 'pctTips', value: 15, from: 'cash' }],
   };
 }

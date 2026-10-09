@@ -113,8 +113,7 @@ function nightSub(n, c, p) {
   else {
     // tip-outs are on for that night, but nobody was tipped out
     const ts = nightTipout(n, p); // as the night was saved (whether tip-outs were on is its own)
-    if (ts.on && ts.basis === 'before' && ts.list.length && !tipoutsTonight(ts, n).length)
-      bits.push('no tip-out');
+    if (ts.on && ts.list.length && !tipoutsTonight(ts, n).length) bits.push('no tip-out');
   }
   if (c.onCheck != null) bits.push(money(c.onCheck) + ' on check');
   if (c.cashOffPayroll) bits.push('cash off payroll');
