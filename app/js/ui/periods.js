@@ -20,7 +20,6 @@ import {
   periodRange,
   totalFromTips,
   hasTips,
-  round2,
   num,
   rate as currentRate,
   tipoutsTonight,
@@ -65,7 +64,6 @@ import {
   nightFields,
   draftFromNight,
   storedNight,
-  tipsMode,
   entryCheck,
   showEntryProblem,
   jobsText,
@@ -108,7 +106,7 @@ function nightSub(n, c, p) {
   const worked = jobsText(n, p);
   if (worked) bits.push(worked);
   bits.push('made ' + money(c.total));
-  if (tipsMode(p)) bits.push('tips ' + money(c.tips));
+  bits.push('tips ' + money(c.tips));
   if (c.tipout) bits.push(money(c.tipout) + ' tip-out');
   else {
     // tip-outs are on for that night, but nobody was tipped out
@@ -133,7 +131,7 @@ function announce(text) {
  * Focus follows the editor: Edit (opening) lands on the editor's first field, and Save/Cancel (closing) land back on
  * Edit. Those controls are never on screen together, so they can share one data-focus-key (see keepFocus in common.js).
  */
-const editKey = (n) => 'edit-' + n.id + '-total';
+const editKey = (n) => 'edit-' + n.id + '-cc';
 
 /** Rebuild only the given pay periods' sections (opening/closing the editor), keeping keyboard focus. keys: gkey()s. */
 function redrawGroups(keys) {
@@ -173,9 +171,9 @@ function editor(S, n) {
   const w = workplaceOf(S, n.workplaceId);
   const p = w.profile;
   const mine = nightsOf(S, w.id);
-  const d = draftFromNight(n, p); // in tips mode d.total is the tips inside the stored total (the night's own rates if locked)
+  const d = draftFromNight(n, p); // CC tips and Cash tips: the tips inside the stored total (its own rates if locked)
   d.note = n.note || ''; // the editor's own field; draftFromNight knows nothing about notes
-  const typedAtOpen = JSON.stringify([d.total, d.pay]);
+  const typedAtOpen = JSON.stringify([d.cc, d.cash, d.pay]);
   let recalc = false;
   // The estimate follows the typing on screen, but is only spoken after a pause (like Tonight's summary), so a screen
   // reader isn't interrupted on every keystroke.
@@ -273,15 +271,17 @@ function editor(S, n) {
     // recalculation or a move gives it other ones (today's Setup, the period's snapshot, or Setup's when a move unlocks
     // it): the ticks are carried over to them (alignNight). With no boxes on screen the night keeps its own.
     alignNight(out, d, p, n, peopleOf(out, p));
-    // Tips and hours untouched and no recalculation: the stored total (and typed tips) stay exactly as they were.
-    const untouched = !recalc && JSON.stringify([d.total, d.pay]) === typedAtOpen;
-    if (untouched && (tipsMode(p) || hasTips(n))) {
+    // Tips, cash and hours untouched and no recalculation: the stored total, tips and cash stay exactly as they were (a
+    // night typed as one total before v38 stays one).
+    const untouched = !recalc && JSON.stringify([d.cc, d.cash, d.pay]) === typedAtOpen;
+    if (untouched) {
       out.total = num(n.total);
+      out.cash = n.cash == null ? null : num(n.cash);
       if (hasTips(n)) out.tips = n.tips;
       else delete out.tips;
-    } else if (tipsMode(p)) {
-      // Tips back to a stored total, with the pay this night is shown with (its snapshot, the new one, or today's Setup).
-      out.tips = round2(moneyNum(d.total));
+    } else {
+      // tips = CC tips + Cash tips; the total is the tips + the pay this night is shown with (its snapshot, the new one,
+      // or today's Setup)
       out.total = totalFromTips(out.tips, out, p);
     }
     // just locked by the move: like locking, the stored total becomes the typed tips + pay at the rates it is locked with

@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as M from '../app/js/math.js';
-import { checkCash, parseHoursInput, hoursReadable, dateProblem, maxNightDate } from '../app/js/inputs.js';
+import { parseHoursInput, hoursReadable, dateProblem, maxNightDate } from '../app/js/inputs.js';
 import { mergeNights, jobsText, draftFromNight, storedNight, liveNight } from '../app/js/ui/tonight.js';
 
 const TODAY = '2026-09-30';
@@ -149,21 +149,6 @@ test('a night with typed tips and no pay amounts never borrows the old "usual" h
 });
 
 /* ---------- inputs ---------- */
-test('checkCash: tips mode compares with the tips, even $0; total mode with the tips part of the total', () => {
-  assert.equal(checkCash('0', '50', { tips: true }).status, 'over', '$0 tips: cash is not free');
-  assert.equal(checkCash('0', '0', { tips: true }).status, 'ok');
-  assert.equal(checkCash('100', '100', { tips: true }).status, 'ok');
-  assert.equal(checkCash('', '40', { tips: true }).status, 'ok', 'nothing typed yet');
-  const over = checkCash('300', '250', { basePay: 96 });
-  assert.equal(over.status, 'over', '300 - 96 = 204 of tips');
-  assert.match(
-    over.message,
-    /more than the tips in what you made tonight \(the total minus \$96\.00 of hourly pay\)/,
-  );
-  assert.equal(checkCash('300', '204', { basePay: 96 }).status, 'ok');
-  assert.equal(checkCash('300', '250').status, 'ok', 'no pay known: the total is the limit');
-});
-
 test('parseHoursInput keeps a minus sign (so it can be refused); readable vs junk', () => {
   assert.equal(parseHoursInput('-5'), -5);
   assert.equal(parseHoursInput('-7:30'), -7.5);

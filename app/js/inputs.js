@@ -28,45 +28,6 @@ export function businessDate(now = new Date(), cutoffHour = DEFAULT_CUTOFF_HOUR)
 }
 
 /**
- * Check the optional cash amount against the tips it came out of. Cash in hand is cash tips, so it is never more than
- * the tips:
- *   tips mode (tips: true): the typed number is the tips (cash + card), so cash can't be more than it, even at $0.
- *   total mode: the typed number is tips + hourly pay, so cash can't be more than the total minus basePay
- *   (tonight's hourly and per-shift pay).
- * Returns {status: 'none'|'ok'|'negative'|'over'|'typo', message}. Only 'ok' cash is used for the check split and saved.
- */
-export function checkCash(totalStr, cashStr, { tips = false, basePay = 0 } = {}) {
-  const cash = readMoney(cashStr);
-  if (cash === null) return { status: 'none', message: '' };
-  if (Number.isNaN(cash)) return { status: 'typo', message: moneyTypo(cashStr) };
-  if (cash < 0)
-    return {
-      status: 'negative',
-      message: 'Cash can’t be a negative number. It won’t be saved until you fix it.',
-    };
-  const total = readMoney(totalStr) ?? NaN;
-  if (tips) {
-    if (Number.isFinite(total) && total >= 0 && cash > total + 0.005)
-      return {
-        status: 'over',
-        message: 'Cash is more than the tips you entered. Check the number. The cash amount won’t be saved.',
-      };
-  } else if (Number.isFinite(total) && total > 0) {
-    const pay = Number.isFinite(basePay) && basePay > 0 ? basePay : 0;
-    if (cash > Math.max(0, total - pay) + 0.005)
-      return {
-        status: 'over',
-        message: pay
-          ? 'Cash is more than the tips in what you made tonight (the total minus $' +
-            pay.toFixed(2) +
-            ' of hourly pay). Check the number. The cash amount won’t be saved.'
-          : 'Cash is more than what you made tonight. Check the number. The cash amount won’t be saved.',
-      };
-  }
-  return { status: 'ok', message: '' };
-}
-
-/**
  * Why is "on your check" negative? c = computeNight result (cash already valid).
  * null (not negative) | 'taxes' (taxes on the money you kept exceed what is left after cash) | 'fixed' (only the fixed deductions push it below zero).
  */

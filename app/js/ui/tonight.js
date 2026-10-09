@@ -1,4 +1,4 @@
-// Tonight screen: one number in, estimated take-home out. Also exports the night form used by "edit night".
+// Tonight screen: CC tips, cash tips and hours in, estimated take-home out. Also exports the night form used by "edit night".
 import {
   computeNight,
   periodTotals,
@@ -6,10 +6,11 @@ import {
   shiftsPerPeriod,
   weeklyHours,
   payAmount,
-  basePay,
   todayISO,
   num,
   round2,
+  toCents,
+  fromCents,
   totalFromTips,
   tipsFromTotal,
   nightTotal,
@@ -35,7 +36,6 @@ import {
 import {
   businessDate,
   cutoffFromSettings,
-  checkCash,
   negativeCheckReason,
   parseHoursInput,
   hasHoursText,
@@ -80,8 +80,6 @@ let showExample = false; // before setup: "See an example first" was tapped
 /** That restaurant's nights that count as history for shift averages. Example nights never do, so the first real numbers match their preview. */
 const historyOf = (S, w) => (S.nightsExample ? [] : nightsOf(S, w.id));
 
-/** Tips-only entry: the nightly number is cash + card tips and TipNet adds the hourly/per-shift pay. */
-export const tipsMode = (p) => !!p && p.entryMode === 'tips';
 /** The typed amount as a number; null when blank or a typo (see readMoney). */
 function typedAmount(v) {
   const n = readMoney(v);
@@ -174,11 +172,11 @@ export function redateDraft(S) {
     if (!d.dateTouched) d.date = tonightOf(S);
   });
 }
-/** True when any restaurant's in-progress entry has something typed (an amount, cash or hours). */
+/** True when any restaurant's in-progress entry has something typed (tips or hours). */
 export function hasDraftInput() {
   return Array.from(drafts.values()).some(
     (d) =>
-      String(d.total || '').trim() !== '' ||
+      String(d.cc || '').trim() !== '' ||
       String(d.cash || '').trim() !== '' ||
       Object.values(d.pay || {}).some((v) => String(v || '').trim() !== '' && String(v).trim() !== '1'),
   );
@@ -189,15 +187,15 @@ export function dropDraft(id) {
 }
 
 /**
- * An empty entry. d.total holds the typed text: tips in tips mode, tips + pay in total mode.
- * d.rows: the jobs worked tonight, in order (pay type ids); their hours/shifts live in d.pay like every other amount.
+ * An empty entry. d.cc and d.cash hold the typed CC tips and Cash tips (before tip-outs); TipNet adds the pay for the
+ * jobs worked. A blank box counts as $0. d.rows: the jobs worked tonight, in order (pay type ids); their hours/shifts live in d.pay like every other amount.
  * The first row is the main job with EMPTY hours: hours are typed every night (shift lengths vary), never pre-filled
  * or remembered. A per-shift main job starts at 1 shift. Other pay stays hidden until "+ Add other pay" (d.showOther).
  */
 export function blankDraft(S, p) {
   const main = jobsOf(p)[0];
   return {
-    total: '',
+    cc: '',
     cash: '',
     pay: main && main.unit === 'shift' ? { [main.id]: '1' } : {},
     rows: main ? [main.id] : [],
@@ -223,11 +221,21 @@ export function syncDraft(d, p) {
   });
   return d;
 }
-/** A saved night as an editable draft, in the current entry mode (tips mode shows the tips inside its total). */
+/**
+ * A saved night as an editable draft: Cash tips = its cash, CC tips = its tips minus that cash. Its tips: the ones typed,
+ * or for a night typed as one total (before v38) the part of the total above its pay (tipsFromTotal: the night's own
+ * rates when it is locked). A night saved without a cash amount (cash unknown) shows Cash blank and all its tips as CC
+ * tips, and its cash stays unknown unless a cash amount is typed (d.cashUnknown), so what lands on its check stays
+ * unknown, as it was. CC tips are never shown below $0 (old data with more cash than tips). Saving with the tips and
+ * hours as they were opened keeps the stored numbers exactly (see the editor in periods.js).
+ */
 export function draftFromNight(n, p) {
+  const tipsC = toCents(tipsFromTotal(n, p));
+  const cashC = n.cash == null ? 0 : toCents(num(n.cash));
   const d = {
-    total: tipsMode(p) ? String(Math.max(0, tipsFromTotal(n, p))) : String(nightTotal(n, p)),
+    cc: String(fromCents(Math.max(0, tipsC - cashC))),
     cash: n.cash == null ? '' : String(n.cash),
+    cashUnknown: n.cash == null,
     pay: {},
     rows: [],
     showOther: false,
@@ -278,27 +286,31 @@ function draftPay(d, p) {
   if (main && pay[main.id] === undefined) pay[main.id] = '0';
   return pay;
 }
-/**
- * Cash check for a draft: in total mode the cash is measured against the tips part (total minus tonight's pay). snap:
- * the locked night's (with any job added to Setup since, at its Setup rate: snapWithPay, as the night is stored).
- */
-function cashCheck(d, p, snap) {
-  if (tipsMode(p)) return checkCash(d.total, d.cash, { tips: true });
-  const n = { pay: draftPay(d, p) };
-  if (snap) n.snap = snapWithPay(snap, p, n);
-  return checkCash(d.total, d.cash, { basePay: basePay(n, p).pay });
+/** A tips box's amount in cents: 0 when blank, null for a typo or a number below 0 (saving refuses those). */
+function tipsCents(v) {
+  const n = readMoney(v);
+  if (n === null) return 0;
+  return Number.isFinite(n) && n >= 0 ? toCents(n) : null;
 }
+/** True when a tips box holds a number below 0. */
+const belowZero = (v) => {
+  const n = readMoney(v);
+  return Number.isFinite(n) && n < 0;
+};
+/** True when the Cash tips box has something typed (a night saved without cash keeps it unknown until then). */
+const cashTyped = (d) => readMoney(d.cash) !== null;
 /**
- * Draft (strings) -> night with cleaned values, for live math. total is always everything made (tips + hourly/per-shift
- * pay): in tips mode the typed tips are converted here, so the preview and the saved night use the same number, and
- * the tips are kept as `tips` too. snap: work out the pay with this locked night's rates (editing or replacing it), and
- * a job added to Setup since at its Setup rate (snapWithPay: the night is stored with it).
+ * Draft (strings) -> night with cleaned values, for live math. tips = CC tips + Cash tips (each to the cent, a blank box
+ * is $0), cash = Cash tips, and total = the tips + the hourly/per-shift pay for the jobs worked (totalFromTips), so the
+ * preview and the saved night use the same numbers. A night saved without a cash amount keeps its cash unknown ('')
+ * while the Cash tips box is blank (d.cashUnknown). snap: work out the pay with this locked night's rates (editing or
+ * replacing it), and a job added to Setup since at its Setup rate (snapWithPay: the night is stored with it).
  */
 export function liveNight(d, id, p, { snap: lockedWith } = {}) {
   const pay = draftPay(d, p);
   const snap = lockedWith ? snapWithPay(lockedWith, p, { pay }) : null;
-  // Cash that is negative or more than the tips is not used (the screen says why); it never blocks the night.
-  const cash = cashCheck(d, p, snap).status === 'ok' ? String(typedAmount(d.cash)) : '';
+  const cashC = tipsCents(d.cash) ?? 0;
+  const cash = cashTyped(d) || !d.cashUnknown ? String(fromCents(cashC)) : '';
   const night = {
     id,
     date: d.date || todayISO(),
@@ -319,15 +331,11 @@ export function liveNight(d, id, p, { snap: lockedWith } = {}) {
     night.barback = people.some((r) => m[r.id]);
   }
   night.tipoutOn = draftSetup(d, p).on; // the night keeps whether tip-outs were on, whatever Setup says later
-  if (d.cashOffPayroll && cash !== '') night.cashOffPayroll = true;
-  if (tipsMode(p)) {
-    const t = typedAmount(d.total);
-    if (t != null && t >= 0) {
-      night.tips = round2(t);
-      const tot = totalFromTips(t, snap ? { ...night, snap } : night, p);
-      if (tot > 0) night.total = String(tot);
-    }
-  } else if (moneyNum(d.total) > 0) night.total = String(typedAmount(d.total));
+  // "Cash tips weren't run through payroll" is about the cash typed (the box is shown once there is some)
+  if (d.cashOffPayroll && cashTyped(d)) night.cashOffPayroll = true;
+  night.tips = fromCents((tipsCents(d.cc) ?? 0) + cashC);
+  const tot = totalFromTips(night.tips, snap ? { ...night, snap } : night, p);
+  if (tot > 0) night.total = String(tot);
   return night;
 }
 /** Draft -> night to store (no snapshot; the caller keeps one). Freezes each pay type's amount (0 when not worked). */
@@ -340,7 +348,7 @@ export function storedNight(d, p, id, { snap } = {}) {
   const out = {
     id,
     date: ln.date,
-    total: tipsMode(p) ? num(ln.total) : moneyNum(d.total),
+    total: num(ln.total),
     cash: ln.cash === '' ? null : num(ln.cash),
     pay,
     barback: ln.barback,
@@ -348,7 +356,7 @@ export function storedNight(d, p, id, { snap } = {}) {
   if (ln.tipouts) out.tipouts = ln.tipouts;
   out.tipoutOn = ln.tipoutOn;
   if (ln.cashOffPayroll) out.cashOffPayroll = true;
-  if (tipsMode(p) && hasTips(ln)) out.tips = ln.tips;
+  out.tips = ln.tips;
   return out;
 }
 
@@ -446,18 +454,18 @@ export function hoursProblem(p, d) {
     };
   return { msg: '' };
 }
+export const NOTHING_MSG = 'Enter your tips or your hours first.';
+/** True when nothing is typed yet: no CC tips, no Cash tips and no hours or shifts in a job row. */
+const nothingTyped = (d) =>
+  readMoney(d.cc) === null && !cashTyped(d) && !(d.rows || []).some((id) => hasHoursText(d.pay[id]));
 /**
- * Plain message when the typed amount can't be saved, else ''. when: 'tonight' | 'that night'.
- * Total mode needs a total above 0. Tips mode takes 0 tips (a slow night still has hourly pay), but not blank or negative.
+ * {where: 'cc'|'cash', msg} when a tips box can't be saved (a number below 0), else null. A blank box is $0, so 0 tips
+ * on a slow night with hourly pay is fine.
  */
-export function entryProblem(p, d, when = 'tonight') {
-  const typo = moneyTypo(d.total);
-  if (typo) return typo;
-  if (!tipsMode(p)) return moneyNum(d.total) > 0 ? '' : 'Enter what you made ' + when + ' first.';
-  const t = typedAmount(d.total);
-  if (t == null) return 'Enter your tips first. Type 0 if you made none.';
-  if (t < 0) return 'Tips can’t be a negative number.';
-  return '';
+export function tipsProblem(d) {
+  if (belowZero(d.cc)) return { where: 'cc', msg: 'CC tips can’t be a negative number.' };
+  if (belowZero(d.cash)) return { where: 'cash', msg: 'Cash tips can’t be a negative number.' };
+  return null;
 }
 /** True when an hoursProblem result is about text that isn't a number (not, say, more than 24 hours). */
 function hoursTypoIn(p, d, bad) {
@@ -465,40 +473,43 @@ function hoursTypoIn(p, d, bad) {
   return !!row && !!(row.unit === 'amt' ? moneyTypo(d.pay[row.id]) : hoursTypo(d.pay[row.id], unitOf(row)));
 }
 /**
- * The first typed amount that isn't a number ("1.2.3", "12abc"), else null: {where: 'total'|'hours'|'cash', msg, id?}.
+ * The first typed amount that isn't a number ("1.2.3", "12abc"), else null: {where: 'cc'|'cash'|'hours', msg, id?}.
  * The live preview shows this instead of numbers, and saving refuses it.
  */
 export function typoProblem(p, d) {
-  const total = moneyTypo(d.total);
-  if (total) return { where: 'total', msg: total };
+  const cc = moneyTypo(d.cc);
+  if (cc) return { where: 'cc', msg: cc };
+  const cash = moneyTypo(d.cash);
+  if (cash) return { where: 'cash', msg: cash };
   const bad = hoursProblem(p, d);
   if (hoursTypoIn(p, d, bad)) return { where: 'hours', msg: bad.msg, id: bad.id };
-  const cash = cashCheck(d, p);
-  if (cash.status === 'typo') return { where: 'cash', msg: cash.message };
   return null;
 }
 /**
- * Everything that blocks saving, in the order the person meets it: {where: 'total'|'hours'|'cash'|'date', msg, id?} or
- * null. today: the business date for tonight (dates may be at most one day after it).
+ * Everything that blocks saving, in the order the person meets it: {where: 'cc'|'cash'|'hours'|'date', msg, id?} or
+ * null. At least one of CC tips, Cash tips or the hours has to be typed, and the night has to come to more than $0.
+ * today: the business date for tonight (dates may be at most one day after it).
  */
 export function entryCheck(p, d, { when = 'tonight', today = todayISO() } = {}) {
   const typo = typoProblem(p, d);
   if (typo) return typo;
-  const m = entryProblem(p, d, when);
-  if (m) return { where: 'total', msg: m };
+  const tp = tipsProblem(d);
+  if (tp) return tp;
+  if (nothingTyped(d)) return { where: 'cc', msg: NOTHING_MSG };
   const miss = missingHoursRow(p, d);
   if (miss != null) return { where: 'hours', msg: 'Enter the hours you worked ' + when + '.', id: miss };
   const bad = hoursProblem(p, d);
   if (bad.msg) return { where: 'hours', msg: bad.msg, id: bad.id };
-  if (tipsMode(p) && !(num(liveNight(d, 'check', p).total) > 0))
-    return { where: 'total', msg: 'Enter your tips or your hours first.' };
+  if (!(num(liveNight(d, 'check', p).total) > 0)) return { where: 'cc', msg: NOTHING_MSG };
   const dp = dateProblem(d.date, today);
   if (dp) return { where: 'date', msg: dp };
   return null;
 }
 /**
- * Combine an existing night with a new one on the same date: pay adds up by pay type (so job hours merge by job), cash
- * and totals add up. In tips mode the tips add up too, so the merged night keeps following the current rates. Whether
+ * Combine an existing night with a new one on the same date: pay adds up by pay type (so job hours merge by job), and
+ * the tips, cash and totals add up, so the merged night keeps following the current rates (a night typed as one total
+ * before v38 has its tips worked out from it). A night saved without a cash amount keeps its cash unknown: the cash of
+ * the part added is in its tips, but the night's cash isn't known, so what lands on its check stays unknown. Whether
  * tip-outs were on is a's (a.tipoutOn): a part entered after "I tip out" was switched changes nothing about it.
  */
 export function mergeNights(a, b, p) {
@@ -506,8 +517,7 @@ export function mergeNights(a, b, p) {
   Object.keys(b.pay).forEach((k) => {
     pay[k] = Math.round(((pay[k] || 0) + b.pay[k]) * 10000) / 10000;
   });
-  const cash =
-    a.cash == null && b.cash == null ? null : Math.round(((a.cash || 0) + (b.cash || 0)) * 100) / 100;
+  const cash = a.cash == null || b.cash == null ? null : fromCents(toCents(num(a.cash)) + toCents(num(b.cash)));
   // A locked night's added part was worked out with its own rates already (see onto in render), so its total is used as is.
   const tb = a.snap ? num(b.total) : nightTotal(b, p);
   const out = { ...a, total: round2(nightTotal(a, p) + tb), cash, pay };
@@ -525,9 +535,9 @@ export function mergeNights(a, b, p) {
     out.tipouts = m;
     out.barback = !!(a.barback || b.barback);
   }
-  // cash skipped payroll only if every part of the night's cash did (a part with no cash doesn't count)
-  const offA = !!a.cashOffPayroll || a.cash == null,
-    offB = !!b.cashOffPayroll || b.cash == null;
+  // cash skipped payroll only if every part of the night's cash did (a part with no cash, or $0, doesn't count)
+  const offA = !!a.cashOffPayroll || !(num(a.cash) > 0),
+    offB = !!b.cashOffPayroll || !(num(b.cash) > 0);
   if (cash != null && offA && offB && (a.cashOffPayroll || b.cashOffPayroll)) out.cashOffPayroll = true;
   else delete out.cashOffPayroll;
   const ta = tipsFromTotal(a, p);
@@ -579,13 +589,12 @@ export function dateBox(d, key = 'night') {
   return box;
 }
 /**
- * nightFields(p, d, {big, onInput, key, rateOf, paySnap, date, into}) builds the entry fields bound to draft d.
+ * nightFields(p, d, {big, onInput, key, rateOf, date, into}) builds the entry fields bound to draft d.
  *   rateOf(t): the rate shown for pay type t (default its Setup rate; the editor passes a locked night's own rates).
- *   paySnap(): the snapshot whose rates the cash is checked against (Tonight: a finished pay period's), else null.
  *   date, into: draw the fields again in place: into is the earlier root, date its dateBox. Everything but the date box
  *   is replaced, so a date being typed keeps its focus and what is half-typed (a box that leaves the page loses both).
- * Returns {root, dateBox, totalInput, totalNode (the tips/total box), setTotalError, setHoursError, setDateError,
- * refresh, focusPay(id)}.
+ * Returns {root, dateBox, ccInput, tipsNode (the CC tips and Cash tips boxes), setCcError, setCashError, setHoursError,
+ * setDateError, refresh, focusPay(id)}.
  */
 export function nightFields(
   p,
@@ -595,7 +604,6 @@ export function nightFields(
     onInput: onInputRaw = () => {},
     key = 'night',
     rateOf = (t) => num(t.rate),
-    paySnap = () => null,
     date: dateOpt = null,
     into = null,
   } = {},
@@ -603,21 +611,16 @@ export function nightFields(
   syncDraft(d, p);
   // A typo (text that isn't a number) is flagged after a pause in typing or when its box is left (typoLater), so "$",
   // "7:" or "1," on the way to "$45", "7:30" or "1,250" never is, and politely (no alert). Fixing it clears it at once.
-  // What Save refuses is shown at once, as an alert (showEntryProblem). Other messages (more than 24 hours, cash over
-  // the tips) are shown as before.
+  // What Save refuses is shown at once, as an alert (showEntryProblem). Other messages (a number below 0, more than 24
+  // hours) are shown at once.
   let refresh = () => {};
   const onInput = () => {
-    refresh();
+    refresh(); // also clears what Save said about the tips boxes, once anything is typed
     onInputRaw();
-    totalLater(moneyTypo(d.total)); // also clears what Save said about the box, once anything is typed
   };
   /** A box was left: its waiting typo message is shown now. */
-  const flushTypos = () => [totalLater, hoursLater, cashLater].forEach((l) => l.flush());
+  const flushTypos = () => [ccLater, cashLater, hoursLater].forEach((l) => l.flush());
   const people = draftTipouts(d, p); // the people who can be ticked tonight
-  const tips = tipsMode(p);
-  const hintText = tips
-    ? 'Cash tips + card tips. TipNet adds the pay for the jobs below.'
-    : 'Cash + card tips + all hourly pay, before anything comes out.';
   const bind = (input, get, set) => {
     input.value = get();
     input.addEventListener('input', () => {
@@ -628,59 +631,106 @@ export function nightFields(
     return input;
   };
 
-  const totalInput = bind(
-    moneyInput({
-      id: uid('tot'),
-      placeholder: '0',
-      'data-focus-key': key + '-total',
-    }),
-    () => d.total,
+  /* ----- CC tips and Cash tips, before tip-outs (TipNet adds the pay for the jobs worked) ----- */
+  const sharedId = uid('tips-hint');
+  /** One tips box: {input, node, setError(m, alert)}. alert: what Save refused (role="alert"); else a polite message. */
+  const tipsBox = (label, k, hint, get, set) => {
+    const input = bind(moneyInput({ id: uid(k), placeholder: '0', 'data-focus-key': key + '-' + k }), get, set);
+    const hintId = input.id + '-hint';
+    const err = el('p', { class: 'field-error', hidden: true, 'aria-live': 'polite', id: input.id + '-err' });
+    const base = hintId + ' ' + sharedId; // read with the box, after the error when there is one
+    input.setAttribute('aria-describedby', base);
+    const node = el(
+      'div',
+      { class: 'field' },
+      el('label', { for: input.id }, label),
+      big ? el('div', { class: 'money' }, el('span', { 'aria-hidden': 'true' }, '$'), input) : input,
+      el('p', { class: 'hint', id: hintId }, hint),
+      err,
+    );
+    const setError = (m, alert = false) => {
+      errorTone(err, alert && !!m);
+      err.hidden = !m;
+      err.textContent = m || '';
+      node.toggleAttribute('data-invalid', !!m);
+      if (m) input.setAttribute('aria-invalid', 'true'); // an empty aria-invalid reads as valid
+      else input.removeAttribute('aria-invalid');
+      input.setAttribute('aria-describedby', m ? err.id + ' ' + base : base);
+    };
+    return { input, node, setError };
+  };
+  // Someone is paid out of the cash: the Cash tips box takes all the cash, and TipNet takes their cash out.
+  const fromCash = people.filter((r) => r.from !== 'payroll');
+  const whoText = (r) => (r.k && r.k !== 'other' ? 'the ' + r.who.toLowerCase() : r.who);
+  const cashHint = !people.length
+    ? 'The cash tips you’re taking home.'
+    : fromCash.length === 1
+      ? 'All your cash tips, before paying ' +
+        whoText(fromCash[0]) +
+        '. TipNet takes ' +
+        whoText(fromCash[0]) +
+        '’s cash out.'
+      : fromCash.length
+        ? 'All your cash tips, before cash tip-outs. TipNet takes the cash tip-outs out.'
+        : 'All your cash tips, before tip-outs.';
+  const ccBox = tipsBox(
+    'CC tips',
+    'cc',
+    people.length ? 'Credit card tips, before tip-outs.' : 'Your credit card tips.',
+    () => d.cc,
     (v) => {
-      d.total = v;
+      d.cc = v;
     },
   );
-  let totalNode;
-  const errEl = el('p', {
-    class: 'field-error',
-    hidden: true,
-    'aria-live': 'polite',
-    id: totalInput.id + '-err',
+  const cashBox = tipsBox('Cash tips', 'cash', cashHint, () => d.cash, (v) => {
+    d.cash = v;
   });
-  const hintId = totalInput.id + '-hint';
-  totalInput.setAttribute('aria-describedby', hintId); // the hint is read with the field, after the error when there is one
-  /** alert: what Save refused (role="alert"); else a polite message (a typo flagged after a pause in typing). */
-  const setTotalError = (m, alert = false) => {
-    errorTone(errEl, alert && !!m);
-    errEl.hidden = !m;
-    errEl.textContent = m || '';
-    totalNode.toggleAttribute('data-invalid', !!m);
-    if (m)
-      totalInput.setAttribute('aria-invalid', 'true'); // an empty aria-invalid reads as valid
-    else totalInput.removeAttribute('aria-invalid');
-    totalInput.setAttribute('aria-describedby', m ? errEl.id + ' ' + hintId : hintId);
-  };
-  if (big) {
-    totalNode = el(
-      'div',
-      { class: 'field' },
-      el('label', { for: totalInput.id }, tips ? 'Tips you made tonight' : 'What you made tonight'),
-      el('div', { class: 'money' }, el('span', { 'aria-hidden': 'true' }, '$'), totalInput),
-      el('p', { class: 'hint', id: hintId }, hintText),
-      errEl,
-    );
-  } else {
-    totalNode = el(
-      'div',
-      { class: 'field' },
-      el('label', { for: totalInput.id }, tips ? 'Tips you made' : 'What you made'),
-      totalInput,
-      el('p', { class: 'hint', id: hintId }, hintText),
-      errEl,
-    );
-  }
-
-  const totalLater = typoLater((m) => setTotalError(m));
-  const kids = [totalNode];
+  const offCb = el('input', { type: 'checkbox', id: uid('cop'), 'data-focus-key': key + '-cashoff' });
+  offCb.setAttribute('aria-describedby', offCb.id + '-hint');
+  offCb.checked = !!d.cashOffPayroll;
+  offCb.addEventListener('change', () => {
+    d.cashOffPayroll = offCb.checked;
+    d.cashOffTouched = true;
+    onInput();
+  });
+  const offField = el(
+    'div',
+    { class: 'stack-sm' },
+    el(
+      'label',
+      { class: 'check', for: offCb.id },
+      offCb,
+      el('span', null, 'Cash tips weren’t run through payroll tonight'),
+    ),
+    el(
+      'p',
+      { class: 'hint', id: offCb.id + '-hint' },
+      'Tick this if no tax was taken out of tonight’s cash, so your check is bigger. The IRS still counts all tips as income, so TipNet shows what to set aside.',
+    ),
+  );
+  offField.hidden = true; // only once a cash amount is typed
+  const tipsNode = el(
+    'div',
+    { class: 'stack-sm' },
+    el('div', { class: 'grid-2' }, ccBox.node, cashBox.node),
+    el(
+      'p',
+      { class: 'hint', id: sharedId },
+      'Tips only: TipNet adds the pay for the jobs below. A blank box counts as $0.',
+    ),
+    // a night saved without a cash amount: its tips are all in CC tips until its cash is typed
+    d.cashUnknown
+      ? el(
+          'p',
+          { class: 'note', 'data-focus-key': key + '-cash-unknown' },
+          'This night was saved without a cash amount, so CC tips shows all its tips. If you enter the cash, take it out of CC tips.',
+        )
+      : null,
+    offField,
+  );
+  const ccLater = typoLater((m) => ccBox.setError(m));
+  const cashLater = typoLater((m) => cashBox.setError(m));
+  const kids = [tipsNode];
   /* ----- who was tipped out tonight (everyone ticked to start) ----- */
   if (people.length) {
     const boxes = people.map((r) => {
@@ -953,69 +1003,17 @@ export function nightFields(
   kids.push(hoursErr);
   const hoursLater = typoLater((m) => setHoursError(m));
 
-  const cash = bind(
-    moneyInput({ placeholder: '—', 'data-focus-key': key + '-cash' }),
-    () => d.cash,
-    (v) => {
-      d.cash = v;
-    },
-  );
-  // Someone is paid out of the cash: the box takes all the cash collected, and TipNet takes their cash out.
-  const fromCash = people.filter((r) => r.from !== 'payroll');
-  const collected = fromCash.length > 0;
-  const whoText = (r) => (r.k && r.k !== 'other' ? 'the ' + r.who.toLowerCase() : r.who);
-  const cashField = field(
-    collected
-      ? fromCash.length === 1
-        ? 'Cash tips collected (before paying ' + whoText(fromCash[0]) + ')'
-        : 'Cash tips collected (before cash tip-outs)'
-      : 'Cash you’re taking home',
-    cash,
-    {
-      optional: true,
-      hint: collected
-        ? fromCash.length === 1
-          ? 'Count all the cash you made tonight, then TipNet takes ' + whoText(fromCash[0]) + '’s cash out.'
-          : 'Count all the cash you made tonight, then TipNet takes the cash tip-outs out.'
-        : undefined,
-    },
-  );
-  kids.push(cashField);
-  const offCb = el('input', { type: 'checkbox', id: uid('cop'), 'data-focus-key': key + '-cashoff' });
-  offCb.setAttribute('aria-describedby', offCb.id + '-hint');
-  offCb.checked = !!d.cashOffPayroll;
-  offCb.addEventListener('change', () => {
-    d.cashOffPayroll = offCb.checked;
-    d.cashOffTouched = true;
-    onInput();
-  });
-  const offField = el(
-    'div',
-    { class: 'stack-sm' },
-    el(
-      'label',
-      { class: 'check', for: offCb.id },
-      offCb,
-      el('span', null, 'Cash tips weren’t run through payroll tonight'),
-    ),
-    el(
-      'p',
-      { class: 'hint', id: offCb.id + '-hint' },
-      'Tick this if no tax was taken out of tonight’s cash, so your check is bigger. The IRS still counts all tips as income, so TipNet shows what to set aside.',
-    ),
-  );
-  offField.hidden = true; // only once a cash amount is typed
-  kids.push(offField);
   const db = dateOpt || dateBox(d, key);
   db.onInput = onInput;
   const { input: date, field: dateField, today } = db;
   kids.push(dateField);
-  const cashLater = typoLater((m) => cashField.setError(m));
+  /** A tips box's message: a typo (waits for a pause in typing) or a number below 0 (at once). */
+  const boxMsg = (v, what) => moneyTypo(v) || (belowZero(v) ? what + ' can’t be a negative number.' : '');
   /** now: show every message at once; else typos wait for a pause in typing. */
   refresh = (now = false) => {
-    const cc = cashCheck(d, p, paySnap());
-    cashLater(cc.message, now || cc.status !== 'typo');
-    offField.hidden = cc.status !== 'ok';
+    ccLater(boxMsg(d.cc, 'CC tips'), now || !moneyTypo(d.cc));
+    cashLater(boxMsg(d.cash, 'Cash tips'), now || !moneyTypo(d.cash));
+    offField.hidden = !(cashTyped(d) && tipsCents(d.cash) != null);
     offCb.checked = !!d.cashOffPayroll;
     rateLines.forEach(({ t, line }) => {
       line.textContent = rateText(t, d.pay[t.id]);
@@ -1026,7 +1024,6 @@ export function nightFields(
   };
   // Drawn (again) with a typo in a box, e.g. back from another tab or redrawn while typing: its message waits too.
   refresh();
-  totalLater(moneyTypo(d.total));
   if (into) {
     // drawn again in place: the date box never leaves the page
     [...into.children].forEach((c) => {
@@ -1040,39 +1037,39 @@ export function nightFields(
   return {
     root: rootEl,
     dateBox: db,
-    totalInput,
-    totalNode,
-    /** Save's messages (shown at once; total and hours as alerts). */
-    setTotalError: (m, alert) => {
-      totalLater.cancel();
-      setTotalError(m, alert);
+    ccInput: ccBox.input,
+    tipsNode,
+    /** Save's messages (shown at once; the tips boxes and the hours as alerts). */
+    setCcError: (m, alert) => {
+      ccLater.cancel();
+      ccBox.setError(m, alert);
+    },
+    setCashError: (m, alert) => {
+      cashLater.cancel();
+      cashBox.setError(m, alert);
     },
     setHoursError: (m, opts) => {
       hoursLater.cancel();
       setHoursError(m, opts);
     },
     setDateError: (m) => dateField.setError(m),
-    setCashError: (m) => {
-      cashLater.cancel();
-      cashField.setError(m);
-    },
     refresh,
     focusPay: (id) => focusKey(key + '-pay-' + id),
     focusDate: () => date.focus(),
-    focusCash: () => cash.focus(),
+    focusCash: () => cashBox.input.focus(),
   };
 }
 
-/** Show an entryCheck problem on the fields at once (Save was pressed; total and hours as alerts) and move focus to it. */
+/** Show an entryCheck problem on the fields at once (Save was pressed; as alerts) and move focus to it. */
 export function showEntryProblem(f, prob) {
-  if (prob.where === 'total') {
-    f.setTotalError(prob.msg, true);
-    f.totalInput.focus();
+  if (prob.where === 'cc') {
+    f.setCcError(prob.msg, true);
+    f.ccInput.focus();
   } else if (prob.where === 'hours') {
     f.setHoursError(prob.msg, { alert: true });
     if (prob.id != null) f.focusPay(prob.id);
   } else if (prob.where === 'cash') {
-    f.setCashError(prob.msg);
+    f.setCashError(prob.msg, true);
     f.focusCash();
   } else {
     f.setDateError(prob.msg);
@@ -1086,11 +1083,10 @@ function bullet(dt, dd, cls) {
 
 /**
  * Result card body. c = computeNight result.
- * hoursMissing: a job row still needs its hours. Tips mode then shows no numbers (they would leave the pay out);
- * total mode labels the base pay instead.
+ * hoursMissing: a job row still needs its hours: no numbers then (they would leave the pay out).
  */
 export function resultCard(c, w, note, hoursMissing = false) {
-  if (!c.total || (hoursMissing && tipsMode(w.profile)))
+  if (!c.total || hoursMissing)
     return el(
       'div',
       { class: 'result' },
@@ -1099,9 +1095,7 @@ export function resultCard(c, w, note, hoursMissing = false) {
         { class: 'note' },
         c.total
           ? 'Add tonight’s hours to see your take-home.'
-          : tipsMode(w.profile)
-            ? 'Enter tonight’s tips above and your take-home appears here.'
-            : 'Enter tonight’s total above and your take-home appears here.',
+          : 'Enter tonight’s tips above and your take-home appears here.',
       ),
     );
   const cal = w.calib.length ? w.calib[w.calib.length - 1] : null;
@@ -1110,7 +1104,7 @@ export function resultCard(c, w, note, hoursMissing = false) {
     : 'This is an estimate. Your real paycheck can differ; check it with “Check my accuracy” after payday.';
   const rows = [
     bullet('Made tonight', money(c.total)),
-    bullet('  of which base pay' + (hoursMissing ? ' (hours not entered yet)' : ''), money(c.basePay)),
+    bullet('  of which base pay', money(c.basePay)),
     bullet('  of which tips', money(c.tips)),
   ];
   if (c.extra) rows.push(bullet('Extra pay (bonus etc.)', '+' + money(c.extra)));
@@ -1255,22 +1249,21 @@ function stripCard(S, w) {
  * Before setup, "See an example first": the example paystub and the example night ($585 made: $489 tips + 8 hours at
  * $12, $210 cash), worked out with the real math. Built fresh from math.js, never from the user's state. No Save here.
  */
-function exampleView(S) {
+function exampleView() {
   const today = todayISO();
-  const mode = activeWorkplace(S).profile.entryMode;
-  const p = { ...exampleProfile(today), entryMode: mode };
+  const p = exampleProfile(today);
   const nights = exampleNights(today);
-  const ex = mode === 'tips' ? 'tips' : 'total';
   const night = nights[2]; // $585, 8 hours, $210 cash
   const exW = { profile: p, calib: [] };
   const c = computeNight(night, p, shiftsPerPeriod(p, []).n);
   const heading = el('h2', { tabindex: '-1', id: 'example-heading' }, 'These are example numbers, not yours');
   const setUp = el('button', { type: 'button', class: 'btn', id: 'example-setup' }, 'Set up with my paystub');
   setUp.addEventListener('click', () => bus.startSetup());
-  const typed =
-    ex === 'tips'
-      ? [bullet('Tips typed (cash + card)', money(tipsFromTotal(night, p)))]
-      : [bullet('What they made (tips + hourly pay)', money(night.total))];
+  const cashC = toCents(num(night.cash));
+  const typed = [
+    bullet('CC tips', money(fromCents(toCents(tipsFromTotal(night, p)) - cashC))),
+    bullet('Cash tips', money(fromCents(cashC))),
+  ];
   return el(
     'div',
     { class: 'stack' },
@@ -1300,7 +1293,6 @@ function exampleView(S) {
         { class: 'breakdown' },
         typed,
         bullet('Bartender hours at $12', '8'),
-        bullet('Cash collected', money(night.cash)),
       ),
     ),
     el('h2', { class: 'sr-only' }, 'Example estimate'),
@@ -1319,7 +1311,7 @@ export function render(root) {
   const S = getState();
   if (!isSetUp(S)) {
     // No estimate and no entry form before setup: example taxes would give a wrong take-home.
-    if (showExample) root.append(el('div', { class: 'stack' }, el('h1', null, 'Tonight'), exampleView(S)));
+    if (showExample) root.append(el('div', { class: 'stack' }, el('h1', null, 'Tonight'), exampleView()));
     else
       root.append(
         el(
@@ -1432,27 +1424,11 @@ export function render(root) {
           '. If some were overtime, add Overtime under Other pay in Setup and log those hours with “+ Add other pay”. TipNet does not work out overtime pay for you.',
       );
     }
-    let low = null;
-    // Total mode only: a total below the hourly pay usually means only the tips were typed. Tips mode adds the pay itself.
-    if (!tipsMode(p) && c.total && c.basePay > c.total + 0.005 && c.hours > 0)
-      low = el(
-        'p',
-        { class: 'note', role: 'status' },
-        'Your hourly pay for ' +
-          Math.round(c.hours * 100) / 100 +
-          ' hours is ' +
-          money(c.basePay) +
-          ', more than the ' +
-          money(c.total) +
-          ' you entered. Did you include your hourly pay?',
-      );
-    clear(resultHost).append(
-      resultCard(c, w, low && ot ? el('div', { class: 'stack-sm' }, low, ot) : low || ot, hoursMissing),
-    );
-    lastSummary = c.total && !(tipsMode(p) && hoursMissing) ? 'Estimated take-home ' + money(c.net) : '';
+    clear(resultHost).append(resultCard(c, w, ot, hoursMissing));
+    lastSummary = c.total && !hoursMissing ? 'Estimated take-home ' + money(c.net) : '';
     quick.textContent = !c.total
       ? ''
-      : tipsMode(p) && hoursMissing
+      : hoursMissing
         ? 'Add tonight’s hours to see your take-home.'
         : 'Estimated take-home: ' + money(c.net);
     quick.hidden = !c.total;
@@ -1483,7 +1459,6 @@ export function render(root) {
       const s = d.tipoutSnap && (d.tipoutSnap.pay || []).find((x) => same(x.id, t.id));
       return s ? num(s.rate) : num(t.rate);
     },
-    paySnap: () => d.tipoutSnap || null,
     onInput: () => {
       savedMsg.textContent = '';
       clear(dupHost);
@@ -1499,7 +1474,7 @@ export function render(root) {
   const syncSnap = () => {
     if (useSnap(d, p, finishedSnap(S, w, d.date))) {
       fields = nightFields(p, d, { ...fieldOpts, date: fields.dateBox, into: fields.root });
-      fields.totalNode.after(quick);
+      fields.tipsNode.after(quick);
     }
     showLockedNote();
   };
@@ -1514,12 +1489,12 @@ export function render(root) {
     el('button', { class: 'btn btn-block', type: 'submit' }, many ? 'Save night at ' + w.name : 'Save night'),
     savedMsg,
   );
-  fields.totalNode.after(quick);
+  fields.tipsNode.after(quick);
   /**
    * verb() stores the night and returns {stored} (the night as stored), plus {part} for "Add to that night" (the part
    * added). shifts: the shift count the preview used.
    */
-  const finish = (night, shifts, cashWas, verb) => {
+  const finish = (night, shifts, verb) => {
     if (S.nightsExample) {
       S.nights = [];
       S.workplaces[0].calib = [];
@@ -1543,8 +1518,8 @@ export function render(root) {
     save();
     drafts.set(w.id, blankDraft(S, p));
     bus.rerender(); // the whole tab, so the backup reminder and the TipNet Budget card stay
-    const tot = root.querySelector('[data-focus-key="night-total"]');
-    if (tot) tot.focus();
+    const first = root.querySelector('[data-focus-key="night-cc"]');
+    if (first) first.focus();
     const m = root.querySelector('#night-saved');
     if (m)
       m.textContent =
@@ -1552,8 +1527,7 @@ export function render(root) {
         money(net) +
         ' take-home for ' +
         fmtDate(night.date) +
-        '.' +
-        (cashWas === 'negative' || cashWas === 'over' ? ' The cash amount was not saved.' : '');
+        '.';
   };
   form.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -1561,7 +1535,6 @@ export function render(root) {
     const prob = entryCheck(p, d, { today: tonightOf(S) });
     if (prob) return showEntryProblem(fields, prob);
     const snap = d.tipoutSnap || null; // the snapshot it will be locked with (finishedSnap), else today's Setup
-    const cashWas = cashCheck(d, p, snap).status;
     const night = alignNight(
       { ...storedNight(d, p, Date.now(), { snap }), workplaceId: w.id },
       d,
@@ -1577,13 +1550,13 @@ export function render(root) {
     };
     // Only this restaurant's nights: working two places on the same date is two separate nights.
     const dup = S.nightsExample ? null : nightsOf(S, w.id).find((n) => n.date === night.date);
-    if (!dup) return finish(night, shifts, cashWas, store);
-    const choose = (verb) => () => finish(night, shifts, cashWas, verb);
-    // A locked night keeps its own pay rates: in tips mode the pay added with these tips is worked out with them too,
-    // so the base pay is counted once, at the rates that night is shown with. Tonight's boxes are Setup's people; a
+    if (!dup) return finish(night, shifts, store);
+    const choose = (verb) => () => finish(night, shifts, verb);
+    // A locked night keeps its own pay rates: the pay added with these tips is worked out with them too, so the base
+    // pay is counted once, at the rates that night is shown with. Tonight's boxes are Setup's people; a
     // locked night is worked out with its snapshot's, so the ticks are carried over to those (alignNight).
     const onto = (target) => ({
-      ...(tipsMode(p) && target.snap ? storedNight(d, p, night.id, { snap: target.snap }) : night),
+      ...(target.snap ? storedNight(d, p, night.id, { snap: target.snap }) : night),
     });
     /**
      * Write over the saved night, looked up by id when the button is clicked (it may have been locked, merged from another
@@ -1657,7 +1630,9 @@ export function render(root) {
           null,
           'You already saved ' +
             money(nightTotal(dup, p)) +
-            (tipsMode(p) ? ' (tips ' + money(Math.max(0, tipsFromTotal(dup, p))) + ')' : '') +
+            ' (tips ' +
+            money(Math.max(0, tipsFromTotal(dup, p))) +
+            ')' +
             (worked ? ', ' + worked + ',' : '') +
             ' for ' +
             fmtDate(night.date) +

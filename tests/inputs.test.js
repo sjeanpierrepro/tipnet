@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import {
   businessDate,
   cutoffFromSettings,
-  checkCash,
   negativeCheckReason,
   readMoney,
   moneyTypo,
@@ -38,17 +37,10 @@ test('cutoffFromSettings reads defensively', () => {
   assert.equal(cutoffFromSettings({ dayCutoffHour: '4' }), 6);
   assert.equal(cutoffFromSettings({ dayCutoffHour: 30 }), 6);
 });
-test('checkCash: none, ok, negative, over', () => {
-  assert.equal(checkCash('100', '').status, 'none');
-  assert.equal(checkCash('100', '-').status, 'typo'); // a lone minus is a typo, not blank
-  assert.equal(checkCash('100', '1.2.3').status, 'typo');
-  assert.equal(checkCash('100', '40').status, 'ok');
-  assert.equal(checkCash('100', '100').status, 'ok');
-  assert.equal(checkCash('', '40').status, 'ok'); // no total yet: nothing to compare against
-  assert.equal(checkCash('100', '-5').status, 'negative');
-  const over = checkCash('100', '5000');
-  assert.equal(over.status, 'over');
-  assert.match(over.message, /Cash is more than what you made tonight\. Check the number\./);
+test('readMoney: a lone minus is a typo, not blank; -5 is read as a number below 0', () => {
+  assert.equal(readMoney(''), null);
+  assert.ok(Number.isNaN(readMoney('-')));
+  assert.equal(readMoney('-5'), -5);
 });
 const prof = {
   payTypes: [{ id: 'p1', k: 'hourly', name: 'Hourly', unit: 'hr', rate: 5, usual: 8 }],

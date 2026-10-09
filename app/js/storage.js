@@ -38,10 +38,10 @@ const STATE_KEY = 'state';
  *   budget:     see budget.js (shared: bills are paid from all money; a goal may name the restaurant it is saved from, fundedBy).
  *   profileExample / nightsExample: first-run example mode; only ever about the first restaurant.
  * Read restaurants only through activeWorkplace / workplaceOf / nightsOf below.
- * profile.entryMode: 'tips' (the number typed each night is cash + card tips; TipNet adds the hourly/per-shift pay) or
- * 'total' (tips plus that pay). Either way a stored night's `total` is everything made, so the math never reads entryMode.
+ * Tonight asks for CC tips and Cash tips; a stored night's `total` is everything made (its tips + its pay). Before v38 a
+ * profile could also say entryMode 'total' (one number typed: tips + pay); that is dropped on loading, and the nights
+ * typed that way keep their total (see draftFromNight in ui/tonight.js).
  */
-export const ENTRY_MODES = ['tips', 'total'];
 export const FIRST_WORKPLACE_NAME = 'My establishment';
 /**
  * The names v37 and earlier gave by themselves ("My restaurant", "Restaurant 2") follow the "establishment" wording.
@@ -78,7 +78,7 @@ export function seedState() {
       {
         id: 'w1',
         name: FIRST_WORKPLACE_NAME,
-        profile: { ...exampleProfile(), entryMode: 'tips' },
+        profile: exampleProfile(),
         calib: [],
       },
     ],
@@ -447,7 +447,7 @@ function cleanSettings(x, ids) {
     const d = { workplaceId: g.workplaceId === undefined ? ids[0] : g.workplaceId };
     d.step = [0, 1, 2].includes(g.step) ? g.step : 0;
     if (g.noDeductions === true) d.noDeductions = true;
-    if (isObj(g.profile)) d.profile = cleanProfile(g.profile, { startFallback: '', entryDefault: 'tips' });
+    if (isObj(g.profile)) d.profile = cleanProfile(g.profile, { startFallback: '' });
     out.guidedDraft = d;
   }
   // Nightly reminder (the calendar event last added): a valid one is kept, anything else dropped.
@@ -494,7 +494,7 @@ function cleanSettings(x, ids) {
 }
 
 /** The profile fields, each coerced to a safe shape. startFallback: the start date used when it is missing or broken. */
-function cleanProfile(p, { startFallback, entryDefault }) {
+function cleanProfile(p, { startFallback }) {
   const out = {};
   out.periodStart = validDate(p.periodStart) ? p.periodStart : startFallback;
   out.periodEnd = validDate(p.periodEnd) ? p.periodEnd : '';
@@ -526,7 +526,6 @@ function cleanProfile(p, { startFallback, entryDefault }) {
   Object.assign(out, cleanTipoutSetup(p));
   // "Cash tips here usually aren't run through payroll": the default for each new night (false for all old data)
   out.cashOffPayroll = p.cashOffPayroll === true;
-  out.entryMode = ENTRY_MODES.includes(p.entryMode) ? p.entryMode : entryDefault;
   return out;
 }
 
@@ -727,8 +726,6 @@ function migrateUnsafe(input, today) {
     const mine = rawNights.filter((n) => n.workplaceId === ids[i]);
     upgradeOldProfile(p, mine);
     const example = i === 0 && !!S.profileExample;
-    // Existing users keep the meaning of their nightly number: anyone with real nights or their own profile typed totals.
-    const realNights = !S.nightsExample && mine.length > 0;
     const typed = typeof w.name === 'string' ? w.name.trim().slice(0, 40) : '';
     let name = settingsIn.wordingV38 === true ? typed : renameOldDefault(typed);
     if (name !== typed) {
@@ -740,10 +737,7 @@ function migrateUnsafe(input, today) {
       name: name || (i === 0 ? FIRST_WORKPLACE_NAME : 'Establishment ' + (i + 1)),
       // A missing or broken start date: the example gets today (its dates are made up anyway). A real profile keeps it
       // blank, so Setup asks for it instead of inventing a pay schedule; it does not count as set up until it is in.
-      profile: cleanProfile(p, {
-        startFallback: example ? today : '',
-        entryDefault: realNights || !example ? 'total' : 'tips',
-      }),
+      profile: cleanProfile(p, { startFallback: example ? today : '' }),
       calib: (Array.isArray(w.calib) ? w.calib : []).filter(isObj).slice(-50).map(cleanCalib),
     };
     if (w.setupDone !== undefined && w.setupDone !== null) out.setupDone = !!w.setupDone;

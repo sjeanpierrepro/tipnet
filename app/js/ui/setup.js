@@ -181,7 +181,6 @@ function blankProfile() {
   });
   b.tipout = { on: false };
   b.tipouts = [];
-  b.entryMode = 'tips'; // new users type their tips; TipNet adds the hourly pay
   return b;
 }
 const eg = (n) => 'e.g. ' + Number(n).toLocaleString('en-US');
@@ -1030,37 +1029,6 @@ function nontaxSection(ctx, redrawSummary) {
 }
 
 /* ============ 3. pay types ============ */
-/**
- * "The number I type each night is:" tips only (TipNet adds the hourly/per-shift pay) or everything. It only changes how
- * Tonight and the night editor read the typed number; saved nights always store everything made, so they stay the same.
- */
-function entryModeField(ctx) {
-  const { p } = ctx;
-  const cur = p.entryMode === 'total' ? 'total' : 'tips';
-  const opt = (v, text) => {
-    const r = el('input', { type: 'radio', name: 'entry-mode', value: v, id: 'em-' + v });
-    r.checked = cur === v;
-    r.addEventListener('change', () => {
-      if (!r.checked) return;
-      p.entryMode = v;
-      ctx.touch(false);
-    });
-    return el('label', { class: 'check', for: r.id }, r, el('span', null, text));
-  };
-  return el(
-    'fieldset',
-    { class: 'field' },
-    el('legend', null, 'The number I type each night is:'),
-    el(
-      'div',
-      { class: 'stack-sm' },
-      opt('tips', 'Just my tips (cash + card). TipNet adds my hourly pay.'),
-      opt('total', 'Everything: tips plus my hourly pay'),
-    ),
-    el('p', { class: 'hint' }, 'Nights you already saved stay the same.'),
-  );
-}
-
 /** Job presets whose row needs its own name (a general or "other" kind has no telling name of its own). */
 const NAMED_JOB_KEYS = ['otherjob', 'other', 'hourly', 'shift'];
 
@@ -1279,9 +1247,8 @@ function payCard(ctx) {
     el(
       'p',
       { class: 'note' },
-      'Add every job you do where you work and what it pays. On Tonight you pick the job and type your hours; the rate fills in by itself.',
+      'Add every job you do where you work and what it pays. On Tonight you type your CC tips, cash tips and hours; TipNet adds the pay.',
     ),
-    entryModeField(ctx),
     el('h3', null, 'Jobs'),
     jobsHost,
     el('div', null, addJob),
