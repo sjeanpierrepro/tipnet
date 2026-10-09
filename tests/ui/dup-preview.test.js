@@ -75,3 +75,75 @@ test('dup preview: no saved night on that date, no note', async () => {
     await page.close();
   }
 });
+
+// Sixth review: on a date in a finished pay period locked with an older Setup, "As its own night" was worked out with
+// today's Setup ($112.20) while the preview and the stored night used the period's snapshot ($130.28).
+const finishedSeed = async () => {
+  const { todayISO, addDays, exampleProfile, snapshotFor } = await import('../../app/js/math.js');
+  const today = todayISO();
+  const start = addDays(today, -28);
+  const BARBACK = { id: 't1', k: 'barback', who: 'Barback', mode: 'pctTips', value: 15, from: 'cash' };
+  const oldSetup = () => ({
+    ...exampleProfile(today),
+    periodStart: start,
+    periodEnd: addDays(start, 13),
+    freq: 14,
+    shifts: 10,
+    tipout: { on: true },
+    tipouts: [{ ...BARBACK }],
+  });
+  const date = addDays(start, 2);
+  const seed = realState((S) => {
+    S.workplaces[0].setupDone = true;
+    const now = oldSetup();
+    now.gross = 1500; // today's tax rate differs from the snapshot's
+    now.deductions.push({ id: 'dx', k: 'dental', name: 'Dental', amount: 90, mode: 'fixed' });
+    S.workplaces[0].profile = now;
+    S.nights = [
+      {
+        id: 'n1',
+        date,
+        total: 500,
+        cash: 200,
+        pay: { p1: 8 },
+        barback: true,
+        tipouts: { t1: true },
+        tipoutOn: true,
+        tips: 404,
+        snap: snapshotFor(oldSetup(), 10),
+        workplaceId: 'w1',
+      },
+    ];
+  });
+  return { seed, date };
+};
+for (const [verb, pick] of [
+  ['Add to that night', 'add'],
+  ['Replace it', 'rep'],
+  ['Save as a separate night', 'own'],
+]) {
+  test(
+    'dup preview on a finished pay period locked with an older Setup: "' + verb + '" stores what it said',
+    async () => {
+      const { seed, date } = await finishedSeed();
+      const page = await boot({ seed });
+      try {
+        page.type(box(page, 'night-date'), date);
+        fill(page, '100', '50', '3');
+        await page.settle();
+        const pv = preview(page);
+        const quick = page.$('.quick-net').textContent;
+        assert.equal(quick, 'Estimated take-home: ' + pv.own, 'the preview and "As its own night" agree');
+        submit(page);
+        page.click(page.button(verb));
+        await page.settle();
+        const after = stored(page);
+        const got = pick === 'own' ? after[after.length - 1] : after[0];
+        assert.equal(money(got), pv[pick]);
+        if (pick === 'own') assert.equal(pv.own, '$130.28');
+      } finally {
+        await page.close();
+      }
+    },
+  );
+}

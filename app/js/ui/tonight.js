@@ -1553,6 +1553,13 @@ export function render(root) {
       peopleOf(snap ? { snap } : null, p),
     );
   };
+  /**
+   * A night as it is worked out once stored: locked with the finished pay period's snapshot its date falls in (a job
+   * added to Setup since at its Setup rate, snapWithPay, as locking stores it), else as it is. The preview and every
+   * figure of the same-date note use it, so they equal the stored night.
+   */
+  const asStored = (night) =>
+    d.tipoutSnap ? { ...night, snap: snapWithPay(d.tipoutSnap, p, night) } : night;
   /** The saved night on this date at this restaurant that Save would ask about (none for the example nights). */
   const savedOnDate = (date) => (S.nightsExample ? null : nightsOf(S, w.id).find((n) => n.date === date));
   // A locked night keeps its own pay rates: the pay added with these tips is worked out with them too, so the base
@@ -1605,7 +1612,7 @@ export function render(root) {
         '). Replace it: ' +
         money(net(replacedWith(cur, night))) +
         '. As its own night: ' +
-        money(net(night)) +
+        money(net(asStored(night))) +
         '.',
     );
   };
@@ -1630,8 +1637,7 @@ export function render(root) {
     const shifts = shiftsPerPeriod(p, hist).n;
     // the night as it will be stored: locked with a finished pay period's snapshot when its date is in one
     const snap = d.tipoutSnap || null;
-    const night = liveNight(d, 'draft', p, { snap });
-    if (snap) night.snap = snapWithPay(snap, p, night); // a job added to Setup since, at its rate, as locking stores it
+    const night = asStored(liveNight(d, 'draft', p, { snap }));
     const c = computeNight(night, p, shifts);
     const hoursMissing = missingHoursRow(p, d) != null;
     let ot = null;
