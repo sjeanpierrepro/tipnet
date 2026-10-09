@@ -124,6 +124,9 @@ export function worthKeeping(S) {
   return !!(b.balance && !b.balance.example);
 }
 
+/** Restore refused a backup made by a newer TipNet (Error('newer-backup')): what to do instead. */
+export const NEWER_BACKUP_MSG =
+  'This backup was made by a newer version of TipNet. Nothing was changed. Reload TipNet to get the update, then restore it again.';
 /** What was here before the last restore, while its Undo is offered (memory only, never saved). */
 let beforeRestore = null;
 /** Put back what was here before the last restore. Returns false when there is nothing to put back. */
@@ -157,7 +160,8 @@ function restoreState(next) {
   return s.nights.length;
 }
 /**
- * Replace everything with a pasted backup code. Throws Error('bad-backup') for a bad code.
+ * Replace everything with a pasted backup code. Throws Error('bad-backup') for a bad code, Error('newer-backup') for
+ * one made by a newer TipNet (nothing is changed then).
  * Also used by the error screen in app.js.
  */
 export function restoreFromCode(code) {
@@ -367,7 +371,11 @@ export function renderBackup(host, { restoreOnly = false } = {}) {
     try {
       restored(restoreFromCode(box.value));
     } catch (e) {
-      say('That code didn’t work. Copy the whole code and try again.');
+      say(
+        e && e.message === 'newer-backup'
+          ? NEWER_BACKUP_MSG
+          : 'That code didn’t work. Copy the whole code and try again.',
+      );
     }
   };
   if (hasReal)
@@ -417,7 +425,11 @@ export function renderBackup(host, { restoreOnly = false } = {}) {
     try {
       restored(restoreFromFileText(text));
     } catch (e) {
-      say('That file is not a TipNet backup. Pick the tipnet-backup file you saved.');
+      say(
+        e && e.message === 'newer-backup'
+          ? NEWER_BACKUP_MSG
+          : 'That file is not a TipNet backup. Pick the tipnet-backup file you saved.',
+      );
     }
   });
   const openFile = el('button', {

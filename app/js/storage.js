@@ -891,6 +891,8 @@ function fromBackupObject(d) {
   // v3 backups carry every restaurant (workplaces); v2 backups and prototype codes have one profile.
   if (!d || typeof d !== 'object' || !(d.profile || Array.isArray(d.workplaces)) || !Array.isArray(d.nights))
     throw new Error('shape');
+  // Made by a newer TipNet: this version could read it wrong (and save that over what is here), so it is refused.
+  if (newerSchema(d)) throw new Error('newer-backup');
   // A backup is text anyone can write by hand, so it never carries device-only data.
   // The license (entitlement) belongs to this device and is only ever set by activating a key.
   if (d.settings && typeof d.settings === 'object') {
@@ -902,16 +904,21 @@ function fromBackupObject(d) {
   delete out.settings.guidedDraft;
   return out;
 }
-/** Returns a migrated v2 state. Throws Error('bad-backup') if the code is not a TipNet backup. Accepts prototype codes. */
+/** Error('newer-backup') stays itself; anything else that went wrong reading a backup is Error('bad-backup'). */
+const backupError = (e) => (e && e.message === 'newer-backup' ? e : new Error('bad-backup', { cause: e }));
+/**
+ * Returns a migrated v2 state. Throws Error('bad-backup') if the code is not a TipNet backup, Error('newer-backup') if a
+ * newer TipNet made it. Accepts prototype codes.
+ */
 export function decodeBackup(code) {
   try {
     const clean = String(code).replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
     return fromBackupObject(JSON.parse(fromB64(clean)));
   } catch (e) {
-    throw new Error('bad-backup', { cause: e });
+    throw backupError(e);
   }
 }
-/** Reads a backup file's text (JSON; a backup code saved as a file works too). Throws Error('bad-backup'). */
+/** Reads a backup file's text (JSON; a backup code saved as a file works too). Throws like decodeBackup. */
 export function decodeBackupFile(textIn) {
   const t = String(textIn == null ? '' : textIn)
     .replace(/^\uFEFF/, '')
@@ -920,7 +927,7 @@ export function decodeBackupFile(textIn) {
     try {
       return fromBackupObject(JSON.parse(t));
     } catch (e) {
-      throw new Error('bad-backup', { cause: e });
+      throw backupError(e);
     }
   }
   return decodeBackup(t);

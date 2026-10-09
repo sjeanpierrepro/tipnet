@@ -18,7 +18,7 @@ Always open TipNet the same way. On iPhone, Safari and the home-screen app keep 
 
 ## 3. Set up from one paystub (one time)
 
-Grab your latest paystub. The first time, TipNet opens in **Setup**. (Moving from another phone? Tap **Restore a backup code** instead.) Until setup is done, Tonight has no numbers; **See an example first** shows made-up ones.
+Grab your latest paystub. The first time, TipNet opens in **Setup**. (Moving from another phone? Tap **Restore a backup code** instead. A backup made by a newer TipNet is refused until this phone has the update too: reload TipNet, then restore again.) Until setup is done, Tonight has no numbers; **See an example first** shows made-up ones.
 
 **Step 1: Pay period and gross pay**
 - **Pay period started** and **Pay period ended** (the dates on the stub)

@@ -18,6 +18,7 @@ import {
 import { budgetVisible, reloadConfig } from './billing.js';
 import {
   restoreFromCode,
+  NEWER_BACKUP_MSG,
   eraseEverything,
   backupReminder,
   nightsBackupCard,
@@ -71,7 +72,10 @@ function errorScreen(root) {
       afterFix();
     } catch (e) {
       msg.hidden = false;
-      msg.textContent = 'That code did not work. Copy the whole code and try again.';
+      msg.textContent =
+        e && e.message === 'newer-backup'
+          ? NEWER_BACKUP_MSG
+          : 'That code did not work. Copy the whole code and try again.';
     }
   });
   // Saved data that could not be read (storage.load kept a copy and saves nothing): a way to get the raw data out first.

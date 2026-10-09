@@ -169,3 +169,23 @@ test('restore: budget items alone also need two taps; a fresh device restores wi
     await page.close();
   }
 });
+
+test('restore: a code from a newer TipNet is refused with a plain message, and nothing here changes', async () => {
+  const page = await boot({ seed: realState((S) => (S.workplaces[0].setupDone = true)) });
+  try {
+    const S = realState();
+    S.nights = [
+      { id: 'z', date: '2026-09-22', total: 250, tips: 200, cash: 50, pay: { p1: 4 }, barback: false },
+    ];
+    S.schemaVersion = 99;
+    page.tab('setup');
+    const before = JSON.stringify(page.state());
+    page.type(page.must(page.$('#bk-code'), '#bk-code'), toCode(S));
+    page.click(page.button('Restore from code'));
+    page.click(page.button('Tap again to replace what is here'));
+    assert.match(page.text(), /This backup was made by a newer version of TipNet\./);
+    assert.equal(JSON.stringify(page.state()), before);
+  } finally {
+    await page.close();
+  }
+});
