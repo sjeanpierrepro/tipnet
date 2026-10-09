@@ -19,6 +19,8 @@ import {
   payKind,
   jobsOf,
   otherPayOf,
+  retiredUsed,
+  isRetired,
   findPayPreset,
   exampleProfile,
   exampleNights,
@@ -216,7 +218,7 @@ export function blankDraft(S, p) {
 /** Keep a draft in step with Setup (a job removed or turned into other pay since): rows hold current jobs only, never twice. */
 export function syncDraft(d, p) {
   if (!d.cashOffTouched) d.cashOffPayroll = !!p.cashOffPayroll;
-  const jobs = jobsOf(p);
+  const jobs = jobsOf(p, d.keep);
   const isJobId = (id) => jobs.some((t) => same(t.id, id));
   d.rows = (d.rows || []).filter((id, k, a) => isJobId(id) && a.findIndex((x) => same(x, id)) === k);
   if (!d.rows.length && jobs[0]) {
@@ -253,6 +255,7 @@ export function draftFromNight(n, p) {
     showOther: false,
     tipouts: {},
     tipoutSnap: n.snap || null, // a locked night ticks its own tip-out people
+    keep: retiredUsed(n, p), // pay types taken out of Setup that this night has an amount for: still shown for it
     tipoutOn: nightTipout(n, p).on, // whether tip-outs were on when it was saved: Setup's switch doesn't change it
     cashOffPayroll: !!n.cashOffPayroll,
     cashOffTouched: true, // a saved night keeps its own choice, whatever Setup says now
@@ -390,7 +393,8 @@ export function storedNight(d, p, id, { snap } = {}) {
   const ln = liveNight(d, id, p, { snap });
   const pay = {};
   p.payTypes.forEach((t, i) => {
-    pay[t.id] = payAmount(ln, t, i);
+    const a = payAmount(ln, t, i);
+    if (a || !isRetired(t)) pay[t.id] = a; // a pay type taken out of Setup only on a night that has an amount for it
   });
   const out = {
     id,
@@ -452,7 +456,7 @@ export function missingHoursRow(p, d) {
 /** Pay types with an amount box on screen right now: the job rows, then other pay once it is shown. */
 function visibleTypes(p, d) {
   const rows = (d.rows || []).map((id) => typeById(p, id)).filter(Boolean);
-  return d.showOther ? rows.concat(otherPayOf(p)) : rows;
+  return d.showOther ? rows.concat(otherPayOf(p, d.keep)) : rows;
 }
 /**
  * {msg, id}: a plain message about the hours/shifts typed (and the pay type it is about), or {msg: ''}.
@@ -882,7 +886,7 @@ export function nightFields(
   }
 
   /* ----- jobs worked tonight ----- */
-  const jobs = jobsOf(p);
+  const jobs = jobsOf(p, d.keep); // a retired job only on a saved night that has hours for it (d.keep)
   const jobsHost = el('div', { class: 'stack-sm' });
   const rateLines = []; // [{t, input, line}] for the rows on screen, refreshed as hours are typed
   const rateText = (t, v) => {
@@ -1024,7 +1028,7 @@ export function nightFields(
   );
 
   /* ----- other pay (overtime, holiday, bonus...), hidden until asked for ----- */
-  const others = otherPayOf(p);
+  const others = otherPayOf(p, d.keep);
   const otherHost = el('div');
   const drawOther = () => {
     clear(otherHost);

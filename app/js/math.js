@@ -290,7 +290,7 @@ export function snapshotFor(p, shifts) {
     rf: fedRate(p),
     fixed: round2(fixedTotal(p)),
     n: shifts > 0 ? shifts : shiftsPerPeriod(p, [], todayISO()).n,
-    pay: (p.payTypes || []).map(snapPayOf),
+    pay: (p.payTypes || []).filter((t) => !isRetired(t)).map(snapPayOf), // a retired one: snapWithPay, per night
     tipout: savedTipout(ts.on, ts.list), // with the old single shape too when that fits (for v37)
     tipouts: ts.list.map((x) => ({ ...x })),
   };
@@ -400,7 +400,8 @@ export function periodToSetup(p, nights, idx, today = todayISO()) {
       const { usual, ...kept } = t; // the usual amount only matters for the first pay type
       snap.pay.push(kept);
     });
-    const out = { ...n, snap, tipoutOn: now.on };
+    // a retired pay type (taken out of Setup) the night has an amount for and no rate of its own: its last Setup rate
+    const out = { ...n, snap: snapWithPay(snap, p, n), tipoutOn: now.on };
     const then = tipoutSetup(n.snap || p).list; // the people it was worked out with
     if (then.length || now.list.length) {
       const ticks = nightTicks(n, then);
@@ -1177,10 +1178,66 @@ export function payKind(t, i) {
   if (EXTRA_HOUR_KEYS.includes(t.k) || t.diff) return 'other';
   return 'job';
 }
-/** The jobs in a profile, main job first. */
-export const jobsOf = (p) => ((p && p.payTypes) || []).filter((t, i) => payKind(t, i) === 'job');
-/** Everything else: overtime/holiday/differential/PTO hours and flat amounts. */
-export const otherPayOf = (p) => ((p && p.payTypes) || []).filter((t, i) => payKind(t, i) === 'other');
+/**
+ * A pay type taken out of Setup while a saved night has an amount for it (Setup's Remove, keepUsedPay): t.retired = 1.
+ * It stays in profile.payTypes, with its rate, unit and flags, for the money of the nights that used it (the running
+ * pay period follows Setup, so taking it out must not take their pay away), but it is gone from Setup's list, Tonight's
+ * pickers and new nights; the night editor shows it on the nights that have an amount for it. The main job is never one.
+ */
+export const isRetired = (t) => !!(t && t.retired);
+const shown = (t, keep) => !isRetired(t) || (keep || []).some((id) => String(id) === String(t.id));
+/** The jobs in a profile, main job first. keep: ids of retired ones to include (a night that has an amount for them). */
+export const jobsOf = (p, keep) =>
+  ((p && p.payTypes) || []).filter((t, i) => payKind(t, i) === 'job' && shown(t, keep));
+/** Everything else: overtime/holiday/differential/PTO hours and flat amounts (keep: as jobsOf). */
+export const otherPayOf = (p, keep) =>
+  ((p && p.payTypes) || []).filter((t, i) => payKind(t, i) === 'other' && shown(t, keep));
+const hasAmount = (n, id) => !!n && !!n.pay && typeof n.pay === 'object' && num(n.pay[id]) !== 0;
+/** Ids of the retired pay types night n has an amount for (the night editor shows them). */
+export const retiredUsed = (n, p) =>
+  ((p && p.payTypes) || []).filter((t) => isRetired(t) && hasAmount(n, t.id)).map((t) => t.id);
+/** A pay type's name to match it by: its own, else its preset's ('' for a general one with no name of its own). */
+function payKey(t) {
+  const own = String((t && t.name) || '')
+    .trim()
+    .toLowerCase();
+  if (own) return own;
+  const pr = findPayPreset(t && t.k);
+  return pr && !['other', 'otherjob', 'ntother'].includes(pr.k) ? pr.name.toLowerCase() : '';
+}
+/**
+ * Setup's pay types as they are saved (Setup > Save, guided Finish). before: the list saved so far; after: the new one;
+ * nights: that establishment's saved nights (not the example ones). A pay type of before that after doesn't have and a
+ * night (locked or not) has an amount for is kept, retired, where it was; one no night uses is gone. A new pay type
+ * (an id before doesn't have) with the same name (any case) as a retired one, the same unit and the same kind (job or
+ * other pay) brings that one back instead: its id (so its nights count again), with the new entry's rate, unit and
+ * flags, at its old place. Pure: a new list (entries that change are copies).
+ */
+export function keepUsedPay(before, after, nights) {
+  const old = Array.isArray(before) ? before : [];
+  const out = (Array.isArray(after) ? after : []).slice();
+  const ns = Array.isArray(nights) ? nights : [];
+  const has = (list, id) => list.some((t) => String(t.id) === String(id));
+  old.forEach((t, i) => {
+    if (has(out, t.id) || !ns.some((n) => hasAmount(n, t.id))) return;
+    out.splice(Math.min(Math.max(1, i), out.length), 0, { ...t, retired: 1 });
+  });
+  out.slice().forEach((t) => {
+    if (!t || isRetired(t) || has(old, t.id) || out.indexOf(t) === 0) return;
+    const key = payKey(t);
+    if (!key) return;
+    const at = out.findIndex(
+      (r, j) =>
+        j > 0 && isRetired(r) && payKey(r) === key && r.unit === t.unit && payKind(r, j) === payKind(t, j),
+    );
+    if (at < 0) return;
+    const back = { ...t, id: out[at].id };
+    delete back.retired;
+    out[at] = back;
+    out.splice(out.indexOf(t), 1);
+  });
+  return out;
+}
 export const JOB_PRESETS = PAY_PRESETS.filter((x) => x.kind === 'job');
 export const OTHER_PAY_PRESETS = PAY_PRESETS.filter((x) => x.kind === 'other');
 const PRETAX_NOTE = 'Your stub’s taxes already account for this, so nothing else to enter.';

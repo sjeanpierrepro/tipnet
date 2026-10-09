@@ -244,6 +244,7 @@ function cleanPayTypes(list) {
       if (t.supp) o.supp = 1;
       if (t.diff) o.diff = true;
       if (t.nontax) o.nontax = 1; // a non-taxable amount (no withholding)
+      if (t.retired && i > 0) o.retired = 1; // taken out of Setup, kept for the nights that used it (math.isRetired)
       return o;
     });
   if (!out.length) out.push({ id: 'p1', name: 'Main rate', rate: 0, unit: 'hr', usual: 7, k: 'hourly' });

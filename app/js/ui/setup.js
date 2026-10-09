@@ -16,6 +16,8 @@ import {
   JOB_PRESETS,
   OTHER_PAY_PRESETS,
   payKind,
+  isRetired,
+  keepUsedPay,
   DEDUCTION_PRESETS,
   findPayPreset,
   findDeductionPreset,
@@ -1156,6 +1158,7 @@ function payCard(ctx) {
         fr.setError(t.rate <= 0 ? 'Enter the rate from your stub.' : '');
         // Overtime follows the main job (1.5x) while it still matches the old main rate or is empty.
         p.payTypes.forEach((o) => {
+          if (isRetired(o)) return; // taken out of Setup: its rate stays what its nights were worked out with
           if (o.k !== 'ot' || !(num(o.rate) === 0 || Math.abs(num(o.rate) - was * 1.5) < 0.006)) return;
           o.rate = +(t.rate * 1.5).toFixed(2);
           const box = document.getElementById('pr-' + o.id);
@@ -1295,6 +1298,7 @@ function payCard(ctx) {
     clear(otherHost);
     rateFields.length = 0;
     p.payTypes.forEach((t, i) => {
+      if (isRetired(t)) return; // taken out of Setup (kept for the nights that used it): not listed
       if (payKind(t, i) === 'job') jobsHost.append(jobRow(t, i));
       else otherHost.append(otherRow(t, i));
     });
@@ -2128,6 +2132,7 @@ function guided(root, ctx) {
       p.payTypes = p.payTypes.filter((t, i) => i === 0 || t.unit === 'amt' || num(t.rate) > 0);
       p.rateOverride = null;
     };
+    const payBefore = copyOf(w.profile.payTypes || []);
     if (gProfile) {
       // the user's own numbers replace the example only now
       tidy(gProfile);
@@ -2136,6 +2141,8 @@ function guided(root, ctx) {
       gProfile = null;
       carryTipoutTicks(S, w, peopleBefore);
     } else if (!first) tidy(w.profile); // a restaurant added later: drop the blank rows it started with
+    // pay a saved night has an amount for is never dropped (retired instead; math.keepUsedPay)
+    w.profile.payTypes = keepUsedPay(payBefore, w.profile.payTypes, historyOf(S, w));
     const hadExamples = S.nightsExample;
     if (hadExamples) {
       S.nights = [];
@@ -2459,11 +2466,15 @@ function saveOpen() {
   const live = w.profile;
   const sigBefore = rateSig(live);
   const peopleBefore = copyOf(tipoutSetup(live).list);
+  const payBefore = copyOf(live.payTypes || []);
   new Set([...Object.keys(base.profile), ...Object.keys(draft.profile)]).forEach((k) => {
     if (k === 'rateOverride' || same(draft.profile[k], base.profile[k])) return;
     if (draft.profile[k] === undefined) delete live[k];
     else live[k] = copyOf(draft.profile[k]);
   });
+  // A job or other pay taken out that a saved night has an amount for stays, retired, for that night's money; one added
+  // with a retired one's name brings it back (math.keepUsedPay).
+  live.payTypes = keepUsedPay(payBefore, live.payTypes, historyOf(S, w));
   carryTipoutTicks(S, w, peopleBefore); // a barback removed and added again keeps the nights' ticks
   delete live.shiftsAuto; // the shift count TipNet filled in was there to check: Save confirms it
   if (draft.name !== base.name) w.name = draft.name;
