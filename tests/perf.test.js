@@ -53,14 +53,16 @@ function refPeriodTotals(p, nights, idx, today, shifts) {
     }
   });
   const exact = ns.length > 0 && M.isFinal(p, idx, today);
+  let adj = 0;
   if (exact) {
-    const adj = fixedShares - M.toCents(M.fixedTotal(p));
+    adj = fixedShares - M.toCents(M.fixedTotal(p));
     net += adj;
     chk += adj;
   }
   return {
     ns,
     net: M.fromCents(net),
+    adjust: M.fromCents(adj),
     hrs,
     chk: M.fromCents(chk),
     kept: M.fromCents(kept),

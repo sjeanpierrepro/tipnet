@@ -142,8 +142,9 @@ test('moving a night back into the just-finished pay period asks first, then mov
     const n = page.state().nights.find((x) => x.date === late);
     assert.equal(n.periodStart, PREV);
     assert.ok(n.snap, 'locked right away in the finished period');
-    assert.equal(sectionOf(page, PREV).querySelectorAll('.list-row').length, 2);
-    assert.equal(sectionOf(page, START).querySelectorAll('.list-row').length, 1);
+    // nights only (a finished period may also show its "Exact amounts on this check" line)
+    assert.equal(sectionOf(page, PREV).querySelectorAll('.list-row:not(.period-adjust)').length, 2);
+    assert.equal(sectionOf(page, START).querySelectorAll('.list-row:not(.period-adjust)').length, 1);
     const after = totals();
     assert.notEqual(after[0], before[0], 'this period’s total went down');
     assert.notEqual(after[1], before[1], 'the finished period’s total went up');

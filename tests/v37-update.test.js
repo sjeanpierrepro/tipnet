@@ -57,7 +57,7 @@ function money(S, Mx = M) {
   return {
     nights: S.nights.map((n) => ({ id: n.id, ...Mx.computeNight(n, p, 10) })),
     periods: idx.map((i) => {
-      const { ns, ...totals } = Mx.periodTotals(p, S.nights, i, today);
+      const { ns, adjust, ...totals } = Mx.periodTotals(p, S.nights, i, today); // v37 has no "Exact amounts" line
       return { nights: ns.length, ...totals };
     }),
   };

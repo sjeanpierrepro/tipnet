@@ -37,7 +37,7 @@ test('Pay periods shows the latest periods; "Show older" adds more in place and 
     assert.equal(sections(page)[0], first, 'existing periods were not rebuilt');
     assert.equal(page.doc.activeElement, more, 'focus stays on the button');
     while (page.$('#periods-older')) page.click(page.$('#periods-older'));
-    assert.equal(page.$$('.list-row', page.app).length, 90, 'every night reachable');
+    assert.equal(page.$$('.list-row:not(.period-adjust)', page.app).length, 90, 'every night reachable');
     assert.ok(
       page.doc.activeElement.classList.contains('label'),
       'focus moved to the first newly shown period',

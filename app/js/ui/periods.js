@@ -42,7 +42,7 @@ import {
   moneyInput,
   select,
   money,
-  money0,
+  minus,
   pct,
   fmtDate,
   fmtShort,
@@ -622,7 +622,7 @@ function nightRow(S, w, n, shifts) {
           )
         : null,
     ),
-    el('div', { class: 'amount' }, money0(c.net)),
+    el('div', { class: 'amount' }, money(c.net)),
     el(
       'div',
       { class: 'row-actions' },
@@ -788,6 +788,26 @@ function group(S, w, idx, ctx) {
   const t = periodTotals(p, ctx.nights, idx, today, shifts, ctx.index);
   const rows = t.ns.map((n) => nightRow(S, w, n, shifts));
   const editingRow = rows.length && t.ns.some((n) => n.id === editingId);
+  // A finished check takes its fixed deductions (and non-taxable pay) exactly once, while each night carries an
+  // estimated share: this line shows the difference, so the nights plus this line are the period's take-home to the cent.
+  const adjRow =
+    t.exact && t.adjust !== 0
+      ? el(
+          'li',
+          { class: 'list-row period-adjust' },
+          el(
+            'div',
+            { class: 'main' },
+            el('div', null, 'Exact amounts on this check'),
+            el(
+              'div',
+              { class: 'hint' },
+              'Each night above used an estimated share of this check’s fixed deductions. This line makes the nights add up to the real check.',
+            ),
+          ),
+          el('div', { class: 'amount' }, t.adjust < 0 ? minus(t.adjust) : '+' + money(t.adjust)),
+        )
+      : null;
   const sec = el(
     'section',
     { class: 'stack-sm', 'data-period': idx, 'data-workplace': w.id },
@@ -799,7 +819,7 @@ function group(S, w, idx, ctx) {
         { class: 'label', tabindex: '-1', 'data-focus-key': 'period-' + w.id + '-' + idx },
         (ctx.named ? w.name + ' · ' : '') + periodLabel(p, idx) + (t.exact ? ' · final' : ''),
       ),
-      el('b', { class: 'num' }, money0(t.net) + ' take-home'),
+      el('b', { class: 'num' }, money(t.net) + ' take-home'),
     ),
     t.setAside > 0
       ? el('p', { class: 'hint' }, 'Taxes to set aside on cash (estimate): ' + money(t.setAside))
@@ -809,8 +829,9 @@ function group(S, w, idx, ctx) {
           'div',
           { class: 'stack-sm' },
           rows.map((r) => (r.tagName === 'LI' ? el('ul', { class: 'list' }, r) : r)),
+          adjRow ? el('ul', { class: 'list' }, adjRow) : null,
         )
-      : el('ul', { class: 'list' }, rows),
+      : el('ul', { class: 'list' }, rows, adjRow),
     t.exact ? updateControl(S, w, idx, ctx) : null,
   );
   if (view && view.ctxs.get(w.id) === ctx) view.sections.set(gkey(w.id, idx), sec);

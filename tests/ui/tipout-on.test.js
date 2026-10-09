@@ -63,7 +63,7 @@ test('a night saved while "I tip out" is off keeps no tip-out when it is switche
     assert.equal(net(page, page.state().nights[0]), 410.75, 'still $410.75, no $60.60 tip-out');
     page.tab('periods');
     assert.doesNotMatch(page.text(), /\$60\.60|no tip-out/, 'no tip-out taken, and none expected');
-    assert.match(page.text(), /\$411 take-home/);
+    assert.match(page.text(), /\$410\.75 take-home/);
     // a new night tonight follows the switch as it is now
     page.tab('tonight');
     enter(page, addDays(today, -2));
