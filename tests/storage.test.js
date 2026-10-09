@@ -135,7 +135,7 @@ test('backup: large state and bad codes', () => {
   }));
   assert.equal(decodeBackup(encodeBackup(s)).nights.length, 3000);
   for (const bad of ['', 'not base64!!', 'e30=', encodeBackup({ hello: 1 }).slice(0, 10)]) {
-    assert.throws(() => decodeBackup(bad), /bad-backup/);
+    assert.throws(() => decodeBackup(bad), /bad-backup|not-tipnet/); // unreadable, or not TipNet data
   }
 });
 

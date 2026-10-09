@@ -106,7 +106,7 @@ test('backups (code and file) leave out the guided draft and the license key; th
   // a backup code saved into a file works too; junk does not
   assert.equal(decodeBackupFile('\uFEFF' + code + '\n').nights.length, 1);
   for (const bad of ['', '{}', '{"profile":1}', 'not a backup', '[1,2]', '{"profile":{},"nights":"x"}'])
-    assert.throws(() => decodeBackupFile(bad), /bad-backup/, bad);
+    assert.throws(() => decodeBackupFile(bad), /bad-backup|not-tipnet/, bad); // unreadable, or not TipNet data
 });
 
 test('migrate locks finished periods with the "today" it is given, not the real clock', () => {

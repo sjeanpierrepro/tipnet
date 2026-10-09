@@ -127,6 +127,8 @@ export function worthKeeping(S) {
 /** Restore refused a backup made by a newer TipNet (Error('newer-backup')): what to do instead. */
 export const NEWER_BACKUP_MSG =
   'This backup was made by a newer version of TipNet. Nothing was changed. Reload TipNet to get the update, then restore it again.';
+/** Restore refused a code or file that reads but isn't TipNet data (Error('not-tipnet')). */
+export const NOT_TIPNET_MSG = 'This isn’t a TipNet backup. Nothing was changed.';
 /** What was here before the last restore, while its Undo is offered (memory only, never saved). */
 let beforeRestore = null;
 /** Put back what was here before the last restore. Returns false when there is nothing to put back. */
@@ -160,14 +162,14 @@ function restoreState(next) {
   return s.nights.length;
 }
 /**
- * Replace everything with a pasted backup code. Throws Error('bad-backup') for a bad code, Error('newer-backup') for
- * one made by a newer TipNet (nothing is changed then).
+ * Replace everything with a pasted backup code. Throws Error('bad-backup') for a bad code, Error('not-tipnet') for data
+ * that isn't TipNet's, Error('newer-backup') for one made by a newer TipNet (nothing is changed then).
  * Also used by the error screen in app.js.
  */
 export function restoreFromCode(code) {
   return restoreState(decodeBackup(code));
 }
-/** Replace everything with the text of a backup file. Throws Error('bad-backup') if it is not a TipNet backup. */
+/** Replace everything with the text of a backup file. Throws like restoreFromCode (nothing is changed then). */
 export function restoreFromFileText(text) {
   return restoreState(decodeBackupFile(text));
 }
@@ -374,7 +376,9 @@ export function renderBackup(host, { restoreOnly = false } = {}) {
       say(
         e && e.message === 'newer-backup'
           ? NEWER_BACKUP_MSG
-          : 'That code didn’t work. Copy the whole code and try again.',
+          : e && e.message === 'not-tipnet'
+            ? NOT_TIPNET_MSG
+            : 'That code didn’t work. Copy the whole code and try again.',
       );
     }
   };
@@ -428,7 +432,9 @@ export function renderBackup(host, { restoreOnly = false } = {}) {
       say(
         e && e.message === 'newer-backup'
           ? NEWER_BACKUP_MSG
-          : 'That file is not a TipNet backup. Pick the tipnet-backup file you saved.',
+          : e && e.message === 'not-tipnet'
+            ? NOT_TIPNET_MSG
+            : 'That file is not a TipNet backup. Pick the tipnet-backup file you saved.',
       );
     }
   });

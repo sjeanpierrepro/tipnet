@@ -189,3 +189,39 @@ test('restore: a code from a newer TipNet is refused with a plain message, and n
     await page.close();
   }
 });
+
+test('restore: a code or file that is not TipNet data is refused with a plain message, and nothing here changes', async () => {
+  const page = await boot({ seed: realState((S) => (S.workplaces[0].setupDone = true)) });
+  try {
+    page.tab('setup');
+    const before = JSON.stringify(page.state());
+    for (const d of [
+      { workplaces: [], nights: [] },
+      { workplaces: [{ id: 'w1' }], nights: [] },
+      { profile: 1, nights: [] },
+    ]) {
+      page.type(page.must(page.$('#bk-code'), '#bk-code'), toCode(d));
+      const btn = page.must(
+        page.$$('button').find((b) => /Restore from code|Tap again/.test(b.textContent)),
+        'restore',
+      );
+      page.click(btn);
+      if (/Tap again/.test(btn.textContent)) page.click(btn);
+      assert.match(page.text(), /This isn’t a TipNet backup\. Nothing was changed\./, JSON.stringify(d));
+      assert.equal(JSON.stringify(page.state()), before);
+      // the same as a file
+      const input = page.must(page.$('#bk-file'), 'file input');
+      const text = JSON.stringify(d);
+      Object.defineProperty(input, 'files', {
+        configurable: true,
+        value: [{ size: text.length, text: async () => text }],
+      });
+      input.dispatchEvent(new page.win.Event('change'));
+      await page.settle();
+      assert.match(page.text(), /This isn’t a TipNet backup\. Nothing was changed\./);
+      assert.equal(JSON.stringify(page.state()), before);
+    }
+  } finally {
+    await page.close();
+  }
+});
