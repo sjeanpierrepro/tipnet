@@ -1538,6 +1538,73 @@ export function render(root) {
   // region (the debounced summary above already speaks it).
   const quick = el('p', { class: 'quick-net', 'data-focus-key': 'night-quick-net' });
 
+  /** The night as Save stores it (the snapshot of a finished pay period it falls in, the ticks aligned to it). */
+  const nightToStore = (id) => {
+    const snap = d.tipoutSnap || null;
+    return alignNight(
+      { ...storedNight(d, p, id, { snap }), workplaceId: w.id },
+      d,
+      p,
+      null,
+      peopleOf(snap ? { snap } : null, p),
+    );
+  };
+  /** The saved night on this date at this restaurant that Save would ask about (none for the example nights). */
+  const savedOnDate = (date) => (S.nightsExample ? null : nightsOf(S, w.id).find((n) => n.date === date));
+  // A locked night keeps its own pay rates: the pay added with these tips is worked out with them too, so the base
+  // pay is counted once, at the rates that night is shown with. Tonight's boxes are Setup's people; a
+  // locked night is worked out with its snapshot's, so the ticks are carried over to those (alignNight).
+  const onto = (night, target) => ({
+    ...(target.snap ? storedNight(d, p, night.id, { snap: target.snap }) : night),
+  });
+  /** What "Add to that night" stores for the saved night cur. */
+  const addedTo = (cur, night) =>
+    mergeNights(cur, alignNight(onto(night, cur), d, p, null, peopleOf(cur, p)), p);
+  /** What "Replace it" stores for the saved night cur. */
+  const replacedWith = (cur, night) => {
+    const made = onto(night, cur);
+    return alignNight(
+      {
+        ...made,
+        id: cur.id,
+        workplaceId: w.id,
+        // a locked night keeps its snapshot, with a job added to Setup since at its Setup rate (snapWithPay)
+        ...(cur.snap ? { snap: snapWithPay(cur.snap, p, made) } : {}),
+        ...(cur.periodStart ? { periodStart: cur.periodStart } : {}), // stays in the pay period it was moved to
+      },
+      d,
+      p,
+      cur,
+      peopleOf(cur, p),
+    );
+  };
+  /** Under the preview, when a night is already saved on this date: what each choice Save will offer comes to. */
+  const dupPreview = (shifts) => {
+    const cur = savedOnDate(d.date);
+    if (!cur || entryCheck(p, d, { today: tonightOf(S) })) return null;
+    const night = nightToStore(Date.now());
+    const net = (n) => computeNight(n, p, shifts).net;
+    const was = net(cur);
+    const added = fromCents(toCents(net(addedTo(cur, night))) - toCents(was));
+    return el(
+      'p',
+      { class: 'note', id: 'night-dup-preview' },
+      'You already saved a night on ' +
+        fmtDate(d.date) +
+        (many ? ' at ' + w.name : '') +
+        ' (' +
+        money(was) +
+        '). Add to it: ' +
+        money(net(addedTo(cur, night))) +
+        ' (' +
+        (added < 0 ? minus(added) : '+' + money(added)) +
+        '). Replace it: ' +
+        money(net(replacedWith(cur, night))) +
+        '. As its own night: ' +
+        money(net(night)) +
+        '.',
+    );
+  };
   const update = () => {
     // A typo (like 1.2.3) or tips below $0 show no numbers: they would be worked out from something else than what was
     // typed.
@@ -1583,6 +1650,8 @@ export function render(root) {
     // something was entered (anythingEntered), the rule Save uses
     const none = !anythingEntered(p, d);
     clear(resultHost).append(resultCard(c, w, ot, hoursMissing, none));
+    const dupNote = none || hoursMissing ? null : dupPreview(shifts);
+    if (dupNote) resultHost.append(dupNote);
     lastSummary = !none && !hoursMissing ? 'Estimated take-home ' + money(c.net) : '';
     quick.textContent = none
       ? ''
@@ -1693,14 +1762,7 @@ export function render(root) {
     syncSnap(); // its pay period may have been locked since (at midnight, in another window)
     const prob = entryCheck(p, d, { today: tonightOf(S) });
     if (prob) return showEntryProblem(fields, prob);
-    const snap = d.tipoutSnap || null; // the snapshot it will be locked with (finishedSnap), else today's Setup
-    const night = alignNight(
-      { ...storedNight(d, p, Date.now(), { snap }), workplaceId: w.id },
-      d,
-      p,
-      null,
-      peopleOf(snap ? { snap } : null, p),
-    );
+    const night = nightToStore(Date.now()); // locked with the snapshot of a finished pay period (finishedSnap), else today's Setup
     // Same inputs as the preview: shift history before this night, never the example nights.
     const shifts = shiftsPerPeriod(p, historyOf(S, w)).n;
     const store = () => {
@@ -1708,15 +1770,9 @@ export function render(root) {
       return { stored: night };
     };
     // Only this restaurant's nights: working two places on the same date is two separate nights.
-    const dup = S.nightsExample ? null : nightsOf(S, w.id).find((n) => n.date === night.date);
+    const dup = savedOnDate(night.date);
     if (!dup) return finish(night, shifts, store);
     const choose = (verb) => () => finish(night, shifts, verb);
-    // A locked night keeps its own pay rates: the pay added with these tips is worked out with them too, so the base
-    // pay is counted once, at the rates that night is shown with. Tonight's boxes are Setup's people; a
-    // locked night is worked out with its snapshot's, so the ticks are carried over to those (alignNight).
-    const onto = (target) => ({
-      ...(target.snap ? storedNight(d, p, night.id, { snap: target.snap }) : night),
-    });
     /**
      * Write over the saved night, looked up by id when the button is clicked (it may have been locked, merged from another
      * window or deleted since the question was shown). If it is gone, tonight is saved on its own instead.
@@ -1737,7 +1793,7 @@ export function render(root) {
         let was = null; // the night's take-home as it was stored (null: it is gone, tonight is saved on its own)
         const stored = overDup((cur) => {
           was = computeNight(cur, p, shifts).net;
-          return mergeNights(cur, alignNight(onto(cur), d, p, null, peopleOf(cur, p)), p);
+          return addedTo(cur, night);
         });
         return { stored, was };
       }),
@@ -1750,23 +1806,7 @@ export function render(root) {
     rep.addEventListener(
       'click',
       choose(() => ({
-        stored: overDup((cur) => {
-          const made = onto(cur);
-          return alignNight(
-            {
-              ...made,
-              id: cur.id,
-              workplaceId: w.id,
-              // a locked night keeps its snapshot, with a job added to Setup since at its Setup rate (snapWithPay)
-              ...(cur.snap ? { snap: snapWithPay(cur.snap, p, made) } : {}),
-              ...(cur.periodStart ? { periodStart: cur.periodStart } : {}), // stays in the pay period it was moved to
-            },
-            d,
-            p,
-            cur,
-            peopleOf(cur, p),
-          );
-        }),
+        stored: overDup((cur) => replacedWith(cur, night)),
       })),
     );
     const sep = el(
