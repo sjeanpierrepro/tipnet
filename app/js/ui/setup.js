@@ -1665,9 +1665,11 @@ function reminderCard(ctx) {
   const cutoff = () => cutoffFromSettings(S.settings);
   const early = el('p', { class: 'hint', id: 'rem-early' });
   const showEarly = () => {
-    const next = reminderDays(time.value, [5], cutoff())[0] === 6; // Saturday night -> Sunday morning
+    const next = reminderDays(time.value, [0], cutoff())[0] === 1; // a night moves to the morning after it
     const text = next
-      ? 'A ' + timeLabel(time.value) + ' reminder for Saturday night comes early Sunday morning.'
+      ? 'Reminders before ' +
+        timeLabel(String(cutoff()).padStart(2, '0') + ':00') +
+        ' (your Late-nights cutoff) come the morning after each night you work.'
       : '';
     if (early.textContent !== text) early.textContent = text;
     early.hidden = !next;

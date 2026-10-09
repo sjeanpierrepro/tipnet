@@ -78,7 +78,7 @@ test('Nightly reminder: the boxes are the nights you work; Fri and Sat at 2:00 A
     assert.ok(group.contains(page.$('#rem-day-4')));
     assert.equal(
       page.$('#rem-early').textContent,
-      'A 2:00 AM reminder for Saturday night comes early Sunday morning.',
+      'Reminders before 6:00 AM (your Late-nights cutoff) come the morning after each night you work.',
     );
     for (let i = 0; i < 7; i++) {
       page.$('#rem-day-' + i).checked = i === 4 || i === 5;
