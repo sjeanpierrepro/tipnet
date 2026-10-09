@@ -7,6 +7,9 @@ import {
   parseISO,
   todayISO,
   lockFinishedNights,
+  historyShifts,
+  periodIndex,
+  setupShifts,
   legacyTipouts,
   nightTipout,
   savedTipout,
@@ -501,6 +504,12 @@ function cleanProfile(p, { startFallback }) {
   out.periodEnd = validDate(p.periodEnd) ? p.periodEnd : '';
   out.gross = Math.max(0, numOr0(p.gross));
   out.shifts = Math.max(0, Math.round(numOr0(p.shifts)));
+  // The exact shift count the update kept (pinShifts) when it isn't a whole number; Setup's own count wins.
+  const avg = p.shiftsAvg;
+  if (!out.shifts && typeof avg === 'number' && Number.isFinite(avg) && avg > 0 && avg <= 1000)
+    out.shiftsAvg = avg;
+  // Filled in by TipNet (pinShifts, or Setup's suggestion), not yet confirmed with Save: Setup says so.
+  if ((out.shifts > 0 || out.shiftsAvg > 0) && p.shiftsAuto === true) out.shiftsAuto = true;
   const ro = p.rateOverride;
   out.rateOverride = typeof ro === 'number' && Number.isFinite(ro) && ro >= 0 && ro <= 1 ? ro : null;
   // freq: fixed day counts 7/14/15/30 or the calendar modes 'semimonthly'/'monthly'; anything else falls back to 14.
@@ -529,6 +538,31 @@ function cleanProfile(p, { startFallback }) {
   out.cashOffPayroll = p.cashOffPayroll === true;
   return out;
 }
+
+/**
+ * The update to a Setup shift count ("Shifts you work in a pay period"): an establishment that is set up but has none
+ * (before v38 it could be left blank, and TipNet averaged the nights of past pay periods, so saved nights changed when a
+ * period ended or a forgotten night was logged) gets the count its running pay period is shown with today
+ * (math.historyShifts), so no night's take-home changes at the update. A whole number goes into profile.shifts; an
+ * average that isn't (6.5) is kept exactly in profile.shiftsAvg, because a v37 page rounds profile.shifts (it drops
+ * shiftsAvg, and reading its save gives the count again, the one that page shows). One still in its guided setup gets
+ * none: Setup asks for it. In place; returns how many got one.
+ */
+export function pinShifts(S, today = todayISO()) {
+  let pinned = 0;
+  S.workplaces.forEach((w) => {
+    const p = w.profile;
+    if (setupShifts(p) > 0 || !isWorkplaceSetUp(S, w)) return;
+    const mine = S.nightsExample ? [] : S.nights.filter((n) => n.workplaceId === w.id);
+    const n = historyShifts(p, mine, today, periodIndex(p, today)).n;
+    if (Number.isInteger(n)) p.shifts = n;
+    else p.shiftsAvg = n;
+    p.shiftsAuto = true; // Setup shows where it came from until Save confirms it
+    pinned++;
+  });
+  return pinned;
+}
+let shiftsPinned = 0; // establishments the last migrate() gave a shift count (load and absorb then save it)
 
 let migrator = migrateUnsafe;
 /** Test helper: replace the function migrate() runs (to make loading fail on purpose). No argument puts the real one back. */
@@ -749,7 +783,14 @@ function migrateUnsafe(input, today) {
   // Lock first, then pin: an older night's "everyone or nobody" becomes the people it is worked out with (its snapshot's
   // once locked, which can be a finished period's older one; else the people set up now). Whether tip-outs were on is
   // pinned first (pinTipoutOn): a night saved while they were off is pinned as nobody tipped out.
-  const nights = lockAll(workplaces, cleanNights(rawNights, wasAfter), today).nights;
+  // The shift count is a Setup value now: an establishment without one gets the count its nights were shown with
+  // (pinShifts), before anything is locked with it.
+  const cleaned = cleanNights(rawNights, wasAfter);
+  shiftsPinned += pinShifts(
+    { profileExample: !!S.profileExample, nightsExample: !!S.nightsExample, workplaces, nights: cleaned },
+    today,
+  );
+  const nights = lockAll(workplaces, cleaned, today).nights;
   if (!S.nightsExample) pinTipoutOn(workplaces, nights);
   pinTipouts(workplaces, nights);
   // Old states and old backup codes have no budget: they get an empty one. Old "Paid" ticks (keyed by pay period) are
@@ -1192,7 +1233,9 @@ function absorb(copy) {
   }
   // A copy TipNet cannot read as its own is left alone: taking it in would replace this window's data with the example.
   if (savedAtOf(copy) <= lastKnown || !recognizedShape(copy)) return none;
+  shiftsPinned = 0;
   const theirs = migrate(copy);
+  const pinned = shiftsPinned; // a v37 page's save (no shiftsAvg): the count it was given is written back
   const mine = cache;
   const hadChanges = !base || !same(mine, base);
   const next = hadChanges ? migrate(mergeStates(base, mine, theirs)) : theirs;
@@ -1203,7 +1246,7 @@ function absorb(copy) {
   intoPlace(cache, next); // never a new state object: screens keep writing into the live one
   base = clone(theirs);
   // Nothing of this copy's own was waiting: what it holds now is what is stored, so there is nothing to write back.
-  if (!hadChanges) written = JSON.stringify(cache);
+  if (!hadChanges && !pinned) written = JSON.stringify(cache);
   lastKnown = savedAtOf(copy);
   lockedOn = null;
   return { changed: true, conflict: hadChanges && !same(next, theirs), visible };
@@ -1279,6 +1322,7 @@ export function recoveryInfo() {
 export async function load() {
   ensureChannel();
   recovery = null;
+  let pinnedAtLoad = 0;
   let idbRaw = null;
   try {
     const d = await openDB();
@@ -1300,7 +1344,9 @@ export async function load() {
   } else if (raw && typeof raw === 'object' && !emptyCopy(raw)) {
     try {
       if (!recognizedShape(raw)) throw new Error('saved data is not in a shape TipNet knows');
+      shiftsPinned = 0;
       cache = migrator(raw, todayISO());
+      pinnedAtLoad = shiftsPinned;
     } catch (e) {
       // Stored data that cannot be read must never be replaced by the example: keep a copy, show the recovery screen,
       // and write nothing until the person restores or erases (see flush and setState).
@@ -1322,6 +1368,8 @@ export async function load() {
     if (same(plain, cache)) written = JSON.stringify(cache); // stored as is: a flush before any change writes nothing
   }
   lockedOn = null;
+  // A shift count given on load is saved right away: worked out again on a later day, it could differ.
+  if (pinnedAtLoad) scheduleSave();
   if (!db && opening) {
     // IndexedDB was slow: take in its copy once it opens (if newer), without holding up the first screen
     opening.then((d) => {

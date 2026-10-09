@@ -80,6 +80,7 @@ test('nontax: guided setup offers it in the deductions step; empty rows are drop
   try {
     page.type(page.$$('input[type=date]', page.app)[0], '2026-09-01');
     page.type(page.$('input[placeholder="e.g. 2,000"]', page.app), '1500');
+    page.type(page.$('input[placeholder="e.g. 10"]', page.app), '10');
     page.click(page.button('Next'));
     assert.match(page.text(), /Non-taxable earnings on this paystub/);
     page.click(page.$('#no-ded'));

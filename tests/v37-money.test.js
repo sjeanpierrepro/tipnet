@@ -23,6 +23,10 @@ function money(Mx, S) {
     const idx = [...new Set(ns.map((n) => Mx.nightPeriodIndex(p, n)))].sort((a, b) => a - b);
     ns.forEach((n) => {
       const c = Mx.computeNight(n, p, 10);
+      // and as the screens show it: with the shift count of the night's pay period (v37: an average of past periods
+      // when none was entered; this version: the count the update gave the establishment)
+      const k = Mx.nightPeriodIndex(p, n);
+      const shown = Mx.computeNight(n, p, Mx.shiftsPerPeriod(p, ns, today, k).n);
       out.push([
         'night',
         w.id,
@@ -36,6 +40,8 @@ function money(Mx, S) {
         c.fromCash,
         c.cashInHand,
         c.onCheck,
+        shown.net,
+        shown.onCheck,
       ]);
     });
     idx.forEach((i) => {
@@ -129,7 +135,9 @@ test('400 random v37 states: the same money in v37 and after the update, and a v
   const v = await loadV37();
   if (!v) return t.skip('git or commit ' + V37 + ' (tipnet-v37) is not available');
   const { storage: S7, math: M7 } = v;
-  let checked = 0;
+  let checked = 0,
+    pinnedWhole = 0,
+    pinnedAvg = 0;
   const bad = [];
   makeStates(400, 12345).forEach(({ raw, change }, k) => {
     // v37 loads at an earlier date (some pay periods lock with that Setup), the Setup changes, then it loads today
@@ -146,6 +154,13 @@ test('400 random v37 states: the same money in v37 and after the update, and a v
     const v38 = migrate(clone(v37), { today });
     const m38 = JSON.stringify(money(M, v38));
     checked++;
+    // no shift count entered in v37: the update gave one (a whole number, or the exact average in shiftsAvg)
+    v38.workplaces.forEach((w, i) => {
+      if (raw.workplaces[i].profile.shifts > 0) return;
+      if (w.profile.shiftsAvg > 0) pinnedAvg++;
+      else if (w.profile.shifts > 0) pinnedWhole++;
+      else bad.push('state ' + k + ': no shift count after the update');
+    });
     if (m38 !== m37) bad.push('state ' + k + ': v38 after the update');
     // a v37 page still open reads this version's save (and writes it back with its own rules)
     const back = S7.migrate(clone(v38), { today });
@@ -154,6 +169,7 @@ test('400 random v37 states: the same money in v37 and after the update, and a v
       bad.push('state ' + k + ': v38 after a v37 page rewrote it');
   });
   assert.equal(checked, 400);
+  assert.ok(pinnedWhole > 50 && pinnedAvg > 50, pinnedWhole + ' whole, ' + pinnedAvg + ' averages');
   assert.deepEqual(bad, []);
 });
 

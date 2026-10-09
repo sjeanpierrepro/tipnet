@@ -14,8 +14,15 @@ const refNightsInPeriod = (p, nights, idx) =>
     .filter((n) => M.periodIndex(p, n.date) === idx)
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 
-function refShiftsPerPeriod(p, nights = [], today, idx) {
+/** The money's shift count: Setup's, else about 4 a week (never an average of past periods). */
+function refShiftsPerPeriod(p, nights, today, idx) {
   if (M.num(p.shifts) > 0) return { n: M.num(p.shifts), source: 'entered' };
+  const at =
+    idx !== undefined ? idx : Number.isFinite(M.parseISO(p.periodStart)) ? M.periodIndex(p, today) : 0;
+  return { n: Math.max(1, Math.round((M.periodLength(p, at) * 4) / 7)), source: 'default' };
+}
+/** The average of past pay periods (only to suggest a count in Setup and for the update), else about 4 a week. */
+function refHistoryShifts(p, nights = [], today, idx) {
   const done = [...new Set(nights.map((n) => M.periodIndex(p, n.date)))].filter((i) =>
     M.isFinal(p, i, today),
   );
@@ -148,8 +155,10 @@ test('fast period math gives the same answers as the original on random data', (
       const today = '2024-07-20';
       const ix = M.indexNights(p, nights);
       const ref = refShiftsPerPeriod(p, nights, today);
-      assert.deepEqual(M.shiftsPerPeriod(p, nights, today), ref, freq + ' shifts (no index)');
-      assert.deepEqual(M.shiftsPerPeriod(p, nights, today, undefined, ix), ref, freq + ' shifts (index)');
+      assert.deepEqual(M.shiftsPerPeriod(p, nights, today), ref, freq + ' shifts');
+      const hist = refHistoryShifts(p, nights, today);
+      assert.deepEqual(M.historyShifts(p, nights, today), hist, freq + ' history (no index)');
+      assert.deepEqual(M.historyShifts(p, nights, today, undefined, ix), hist, freq + ' history (index)');
       for (let i = -1; i <= 25; i++) {
         assert.deepEqual(
           M.nightsInPeriod(p, nights, i, ix),

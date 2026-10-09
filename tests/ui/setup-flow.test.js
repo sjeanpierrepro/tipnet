@@ -45,6 +45,7 @@ test("guided setup: step 2 needs a deduction amount or the no-deductions box; Fi
     const [start] = dateInputs(page);
     page.type(start, '2026-09-01');
     page.type(page.$('input[placeholder="e.g. 2,000"]', page.app), '1500');
+    page.type(page.$('input[placeholder="e.g. 10"]', page.app), '10');
     next(page);
     assert.match(page.text(), /^.*Deductions/);
     const fed = page.$('input[placeholder="e.g. 180"]', page.app);
@@ -84,6 +85,7 @@ test('guided setup: "My paystub has no deductions" lets step 2 pass', async () =
     page.tab('setup');
     page.type(dateInputs(page)[0], '2026-09-01');
     page.type(page.$('input[placeholder="e.g. 2,000"]', page.app), '1500');
+    page.type(page.$('input[placeholder="e.g. 10"]', page.app), '10');
     next(page);
     next(page);
     assert.match(page.text(), /at least one line/);
@@ -110,6 +112,7 @@ test('guided setup: after Finish, Tonight estimates use the typed numbers', asyn
     page.tab('setup');
     page.type(dateInputs(page)[0], '2026-09-01');
     page.type(page.$('input[placeholder="e.g. 2,000"]', page.app), '1000');
+    page.type(page.$('input[placeholder="e.g. 10"]', page.app), '10');
     next(page);
     page.type(page.$('input[placeholder="e.g. 180"]', page.app), '100');
     next(page);
@@ -158,6 +161,7 @@ test('guided setup: Skip swaps the example paystub for a blank one, and Tonight 
     const gross = page.byText('.field', 'Gross pay', page.app).querySelector('input');
     page.type(gross, '1800');
     page.change(gross);
+    page.type(page.byText('.field', 'Shifts you work', page.app).querySelector('input'), '10');
     assert.equal(page.$('#draft-save').disabled, true, 'no deduction yet');
     assert.match(page.$('#draft-reasons').textContent, /at least one deduction amount/);
     const cb = page.must(page.$('#no-ded'), 'no deductions box on the full page');
@@ -190,6 +194,7 @@ test('Skip: without a pay period start date TipNet is not set up, Setup asks for
     const gross = page.byText('.field', 'Gross pay', page.app).querySelector('input');
     page.type(gross, '1800');
     page.change(gross);
+    page.type(page.byText('.field', 'Shifts you work', page.app).querySelector('input'), '10');
     const cb = page.must(page.$('#no-ded'), 'no deductions box');
     cb.checked = true;
     page.change(cb);
@@ -221,6 +226,8 @@ test('Skip: without a pay period start date TipNet is not set up, Setup asks for
     page.type(page.must(page.$('#pr-p1'), 'main rate'), '12');
     page.type(page.byText('.field', 'Gross pay', page.app).querySelector('input'), '1800');
     page.click(page.$('#no-ded'));
+    assert.match(page.$('#not-ready-text').textContent, /Still needed: the shifts you work in a pay period./);
+    page.type(page.byText('.field', 'Shifts you work', page.app).querySelector('input'), '10');
     assert.equal(page.$('#not-ready-text').closest('[role=status]').hidden, true);
     await page.saveSetup();
     page.tab('tonight');
@@ -382,6 +389,7 @@ test('guided setup: ticking the tip-out box shows no error until the amount is l
     page.tab('setup');
     page.type(dateInputs(page)[0], '2026-09-01');
     page.type(page.$('input[placeholder="e.g. 2,000"]', page.app), '1500');
+    page.type(page.$('input[placeholder="e.g. 10"]', page.app), '10');
     next(page);
     page.click(page.$('#no-ded'));
     next(page);
@@ -413,6 +421,7 @@ for (const saw of [true, false])
         page.tab('setup');
         page.type(dateInputs(page)[0], '2026-09-01');
         page.type(page.$('input[placeholder="e.g. 2,000"]', page.app), '1500');
+        page.type(page.$('input[placeholder="e.g. 10"]', page.app), '10');
         next(page);
         page.click(page.$('#no-ded'));
         next(page);

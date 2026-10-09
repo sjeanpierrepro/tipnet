@@ -233,6 +233,7 @@ test('guided setup: a typo in gross pay, a deduction, the main rate or a tip-out
     assert.notEqual((page.state().settings.guidedDraft.profile || {}).gross, 1.2, 'not stored as 1.2');
     typeOut(page, gross, '1,500');
     assert.equal(invalid(gross), false);
+    typeOut(page, page.$('input[placeholder="e.g. 10"]', page.app), '10');
     page.click(page.button('Next'));
     assert.equal(page.state().settings.guidedDraft.profile.gross, 1500);
     // step 2: a deduction
@@ -348,7 +349,7 @@ test('Setup draft: the shifts box and a non-taxable amount refuse typos too', as
   });
   try {
     page.openSetup();
-    const shifts = page.byText('.field', 'Shifts you worked', page.app).querySelector('input');
+    const shifts = page.byText('.field', 'Shifts you work in a pay period', page.app).querySelector('input');
     typeOut(page, shifts, '5.5.5');
     assert.match(errOf(page, shifts), /That isn’t a number of shifts\./);
     assert.equal(byId(page, 'draft-save').disabled, true);

@@ -170,9 +170,9 @@ test('shift history averages count nights by their assigned period', () => {
   const p = prof(14, '2026-09-07', { shifts: 0 });
   const ns = [night('2026-09-08'), night('2026-09-22', '2026-09-07'), night('2026-09-23')];
   // both periods finished: 2 nights in period 0, 1 in period 1 -> average 1.5
-  assert.equal(M.shiftsPerPeriod(p, ns, '2026-10-06').n, 1.5);
+  assert.equal(M.historyShifts(p, ns, '2026-10-06').n, 1.5);
   // only period 0 finished: 2 nights there (the moved one counts)
-  assert.equal(M.shiftsPerPeriod(p, ns, '2026-09-25').n, 2);
+  assert.equal(M.historyShifts(p, ns, '2026-09-25').n, 2);
 });
 
 test('weekly overtime hours stay by the calendar week worked', () => {

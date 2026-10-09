@@ -127,12 +127,13 @@ test('main pay type falls back to its usual hours', () => {
   assert.equal(c.basePay, 84);
 });
 
-test('shift fallback order: entered, then history, then 4 a week', () => {
+test('shift count: Setup’s, else 4 a week; the history average (historyShifts) never reaches the money', () => {
   const p = P();
   assert.deepEqual(M.shiftsPerPeriod(p, N(), TODAY), { n: 10, source: 'entered' });
   p.shifts = 0;
   // no finished periods yet -> default 14 * 4 / 7 = 8
   assert.deepEqual(M.shiftsPerPeriod(p, N(), TODAY), { n: 8, source: 'default' });
+  assert.deepEqual(M.historyShifts(p, N(), TODAY), { n: 8, source: 'default' });
   // one finished period with 4 nights, another with 2 -> average 3
   p.periodStart = '2026-09-07';
   p.periodEnd = '2026-09-20';
@@ -144,9 +145,10 @@ test('shift fallback order: entered, then history, then 4 a week', () => {
     { date: '2026-09-21' },
     { date: '2026-09-22' },
   ];
-  const r = M.shiftsPerPeriod(p, nights, '2026-10-30');
+  const r = M.historyShifts(p, nights, '2026-10-30');
   assert.equal(r.source, 'history');
   assert.equal(r.n, 3);
+  assert.equal(M.shiftsPerPeriod(p, nights, '2026-10-30').source, 'default');
   // never less than 1
   assert.equal(M.shiftsPerPeriod({ ...p, shifts: 0, periodEnd: '', freq: 7 }, [], TODAY).n, 4);
   assert.equal(M.shiftsPerPeriod({ ...p, shifts: 0, periodEnd: '2026-09-07' }, [], TODAY).n, 1);

@@ -10,6 +10,8 @@ import {
   addDays,
   periodRange,
   shiftsPerPeriod,
+  historyShifts,
+  setupShifts,
   exampleProfile,
   JOB_PRESETS,
   OTHER_PAY_PRESETS,
@@ -236,6 +238,18 @@ const readAmt = (v, r) => readMoney(v, { percent: r.mode !== 'flat' });
 const amtTypo = (v, r) => (r.mode === 'flat' ? moneyTypo(v) : percentTypo(v));
 const shiftsTypo = (v) =>
   Number.isNaN(readMoney(v)) ? 'That isn’t a number of shifts. Use a whole number, like 5.' : '';
+/** A shift count Setup takes: a whole number, 1 or more. */
+const wholeShifts = (n) => Number.isInteger(n) && n >= 1 && n <= 1000;
+/** The exact count the update kept (profile.shiftsAvg, e.g. 6.5) as the box shows it. */
+const avgText = (n) => String(Math.round(n * 100) / 100);
+/** What the shifts box says is wrong ('' when it is fine). avg0: the kept average the box may still show as it was. */
+function shiftsProblem(v, avg0) {
+  const t = String(v).trim();
+  if (avg0 > 0 && t === avgText(avg0)) return '';
+  if (!t) return 'Enter how many shifts you work in a pay period, like 10.';
+  if (shiftsTypo(t)) return '';
+  return wholeShifts(moneyOf(t)) ? '' : 'Use a whole number of shifts, 1 or more, like 10.';
+}
 /** The boxes on screen (not hidden) whose text is a typo. */
 const typoBoxes = () =>
   boxes.filter((b) => b.input.isConnected && !b.input.closest('[hidden]') && b.typo(b.input.value));
@@ -413,13 +427,24 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
     ctx.S.profileExample && !ctx.blank && isFirstWorkplace(ctx.S, ctx.w) ? p.periodEnd : null; // the example's end date, until the user changes it
   const start = el('input', { type: 'date', value: p.periodStart || '' });
   const end = el('input', { type: 'date', value: p.periodEnd || '' });
+  // The shift count is a Setup value every night follows. With none yet but past pay periods to go by, their average
+  // is filled in as a suggestion (rounded), with a note to check it; Save (or Finish) confirms it.
+  if (!(setupShifts(p) > 0) && ctx.w) {
+    const h = historyShifts(p, historyOf(ctx.S, ctx.w), todayISO());
+    if (h.source === 'history') {
+      p.shifts = Math.max(1, Math.round(h.n));
+      p.shiftsAuto = true;
+    }
+  }
+  const avg0 = !(num(p.shifts) > 0) && num(p.shiftsAvg) > 0 ? num(p.shiftsAvg) : 0;
   const shifts = el('input', {
     type: 'text',
     inputmode: 'numeric',
     autocomplete: 'off',
     placeholder: ph ? eg(ph.shifts) : '—',
-    value: p.shifts ? String(p.shifts) : '',
+    value: p.shifts ? String(p.shifts) : avg0 ? avgText(avg0) : '',
   });
+  const shown0 = shifts.value;
   const freq = select(
     [
       [7, 'Every week'],
@@ -444,7 +469,24 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
   const delay = el('input', { type: 'date', value: paydayValue() });
   const fStart = field('Pay period started', start);
   const fEnd = field('Pay period ended', end, { optional: true });
-  const fShifts = field('Shifts you worked', shifts, { optional: true });
+  const fShifts = field('Shifts you work in a pay period', shifts, {
+    hint: 'How many shifts you usually work in one pay period. Your fixed deductions are split evenly over them, so every night of a pay period carries the same share.',
+  });
+  // Filled in by TipNet (the update, or the suggestion above): says so until Save confirms it.
+  const autoNote = el('p', { class: 'note', id: 'shifts-auto' });
+  const showAutoNote = () => {
+    const text = !p.shiftsAuto
+      ? ''
+      : avg0 && !(num(p.shifts) > 0)
+        ? 'TipNet filled this in from your past pay periods (their average, ' +
+          avgText(avg0) +
+          '). Type the number of shifts you usually work if it’s different; the nights of this pay period follow it.'
+        : 'TipNet filled this in from your past pay periods. Change it if you usually work a different number; the nights of this pay period follow it.';
+    if (autoNote.textContent !== text) autoNote.textContent = text;
+    autoNote.hidden = !text;
+  };
+  showAutoNote();
+  fShifts.append(autoNote);
   const fFreq = field('You get paid', freq);
   const fDelay = field('Payday for this pay period', delay, {
     optional: true,
@@ -486,8 +528,12 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
     }
     fDelay.setError(de);
     // A typo's message is its box's own (guard): after a pause in typing, or at once on Next / Finish (card.validate).
-    if (!shiftsTypo(shifts.value))
-      fShifts.setError(moneyOf(shifts.value) < 0 ? 'Shifts can’t be negative.' : '');
+    // a blank box says so once it was left (or on Next / Save); a count that isn't whole says so at once
+    if (!shiftsTypo(shifts.value)) {
+      const sp = shiftsProblem(shifts.value, avg0);
+      if (shifts.value.trim()) fShifts.setError(sp);
+      else ctx.gate(fShifts, sp);
+    }
     if (!moneyTypo(gross.value))
       ctx.gate(fGross, moneyOf(gross.value) > 0 ? '' : 'Gross pay is needed to work out your tax rate.');
     // The end date sets the period length when present; say so if it doesn't match the schedule picked.
@@ -534,7 +580,21 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
   guard(shifts, fShifts, shiftsTypo);
   guard(gross, fGross);
   shifts.addEventListener('input', () => {
-    if (!shiftsTypo(shifts.value)) p.shifts = Math.max(0, Math.round(moneyOf(shifts.value)));
+    // A typo keeps the last good value (the box's own message stops Save); a count that isn't a whole number, 1 or
+    // more, leaves none, so Save says what is missing. The kept average stays while the box still shows it.
+    if (!shiftsTypo(shifts.value)) {
+      const t = shifts.value.trim();
+      if (avg0 && t === avgText(avg0)) {
+        p.shifts = 0;
+        p.shiftsAvg = avg0;
+      } else {
+        const n = moneyOf(t);
+        p.shifts = wholeShifts(n) ? n : 0;
+        delete p.shiftsAvg;
+      }
+      if (t !== shown0) delete p.shiftsAuto; // typed by the person
+      showAutoNote();
+    }
     ctx.touch(false);
   });
   freq.addEventListener('change', () => {
@@ -565,6 +625,7 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
   });
   [
     [start, fStart],
+    [shifts, fShifts],
     [gross, fGross],
   ].forEach(([i, f]) =>
     i.addEventListener('blur', () => {
@@ -587,7 +648,7 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
     el(
       'p',
       { class: 'hint' },
-      'Fill in the end date, the shift count, or both. The end date keeps each night on the right paycheck. The shift count splits your fixed deductions evenly per shift. Both together give the closest estimate. Picking how often you get paid moves the end date to match.',
+      'The end date keeps each night on the right paycheck; leave it blank to use how often you get paid. Picking how often you get paid moves the end date to match.',
     ),
     fDelay,
     fGross,
@@ -602,6 +663,7 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
       moneyOf(gross.value) > 0 &&
       !moneyTypo(gross.value) &&
       !shiftsTypo(shifts.value) &&
+      !shiftsProblem(shifts.value, avg0) &&
       !fEnd.hasAttribute('data-invalid')
     );
   };
@@ -2218,6 +2280,7 @@ export function stillNeeded(S, w, draft = null) {
   const out = [];
   if (!Number.isFinite(parseISO(p.periodStart))) out.push('your pay period start date');
   if (!(num(p.gross) > 0)) out.push('your gross pay');
+  if (!(setupShifts(p) > 0)) out.push('the shifts you work in a pay period');
   if (!(p.deductions || []).some((d) => num(d.amount) > 0) && !(draft ? draft.noDeductions : w.noDeductions))
     out.push('at least one deduction (or tick “My paystub has no deductions”)');
   if (!(num(((p.payTypes || [])[0] || {}).rate) > 0)) out.push('your main rate');
@@ -2344,6 +2407,7 @@ function draftProblems(S, w, d) {
     else if (len > 62) out.push('Pay periods are 62 days or shorter. Check the end date.');
   }
   if (!(num(p.gross) > 0)) out.push('Enter your gross pay.');
+  if (!(setupShifts(p) > 0)) out.push('Enter how many shifts you work in a pay period (a whole number).');
   if ((p.deductions || []).some((x) => num(x.amount) < 0))
     out.push('Deduction amounts are positive numbers.');
   else if (!d.noDeductions && !(p.deductions || []).some((x) => num(x.amount) > 0))
@@ -2381,6 +2445,7 @@ function saveOpen() {
     else live[k] = copyOf(draft.profile[k]);
   });
   carryTipoutTicks(S, w, peopleBefore); // a barback removed and added again keeps the nights' ticks
+  delete live.shiftsAuto; // the shift count TipNet filled in was there to check: Save confirms it
   if (draft.name !== base.name) w.name = draft.name;
   if (draft.noDeductions !== base.noDeductions) {
     if (draft.noDeductions) w.noDeductions = true;

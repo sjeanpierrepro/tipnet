@@ -91,6 +91,7 @@ test('setup: the guided flow for a second establishment fills in its own paystub
     freq.value = 'semimonthly';
     page.change(freq);
     page.type(page.must(page.$('input[placeholder="e.g. 2,000"]', page.app), 'gross'), '900');
+    page.type(page.$('input[placeholder="e.g. 10"]', page.app), '10');
     page.click(page.button('Next'));
     page.type(page.must(page.$('input[placeholder="e.g. 180"]', page.app), 'fed'), '60');
     page.click(page.button('Next'));

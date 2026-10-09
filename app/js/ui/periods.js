@@ -776,7 +776,7 @@ function updateControl(S, w, idx, ctx) {
 }
 
 /**
- * One restaurant's pay period. The shift count for period idx: entered and history counts are the same for every period,
+ * One restaurant's pay period. The shift count for period idx: Setup's count is the same for every period,
  * so they are worked out once per restaurant (ctx.base). ctx.named: start the label with the restaurant's name (the All list).
  * A finished pay period can be updated to today's Setup (updateControl).
  */

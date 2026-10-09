@@ -223,11 +223,31 @@ export const nightsInPeriod = (p, nights, idx, index) =>
 
 /* ---------- shifts per period (6.2) ---------- */
 /**
- * Returns {n, source: 'entered'|'history'|'default'}. Pass `index` (from indexNights) when you have one.
- * 'entered' and 'history' do not depend on idx, so a loop over many periods can compute this once.
+ * The shift count every night's share of fixed deductions (and recurring non-taxable money) is spread over: Setup's
+ * "Shifts you work in a pay period" (profile.shifts, a whole number), else profile.shiftsAvg (the exact count a pay
+ * period was shown with when the update gave an establishment one; not always whole, see storage.pinShifts), else
+ * about 4 shifts a week over the pay period's dates (idx: that period; default the one today is in). Never an average
+ * of past pay periods: that moved by itself when a period ended or a forgotten night was logged, and with it the
+ * take-home of nights already saved. Returns {n, source: 'entered'|'default'}, the same for every period once entered.
+ * (nights is no longer read; it stays in the signature for the callers.)
  */
-export function shiftsPerPeriod(p, nights = [], today = todayISO(), idx, index) {
-  if (num(p.shifts) > 0) return { n: num(p.shifts), source: 'entered' };
+export function shiftsPerPeriod(p, nights, today = todayISO(), idx) {
+  const set = setupShifts(p);
+  if (set > 0) return { n: set, source: 'entered' };
+  const at = idx !== undefined ? idx : Number.isFinite(parseISO(p.periodStart)) ? periodIndex(p, today) : 0;
+  return { n: Math.max(1, Math.round((periodLength(p, at) * 4) / 7)), source: 'default' };
+}
+/** Setup's shift count (profile.shifts, else the exact one the update kept in profile.shiftsAvg), or 0 when there is none. */
+export const setupShifts = (p) =>
+  !p ? 0 : num(p.shifts) > 0 ? num(p.shifts) : num(p.shiftsAvg) > 0 ? num(p.shiftsAvg) : 0;
+/**
+ * The average number of nights logged in finished pay periods ({n, source: 'history'}), else about 4 a week
+ * ({source: 'default'}): what TipNet used before the shift count was a Setup value. Never for money: the update uses it
+ * once to give an establishment without a count the one its nights were shown with, Setup suggests it (rounded), and
+ * Check my accuracy's "missing nights" hint uses it when there is no Setup count. Setup's own count is not read here.
+ * Pass `index` (indexNights) when you have one.
+ */
+export function historyShifts(p, nights = [], today = todayISO(), idx, index) {
   let count = 0,
     total = 0;
   (index || indexNights(p, nights)).forEach((list, i) => {
@@ -241,7 +261,7 @@ export function shiftsPerPeriod(p, nights = [], today = todayISO(), idx, index) 
   return { n: Math.max(1, Math.round((periodLength(p, at) * 4) / 7)), source: 'default' };
 }
 export const SHIFT_SOURCE_TEXT = {
-  entered: 'the shift count you entered',
+  entered: 'the shifts you work in a pay period',
   history: 'your average from past pay periods',
   default: 'about 4 shifts a week over your pay period dates',
 };
@@ -894,7 +914,7 @@ export const MATCH_ERROR = 0.005;
  *   moves by (pred - actual) / taxed money), so a match also means the check is within 0.5% of what the rate in use
  *   would predict: the same band as err, not a fixed one (a 0.1% miss never proposes a change).
  *   rOld: the current rate. uncapped: (rOld + rNew) / 2. rateOverride: that, kept within MAX_RATE_STEP of rOld (capped says so).
- *   expectedShifts: the entered shift count if set, else the period's expected count (shiftsPerPeriod); missingNights is
+ *   expectedShifts: Setup's shift count (setupShifts), else the history average without this period (historyShifts); missingNights is
  *   how many fewer nights were logged than that (0 if none). suspect: |err| > SUSPECT_ERROR.
  * Nothing is applied here: the screen shows old -> new and asks first. On "Apply", the caller stores
  * {label, pred, actual, err} in calib and sets profile.rateOverride = rateOverride (which only moves unlocked nights).
@@ -908,8 +928,15 @@ export function calibrate(p, nights, idx, actual, today = todayISO(), shifts, ra
   if (!isFinal(p, idx, today)) return { ok: false, reason: 'notFinal', missingCash: 0 };
   // The expected count must not include the period being checked: a missed night would pull its own average down.
   const others = nights.filter((n) => nightPeriodIndex(p, n) !== idx);
-  const sp = shifts > 0 ? { n: shifts, source: 'entered' } : shiftsPerPeriod(p, others, today, idx);
-  const n = sp.n;
+  // The money uses Setup's count (shiftsPerPeriod; the prediction doesn't depend on it anyway, each night's estimated
+  // share is swapped for the exact amounts). The "missing nights" hint is Setup's count too, or the history without one.
+  const sp =
+    shifts > 0
+      ? { n: shifts, source: 'entered' }
+      : setupShifts(p) > 0
+        ? shiftsPerPeriod(p, others, today, idx)
+        : historyShifts(p, others, today, idx);
+  const n = shifts > 0 ? shifts : shiftsPerPeriod(p, others, today, idx).n;
   // same test computeNight uses, so junk like "abc" counts as missing instead of silently being $0
   const cs = ns.map((night) => computeNight(night, p, n));
   const missing = cs.filter((c) => c.cashInHand == null).length;
@@ -951,7 +978,7 @@ export function calibrate(p, nights, idx, actual, today = todayISO(), shifts, ra
   const rateOverride = matched
     ? rOld
     : clampRate(Math.min(rOld + MAX_RATE_STEP, Math.max(rOld - MAX_RATE_STEP, uncapped)));
-  const expectedShifts = Math.max(1, Math.round(n));
+  const expectedShifts = Math.max(1, Math.round(sp.n));
   return {
     ok: true,
     pred,
