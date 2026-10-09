@@ -82,6 +82,7 @@ test('tonight: each establishment has its own default and keeps its own tick', a
   });
   try {
     const radios = () => page.$$('[role=radio]', page.app);
+    page.click(radios()[0]); // where tonight was worked is picked first
     fill(page, '148', '6', '80');
     assert.equal(key(page, 'night-cashoff').checked, true);
     page.click(radios()[1]);

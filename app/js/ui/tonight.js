@@ -46,7 +46,7 @@ import {
   maxNightDate,
   MIN_NIGHT_DATE,
 } from '../inputs.js';
-import { lockFinished, isSetUp, isWorkplaceSetUp, activeWorkplace, nightsOf } from '../storage.js';
+import { lockFinished, isSetUp, isWorkplaceSetUp, findWorkplace, nightsOf } from '../storage.js';
 import { countSavedNight } from './backup.js';
 import {
   el,
@@ -76,6 +76,10 @@ import {
 // entry is never lost: switching back to a restaurant brings its own entry back. Memory only, like before.
 const drafts = new Map();
 let showExample = false; // before setup: "See an example first" was tapped
+// With two or more establishments, where tonight was worked is picked every night: nothing is preselected, and after a
+// night is saved the pick is cleared for the next one. Memory only, like the entries: it survives tab switches and
+// redraws, not a reload.
+let picked = null;
 
 /** That restaurant's nights that count as history for shift averages. Example nights never do, so the first real numbers match their preview. */
 const historyOf = (S, w) => (S.nightsExample ? [] : nightsOf(S, w.id));
@@ -161,10 +165,11 @@ export function tipoutHow(r) {
   return r.mode === 'flat' ? money(num(r.value)) + ' flat' : pctText(r.value) + ' of tips';
 }
 
-/** Drop the in-progress entry and the example view (e.g. after Erase everything or Restore). */
+/** Drop the in-progress entry, the establishment picked and the example view (e.g. after Erase everything or Restore). */
 export function resetDraft() {
   drafts.clear();
   showExample = false;
+  picked = null;
 }
 /** The "Late nights" rule changed: re-date the in-progress entries, unless the user picked a date themselves. */
 export function redateDraft(S) {
@@ -181,9 +186,10 @@ export function hasDraftInput() {
       Object.values(d.pay || {}).some((v) => String(v || '').trim() !== '' && String(v).trim() !== '1'),
   );
 }
-/** A restaurant was removed: forget its entry. */
+/** A restaurant was removed: forget its entry (and the pick of it). */
 export function dropDraft(id) {
   drafts.delete(id);
+  if (picked === id) picked = null;
 }
 
 /**
@@ -1348,8 +1354,12 @@ function exampleView() {
   );
 }
 
-/** Switch Tonight (and Setup) to another restaurant. Its own entry, jobs, rates and pay period come with it. */
+/**
+ * Tonight is about this establishment (picked on the "Working at:" picker). Its own entry, jobs, rates and pay period
+ * come with it. It is also remembered as the one used last (settings.activeWorkplaceId), which other screens start on.
+ */
 function pickWorkplace(S, id) {
+  picked = id;
   S.settings.activeWorkplaceId = id;
   save();
   bus.rerender();
@@ -1382,21 +1392,54 @@ export function render(root) {
     return;
   }
   showExample = false;
-  const w = activeWorkplace(S),
-    p = w.profile;
   const many = S.workplaces.length > 1;
-  // More than one restaurant: one tap at the very top switches everything below (jobs, rates, tip-out, pay period, preview).
-  const switcher = workplaceSwitcher(S, w.id, (id) => pickWorkplace(S, id), {
+  if (picked != null && !findWorkplace(S, picked)) picked = null;
+  // More than one establishment: "Working at:" at the very top, nothing picked until the person picks (every night), and
+  // the pick switches everything below (jobs, rates, tip-out, pay period, preview). With one there is nothing to pick.
+  const w = many ? findWorkplace(S, picked) : S.workplaces[0];
+  const switcher = workplaceSwitcher(S, w ? w.id : null, (id) => pickWorkplace(S, id), {
     key: 'tonight-wp',
-    label: 'Establishment for tonight',
+    label: 'Working at',
   });
+  if (switcher) {
+    switcher.removeAttribute('aria-label');
+    switcher.setAttribute('aria-labelledby', 'tonight-wp-label');
+  }
+  const picker = switcher
+    ? el(
+        'div',
+        { class: 'stack-sm', id: 'tonight-picker' },
+        el('span', { class: 'label', id: 'tonight-wp-label' }, 'Working at:'),
+        switcher,
+      )
+    : null;
+  if (!w) {
+    // Nothing picked yet: no entry and no Save until the person picks (the "Saved" line of the night before stays here).
+    root.append(
+      el(
+        'div',
+        { class: 'stack' },
+        picker,
+        el('h1', null, 'Tonight'),
+        exampleBanner(),
+        el(
+          'div',
+          { class: 'card' },
+          el('p', { class: 'note', id: 'tonight-pick-first' }, 'Pick where you worked tonight.'),
+        ),
+        el('p', { class: 'hint', role: 'status', id: 'night-saved' }),
+      ),
+    );
+    return;
+  }
+  const p = w.profile;
   if (!isWorkplaceSetUp(S, w)) {
     // This restaurant was added but its setup isn't finished: no estimate here yet; the others still work.
     root.append(
       el(
         'div',
         { class: 'stack' },
-        switcher,
+        picker,
         el('h1', null, 'Tonight'),
         setupFirstCard({
           title: 'Finish setting up ' + w.name,
@@ -1566,8 +1609,11 @@ export function render(root) {
     const net = computeNight(kept.part ? joined(kept.part) : st, p, shifts).net;
     save();
     drafts.set(w.id, blankDraft(S, p));
+    if (many) picked = null; // the next night: where it was worked is picked again
     bus.rerender(); // the whole tab, so the backup reminder and the TipNet Budget card stay
-    const first = root.querySelector('[data-focus-key="night-cc"]');
+    const first = root.querySelector(
+      many ? '#tonight-picker [role=radio][tabindex="0"]' : '[data-focus-key="night-cc"]',
+    );
     if (first) first.focus();
     const m = root.querySelector('#night-saved');
     if (m)
@@ -1700,7 +1746,7 @@ export function render(root) {
     el(
       'div',
       { class: 'stack' },
-      switcher,
+      picker,
       el(
         'h1',
         null,

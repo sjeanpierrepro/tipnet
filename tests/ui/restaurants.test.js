@@ -1,12 +1,13 @@
-// Several restaurants in the app: Setup (add, rename, remove), Tonight (switching), Pay periods (filter, accuracy).
-import test from 'node:test';
+// Several restaurants in the app: Setup (add, rename, remove), Tonight (where tonight was worked is picked every night),
+// Pay periods (filter, accuracy).
+import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { boot, realState } from './harness.js';
 import { exampleProfile, todayISO, addDays } from '../../app/js/math.js';
 import { nightsOf } from '../../app/js/storage.js';
 
 const today = todayISO();
-/** One restaurant (Voodoo Bayou), set up, typing everything. */
+/** One restaurant (Voodoo Bayou), set up. */
 const oneState = (mutate) =>
   realState((S) => {
     S.workplaces[0].setupDone = true;
@@ -29,6 +30,9 @@ const key = (page, k) => page.must(page.$('[data-focus-key="' + k + '"]'), k);
 const radios = (page, label) =>
   page.$$('[role=radiogroup][aria-label="' + label + '"] [role=radio]', page.app);
 const checked = (page, label) => radios(page, label).find((b) => b.getAttribute('aria-checked') === 'true');
+/** Tonight's "Working at:" picker (labelled by its visible text). */
+const working = (page) => page.$$('#tonight-picker [role=radiogroup] [role=radio]', page.app);
+const workingAt = (page) => working(page).find((b) => b.getAttribute('aria-checked') === 'true') || null;
 
 /* ---------- Setup ---------- */
 test('setup: + Set up another establishment asks the name, then runs the guided setup for that establishment', async () => {
@@ -61,10 +65,12 @@ test('setup: + Set up another establishment asks the name, then runs the guided 
       radios(page, 'Establishment to set up').map((b) => b.textContent),
       ['Voodoo Bayou', 'Second Spot'],
     );
-    // Tonight: only this restaurant shows "Finish setup"; the first one still works
+    // Tonight: nothing picked yet; Second Spot shows "Finish setup", the first one still works
     page.tab('tonight');
+    assert.match(page.text(), /Pick where you worked tonight\./);
+    page.click(working(page)[1]);
     assert.match(page.text(), /Finish setting up Second Spot/);
-    page.click(radios(page, 'Establishment for tonight')[0]);
+    page.click(working(page)[0]);
     assert.ok(page.$('form button[type=submit]', page.app), 'Voodoo Bayou has its entry form');
     assert.doesNotMatch(page.text(), /Finish setting up/);
   } finally {
@@ -104,7 +110,9 @@ test('setup: the guided flow for a second establishment fills in its own paystub
     assert.equal(JSON.stringify(S.workplaces[0].profile), first, 'the first establishment is untouched');
     assert.equal(S.settings.guidedDraft, undefined);
     assert.match(page.text(), /Tonight/);
-    assert.equal(checked(page, 'Establishment for tonight').textContent, 'Second Spot');
+    assert.ok(workingAt(page) === null, 'nothing preselected');
+    page.click(working(page)[1]);
+    assert.equal(workingAt(page).textContent, 'Second Spot');
     assert.ok(page.$('[data-focus-key="night-cc"]'), 'Tonight asks for its tips');
   } finally {
     await page.close();
@@ -193,32 +201,42 @@ test('setup: shared settings (late nights, theme, backup) stay global', async ()
 });
 
 /* ---------- Tonight ---------- */
-test('tonight: one establishment has no switcher; two get a radio group at the top that switches everything', async () => {
+test('tonight: one establishment has nothing to pick; two show "Working at:" at the top with nothing picked, and no entry until one is', async () => {
   const one = await boot({ seed: oneState() });
   try {
     assert.equal(one.$('[role=radiogroup]', one.app), null);
-    assert.match(one.text(), /Saved\.|Save night/);
+    assert.equal(one.$('#tonight-picker'), null);
+    assert.ok(one.$('[data-focus-key="night-cc"]'), 'the entry is there');
+    assert.match(one.text(), /Save night/);
   } finally {
     await one.close();
   }
   const page = await boot({ seed: twoState() });
   try {
-    const group = page.$('[role=radiogroup]', page.app);
-    assert.ok(group);
-    assert.equal(page.app.querySelector('.stack').firstElementChild, group, 'at the very top');
-    const [a, b] = radios(page, 'Establishment for tonight');
-    assert.equal(a.getAttribute('aria-checked'), 'true');
-    assert.equal(a.tabIndex, 0);
+    const picker = page.must(page.$('#tonight-picker', page.app), 'picker');
+    assert.equal(page.app.querySelector('.stack').firstElementChild, picker, 'at the very top');
+    assert.equal(page.text(picker.querySelector('.label')), 'Working at:');
+    const group = picker.querySelector('[role=radiogroup]');
+    assert.equal(page.doc.getElementById(group.getAttribute('aria-labelledby')).textContent, 'Working at:');
+    const [a, b] = working(page);
+    assert.equal(a.getAttribute('aria-checked'), 'false', 'nothing preselected');
+    assert.equal(b.getAttribute('aria-checked'), 'false');
+    assert.equal(a.tabIndex, 0, 'the first can be reached with Tab');
     assert.equal(b.tabIndex, -1);
-    assert.match(page.text(), /Bartender/);
+    assert.match(page.text(), /Pick where you worked tonight\./);
+    assert.equal(page.$('form', page.app), null, 'no entry and no Save yet');
+    assert.equal(page.$('[data-focus-key="night-cc"]'), null);
+    assert.doesNotMatch(page.text(), /Bartender|Server|Save night/);
     page.click(b);
-    assert.equal(page.state().settings.activeWorkplaceId, 'w2');
-    assert.equal(checked(page, 'Establishment for tonight').textContent, 'Second Spot');
+    assert.equal(page.state().settings.activeWorkplaceId, 'w2', 'remembered as the one used last');
+    assert.equal(workingAt(page).textContent, 'Second Spot');
+    assert.doesNotMatch(page.text(), /Pick where you worked tonight/);
     assert.match(page.text(), /Server/);
-    assert.doesNotMatch(page.text(), /Barback tip-out tonight/, 'no tip-out at Second Spot');
+    assert.doesNotMatch(page.text(), /Tipped out tonight/, 'no tip-out at Second Spot');
     assert.match(page.text(), /\$8\.00\/h/);
+    assert.ok(page.button('Save night at Second Spot'));
     // keyboard: arrows move the pick and keep focus on it
-    const b2 = checked(page, 'Establishment for tonight');
+    const b2 = workingAt(page);
     b2.focus();
     page.key(b2, 'ArrowRight');
     assert.equal(page.state().settings.activeWorkplaceId, 'w1', 'wraps around');
@@ -231,21 +249,30 @@ test('tonight: one establishment has no switcher; two get a radio group at the t
   }
 });
 
-test('tonight: each establishment keeps its own half-typed entry; saving says where; same date at two places is two nights', async () => {
+test('tonight: each establishment keeps its own half-typed entry and the pick survives a tab switch; saving says where and clears the pick', async () => {
   const page = await boot({ seed: twoState() });
   try {
     const total = () => key(page, 'night-cc');
+    page.click(working(page)[0]);
     page.type(total(), '400');
     page.type(page.must(page.$('[data-focus-key^="night-pay-"]', page.app), 'hours'), '8');
-    page.click(radios(page, 'Establishment for tonight')[1]);
+    page.click(working(page)[1]);
     assert.equal(total().value, '', 'Second Spot starts blank');
     page.type(total(), '150');
     page.type(page.must(page.$('[data-focus-key^="night-pay-"]', page.app), 'hours'), '5');
-    page.click(radios(page, 'Establishment for tonight')[0]);
+    page.tab('periods');
+    page.tab('tonight');
+    assert.equal(workingAt(page).textContent, 'Second Spot', 'the pick is kept');
+    assert.equal(total().value, '150', 'and what was typed');
+    page.click(working(page)[0]);
     assert.equal(total().value, '400', 'Voodoo Bayou entry is back');
     page.click(page.button('Save night at Voodoo Bayou'));
     assert.match(page.text(), /Saved to Voodoo Bayou: \$[\d,.]+ take-home for /);
-    page.click(radios(page, 'Establishment for tonight')[1]);
+    // the next night: where it was worked is picked again
+    assert.ok(workingAt(page) === null, 'nothing picked after saving');
+    assert.match(page.text(), /Pick where you worked tonight\./);
+    assert.ok(page.doc.activeElement === working(page)[0], 'focus on the picker');
+    page.click(working(page)[1]);
     assert.equal(total().value, '150', 'Second Spot entry is still there');
     page.click(page.button('Save night at Second Spot'));
     assert.match(page.text(), /Saved to Second Spot: /);
@@ -260,21 +287,27 @@ test('tonight: each establishment keeps its own half-typed entry; saving says wh
     // at Second Spot: $150 tips + 5 h x $8
     assert.equal(nightsOf(S, 'w2')[0].total, 190);
     assert.equal(nightsOf(S, 'w2')[0].tips, 150);
-    // a second night at Second Spot on the same date asks
+    // a second night at Second Spot on the same date asks; Add puts them together and says where
+    page.click(working(page)[1]);
     page.type(total(), '20');
     page.type(page.must(page.$('[data-focus-key^="night-pay-"]', page.app), 'hours'), '1');
     page.click(page.button('Save night at Second Spot'));
     assert.match(page.text(), /You already saved .* at Second Spot/);
+    page.click(page.button('Add to that night'));
+    assert.equal(nightsOf(page.state(), 'w2').length, 1);
+    assert.equal(nightsOf(page.state(), 'w2')[0].tips, 170);
+    assert.match(page.text(), /Saved to Second Spot: /);
+    assert.ok(workingAt(page) === null);
   } finally {
     await page.close();
   }
 });
 
-test('tonight: the establishment picked last is the one shown on open', async () => {
+test('tonight: nothing is preselected on open, not even the establishment used last', async () => {
   const page = await boot({ seed: twoState((S) => (S.settings.activeWorkplaceId = 'w2')) });
   try {
-    assert.equal(checked(page, 'Establishment for tonight').textContent, 'Second Spot');
-    assert.match(page.text(), /Server/);
+    assert.ok(workingAt(page) === null);
+    assert.match(page.text(), /Pick where you worked tonight\./);
   } finally {
     await page.close();
   }
@@ -416,5 +449,40 @@ test('setup: a renamed establishment shows its new name on its row, its Remove b
     assert.equal(page.$('[data-workplace="w2"]').textContent, 'Spot 2');
   } finally {
     await page.close();
+  }
+});
+
+test('tonight: after midnight the night still belongs to the evening before at the establishment picked, and Replace works', async () => {
+  mock.timers.enable({ apis: ['Date'], now: new Date(2026, 8, 30, 3, 15) }); // Sep 30, 3:15 a.m.: still Sep 29's night
+  try {
+    const page = await boot({
+      time: null,
+      seed: twoState((S) => {
+        S.workplaces[0].profile.periodStart = '2026-09-21';
+        S.workplaces[0].profile.periodEnd = '2026-10-04';
+      }),
+    });
+    try {
+      const pick = (i) => page.click(page.$$('#tonight-picker [role=radio]', page.app)[i]);
+      pick(0);
+      assert.equal(key(page, 'night-date').value, '2026-09-29');
+      page.type(key(page, 'night-cc'), '100');
+      page.type(key(page, 'night-pay-p1'), '6');
+      page.click(page.button('Save night at Voodoo Bayou'));
+      assert.equal(nightsOf(page.state(), 'w1')[0].date, '2026-09-29');
+      pick(0);
+      page.type(key(page, 'night-cc'), '50');
+      page.type(key(page, 'night-pay-p1'), '6');
+      page.click(page.button('Save night at Voodoo Bayou'));
+      assert.match(page.text(), /You already saved .* at Voodoo Bayou/);
+      page.click(page.button('Replace it'));
+      assert.equal(nightsOf(page.state(), 'w1').length, 1);
+      assert.equal(nightsOf(page.state(), 'w1')[0].tips, 50);
+      assert.match(page.text(), /Saved to Voodoo Bayou: \$[\d,.]+ take-home for /);
+    } finally {
+      await page.close();
+    }
+  } finally {
+    mock.timers.reset();
   }
 });

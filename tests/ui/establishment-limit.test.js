@@ -88,7 +88,7 @@ test('Budget ended (or an older version): 5 establishments stay, all usable; onl
   const page = await boot({ seed: withPlaces(5) });
   try {
     assert.equal(
-      page.$$('[role=radiogroup][aria-label="Establishment for tonight"] [role=radio]', page.app).length,
+      page.$$('#tonight-picker [role=radio]', page.app).length,
       5,
     );
     page.tab('setup');
