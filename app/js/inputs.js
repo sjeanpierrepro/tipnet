@@ -51,6 +51,8 @@ const HM_RE = new RegExp(
   'i',
 );
 const CLOCK_RE = new RegExp(`^(\\d+):(\\d{1,2})(?::\\d{1,2})?(?:\\s*${HOURS_UNIT})?$`, 'i'); // "7:30", "7:30 hrs"
+// Minutes alone: "45 min", "45m", "45 mins", "45 minutes" (hours boxes only; 45 min = 0.75 h).
+const MIN_RE = /^(\d+(?:\.\d+)?|\.\d+)\s*m(?:in(?:ute)?s?)?$/i;
 const FRACS = { '½': 0.5, '¼': 0.25, '¾': 0.75, '1/2': 0.5, '1/4': 0.25, '3/4': 0.75 };
 const FRAC_RE = new RegExp(`^(?:(\\d+)\\s*)?(½|¼|¾|1/2|1/4|3/4)(?:\\s*${HOURS_UNIT})?$`, 'i'); // "7½", "7 1/2", "7½h"
 /**
@@ -77,6 +79,7 @@ export function parseHoursInput(v) {
   if ((x = CLOCK_RE.exec(s))) return sign * (+x[1] + +x[2] / 60);
   if ((x = HM_RE.exec(s))) return sign * (+x[1] + (x[2] ? +x[2] / 60 : 0));
   if ((x = FRAC_RE.exec(s))) return sign * (+(x[1] || 0) + FRACS[x[2]]);
+  if ((x = MIN_RE.exec(s))) return sign * (+x[1] / 60);
   const n = parseFloat(s.replace(/[^0-9.]/g, ''));
   return Number.isFinite(n) ? sign * n : 0;
 }
@@ -124,7 +127,23 @@ function hoursShape(text, unit = 'hours') {
   if (s === '') return true;
   if (/^[-−]/.test(s)) s = s.slice(1).trim();
   s = normHours(dropEndPeriod(s), unit === 'shifts');
-  return CLOCK_RE.test(s) || HM_RE.test(s) || FRAC_RE.test(s) || /^(?:\d+\.?\d*|\.\d+)$/.test(s);
+  return (
+    CLOCK_RE.test(s) ||
+    HM_RE.test(s) ||
+    FRAC_RE.test(s) ||
+    (unit !== 'shifts' && MIN_RE.test(s)) ||
+    /^(?:\d+\.?\d*|\.\d+)$/.test(s)
+  );
+}
+/**
+ * Setup's "Shifts you work in a pay period": readMoney's rules (blank -> null, a typo -> NaN) after a trailing "shift"
+ * or "shifts" is dropped ("10 shifts" = 10), as Tonight's Shifts box reads it. "shifts" alone is a typo.
+ */
+export function readShiftCount(text) {
+  const t = String(text == null ? '' : text).trim();
+  const s = t.replace(/\s*shifts?$/i, '');
+  if (t !== '' && s === '') return NaN;
+  return readMoney(s);
 }
 /** '' when an hours/shifts box is blank or readable, else a short message. unit: 'hours' | 'shifts'. */
 export function hoursTypo(text, unit = 'hours') {

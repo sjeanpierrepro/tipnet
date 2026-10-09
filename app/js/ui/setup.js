@@ -60,7 +60,7 @@ import {
   debounce,
   fmtShort,
 } from './common.js';
-import { cutoffFromSettings, readMoney, moneyTypo, percentTypo } from '../inputs.js';
+import { cutoffFromSettings, readMoney, moneyTypo, percentTypo, readShiftCount } from '../inputs.js';
 import {
   isWorkplaceSetUp,
   activeWorkplace,
@@ -241,7 +241,12 @@ const moneyOf = (v) => {
 const readAmt = (v, r) => readMoney(v, { percent: r.mode !== 'flat' });
 const amtTypo = (v, r) => (r.mode === 'flat' ? moneyTypo(v) : percentTypo(v));
 const shiftsTypo = (v) =>
-  Number.isNaN(readMoney(v)) ? 'That isn’t a number of shifts. Use a whole number, like 5.' : '';
+  Number.isNaN(readShiftCount(v)) ? 'That isn’t a number of shifts. Use a whole number, like 5.' : '';
+/** The shift count typed ("10" or "10 shifts"), 0 when blank or a typo. */
+const shiftCountOf = (v) => {
+  const n = readShiftCount(v);
+  return Number.isFinite(n) ? n : 0;
+};
 /** A shift count Setup takes: a whole number, 1 or more. */
 const wholeShifts = (n) => Number.isInteger(n) && n >= 1 && n <= 1000;
 /** The exact count the update kept (profile.shiftsAvg, e.g. 6.5) as the box shows it. */
@@ -252,7 +257,7 @@ function shiftsProblem(v, avg0) {
   if (avg0 > 0 && t === avgText(avg0)) return '';
   if (!t) return 'Enter how many shifts you work in a pay period, like 10.';
   if (shiftsTypo(t)) return '';
-  return wholeShifts(moneyOf(t)) ? '' : 'Use a whole number of shifts, 1 or more, like 10.';
+  return wholeShifts(shiftCountOf(t)) ? '' : 'Use a whole number of shifts, 1 or more, like 10.';
 }
 /** The boxes on screen (not hidden) whose text is a typo. */
 const typoBoxes = () =>
@@ -594,7 +599,7 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
         p.shifts = 0;
         p.shiftsAvg = avg0;
       } else {
-        const n = moneyOf(t);
+        const n = shiftCountOf(t);
         p.shifts = wholeShifts(n) ? n : 0;
         delete p.shiftsAvg;
       }

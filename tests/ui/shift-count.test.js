@@ -161,3 +161,19 @@ test('guided setup: step 1 needs the shifts you work in a pay period', async () 
     await page.close();
   }
 });
+
+test('Setup: the shift count box takes "10 shifts" (sixth review: it was called a typo)', async () => {
+  const page = await boot({ seed: realState((S) => (S.workplaces[0].setupDone = true)) });
+  try {
+    page.openSetup();
+    const box = page
+      .must(page.byText('.field', 'Shifts you work in a pay period', page.app), 'field')
+      .querySelector('input');
+    page.type(box, '12 shifts');
+    page.leave(box);
+    await page.saveSetup();
+    assert.equal(page.state().workplaces[0].profile.shifts, 12);
+  } finally {
+    await page.close();
+  }
+});
