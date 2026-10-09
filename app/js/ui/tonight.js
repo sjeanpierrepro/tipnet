@@ -6,6 +6,7 @@ import {
   shiftsPerPeriod,
   weeklyHours,
   payAmount,
+  pinPay,
   todayISO,
   num,
   round2,
@@ -562,7 +563,8 @@ export function entryCheck(p, d, { when = 'tonight', today = todayISO() } = {}) 
  * tip-outs were on is a's (a.tipoutOn): a part entered after "I tip out" was switched changes nothing about it.
  */
 export function mergeNights(a, b, p) {
-  const pay = { ...a.pay };
+  // the saved night's hours written out first (pinPay): an old night saved without them keeps its usual hours
+  const pay = { ...pinPay(a, p) };
   Object.keys(b.pay).forEach((k) => {
     pay[k] = Math.round(((pay[k] || 0) + b.pay[k]) * 10000) / 10000;
   });

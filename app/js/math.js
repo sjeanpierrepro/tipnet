@@ -390,7 +390,9 @@ export function periodToSetup(p, nights, idx, today = todayISO()) {
   const shifts = base.source === 'default' ? shiftsPerPeriod(p, nights, today, idx, index).n : base.n;
   const fresh = snapshotFor(p, shifts);
   const now = tipoutSetup(p);
-  const after = before.map((n) => {
+  const after = before.map((n0) => {
+    // its hours written out first (pinPay): an old night saved without them keeps its usual hours once it has tips
+    const n = { ...n0, pay: pinPay(n0, p) };
     const snap = JSON.parse(JSON.stringify(fresh));
     ((n.snap && n.snap.pay) || []).forEach((t) => {
       const has = snap.pay.some((x) => String(x.id) === String(t.id));
@@ -712,6 +714,25 @@ export function payAmount(night, t, i) {
   if (night.pay && night.pay[t.id] !== undefined && night.pay[t.id] !== '' && night.pay[t.id] !== null)
     return num(night.pay[t.id]);
   return i === 0 && !hasTips(night) ? num(t.usual) : 0;
+}
+/**
+ * A night's pay amounts written out for every pay type it is worked out with (its snapshot's, else Setup's), as
+ * storedNight writes them: an old night saved without them (pay {} or none) gets its main job's usual amount, as
+ * payAmount reads it, so setting its tips (which stops that fallback) never takes its base pay away. Pure: night.pay
+ * itself when nothing is missing (always for a night with typed tips, which never falls back).
+ */
+export function pinPay(night, p) {
+  if (hasTips(night)) return night.pay || {};
+  const types = (night.snap ? night.snap.pay : p && p.payTypes) || [];
+  const has = (id) =>
+    night.pay && night.pay[id] !== undefined && night.pay[id] !== '' && night.pay[id] !== null;
+  const missing = types.filter((t) => !has(t.id));
+  if (night.pay && !missing.length) return night.pay;
+  const pay = { ...(night.pay || {}) };
+  types.forEach((t, i) => {
+    if (!has(t.id)) pay[t.id] = payAmount(night, t, i);
+  });
+  return pay;
 }
 /** Pay from pay types for one night (uses the night's snapshot when it has one). */
 export function basePay(night, p) {
