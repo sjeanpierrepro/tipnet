@@ -433,7 +433,7 @@ export function toast(message, { undo, ms } = {}) {
 
 /* ---------- two-tap buttons ---------- */
 /** First tap arms (label changes, data-armed), second within ms confirms. Never uses confirm(). */
-export function arm(btn, { label, armedLabel, onConfirm, ms = 4000 }) {
+export function arm(btn, { label, armedLabel, onConfirm, ms = 4000, before }) {
   let timer = null;
   const text = (v) => (typeof v === 'function' ? v() : v); // a function: the label follows a rename
   const reset = () => {
@@ -444,6 +444,7 @@ export function arm(btn, { label, armedLabel, onConfirm, ms = 4000 }) {
   };
   btn.textContent = text(label);
   btn.addEventListener('click', () => {
+    if (!timer && before && before() === false) return; // refused up front: no confirm step
     if (timer) {
       reset();
       onConfirm();
