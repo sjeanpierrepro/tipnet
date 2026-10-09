@@ -151,13 +151,11 @@ test('Tonight: leaving the box shows its typo at once; Save refuses a typo at on
     mock.timers.tick(TYPO_PAUSE_MS);
     assert.match(errOf(page, total).textContent, AMOUNT);
     assert.equal(errOf(page, total).getAttribute('role'), null);
-    // nothing typed on Save is an alert too
+    // a blank box on Save is an alert too
     page.type(total, '');
-    page.type(cash, '');
-    page.type(key(page, 'night-pay-p1'), '');
     page.click(page.button('Save night'));
     assert.equal(errOf(page, total).getAttribute('role'), 'alert');
-    assert.match(errOf(page, total).textContent, /Enter your tips or your hours first\./);
+    assert.match(errOf(page, total).textContent, /Enter your credit card tips, or 0 if you had none\./);
     assert.equal(page.state().nights.length, 0);
   });
 });

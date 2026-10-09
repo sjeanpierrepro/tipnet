@@ -255,10 +255,12 @@ test('tonight: each establishment keeps its own half-typed entry and the pick su
     const total = () => key(page, 'night-cc');
     page.click(working(page)[0]);
     page.type(total(), '400');
+    page.type(page.$('[data-focus-key="night-cash"]'), '0');
     page.type(page.must(page.$('[data-focus-key^="night-pay-"]', page.app), 'hours'), '8');
     page.click(working(page)[1]);
     assert.equal(total().value, '', 'Second Spot starts blank');
     page.type(total(), '150');
+    page.type(page.$('[data-focus-key="night-cash"]'), '0');
     page.type(page.must(page.$('[data-focus-key^="night-pay-"]', page.app), 'hours'), '5');
     page.tab('periods');
     page.tab('tonight');
@@ -290,6 +292,7 @@ test('tonight: each establishment keeps its own half-typed entry and the pick su
     // a second night at Second Spot on the same date asks; Add puts them together and says where
     page.click(working(page)[1]);
     page.type(total(), '20');
+    page.type(page.$('[data-focus-key="night-cash"]'), '0');
     page.type(page.must(page.$('[data-focus-key^="night-pay-"]', page.app), 'hours'), '1');
     page.click(page.button('Save night at Second Spot'));
     assert.match(page.text(), /You already saved .* at Second Spot/);
@@ -467,11 +470,13 @@ test('tonight: after midnight the night still belongs to the evening before at t
       pick(0);
       assert.equal(key(page, 'night-date').value, '2026-09-29');
       page.type(key(page, 'night-cc'), '100');
+      page.type(page.$('[data-focus-key="night-cash"]'), '0');
       page.type(key(page, 'night-pay-p1'), '6');
       page.click(page.button('Save night at Voodoo Bayou'));
       assert.equal(nightsOf(page.state(), 'w1')[0].date, '2026-09-29');
       pick(0);
       page.type(key(page, 'night-cc'), '50');
+      page.type(page.$('[data-focus-key="night-cash"]'), '0');
       page.type(key(page, 'night-pay-p1'), '6');
       page.click(page.button('Save night at Voodoo Bayou'));
       assert.match(page.text(), /You already saved .* at Voodoo Bayou/);

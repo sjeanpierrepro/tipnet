@@ -194,7 +194,8 @@ export function dropDraft(id) {
 
 /**
  * An empty entry. d.cc and d.cash hold the typed CC tips and Cash tips (before tip-outs); TipNet adds the pay for the
- * jobs worked. A blank box counts as $0. d.rows: the jobs worked tonight, in order (pay type ids); their hours/shifts live in d.pay like every other amount.
+ * jobs worked. Both have to be typed to save (0 when there were none; see entryCheck). d.rows: the jobs worked tonight,
+ * in order (pay type ids); their hours/shifts live in d.pay like every other amount.
  * The first row is the main job with EMPTY hours: hours are typed every night (shift lengths vary), never pre-filled
  * or remembered. A per-shift main job starts at 1 shift. Other pay stays hidden until "+ Add other pay" (d.showOther).
  */
@@ -307,17 +308,18 @@ const belowZero = (v) => {
 /** True when the Cash tips box has something typed (a night saved without cash keeps it unknown until then). */
 const cashTyped = (d) => readMoney(d.cash) !== null;
 /**
- * Draft (strings) -> night with cleaned values, for live math. tips = CC tips + Cash tips (each to the cent, a blank box
- * is $0), cash = Cash tips, and total = the tips + the hourly/per-shift pay for the jobs worked (totalFromTips), so the
- * preview and the saved night use the same numbers. A night saved without a cash amount keeps its cash unknown ('')
- * while the Cash tips box is blank (d.cashUnknown). snap: work out the pay with this locked night's rates (editing or
+ * Draft (strings) -> night with cleaned values, for live math. tips = CC tips + Cash tips (each to the cent; a box not
+ * typed yet adds nothing), cash = Cash tips, and total = the tips + the hourly/per-shift pay for the jobs worked
+ * (totalFromTips), so the preview and the saved night use the same numbers. While the Cash tips box is blank the cash
+ * is unknown (''): the preview shows no check amount, and only a night saved without a cash amount is saved that way
+ * (d.cashUnknown; Save asks for the cash on every other night). snap: work out the pay with this locked night's rates (editing or
  * replacing it), and a job added to Setup since at its Setup rate (snapWithPay: the night is stored with it).
  */
 export function liveNight(d, id, p, { snap: lockedWith } = {}) {
   const pay = draftPay(d, p);
   const snap = lockedWith ? snapWithPay(lockedWith, p, { pay }) : null;
   const cashC = tipsCents(d.cash) ?? 0;
-  const cash = cashTyped(d) || !d.cashUnknown ? String(fromCents(cashC)) : '';
+  const cash = cashTyped(d) ? String(fromCents(cashC)) : '';
   const night = {
     id,
     date: d.date || todayISO(),
@@ -495,16 +497,25 @@ export function hoursProblem(p, d) {
   return { msg: '' };
 }
 export const NOTHING_MSG = 'Enter your tips or your hours first.';
-/** True when nothing is typed yet: no CC tips, no Cash tips and no hours or shifts in a job row. */
-const nothingTyped = (d) =>
-  readMoney(d.cc) === null && !cashTyped(d) && !(d.rows || []).some((id) => hasHoursText(d.pay[id]));
+export const CC_MSG = 'Enter your credit card tips, or 0 if you had none.';
+export const CASH_MSG = 'Enter your cash tips, or 0 if you had none.';
 /**
- * {where: 'cc'|'cash', msg} when a tips box can't be saved (a number below 0), else null. A blank box is $0, so 0 tips
- * on a slow night with hourly pay is fine.
+ * {where: 'cc'|'cash', msg} when a tips box can't be saved (a number below 0), else null. 0 tips on a slow night with
+ * hourly pay is fine.
  */
 export function tipsProblem(d) {
   if (belowZero(d.cc)) return { where: 'cc', msg: 'CC tips can’t be a negative number.' };
   if (belowZero(d.cash)) return { where: 'cash', msg: 'Cash tips can’t be a negative number.' };
+  return null;
+}
+/**
+ * {where: 'cc'|'cash', msg} when a tips box is blank, else null. Both are needed (accuracy first: a forgotten box is
+ * never read as $0), 0 when there were none. Only a night saved without a cash amount, opened in the night editor
+ * (d.cashUnknown), may keep Cash tips blank: its cash stays unknown, as it was.
+ */
+export function tipsMissing(d) {
+  if (readMoney(d.cc) === null) return { where: 'cc', msg: CC_MSG };
+  if (!cashTyped(d) && !d.cashUnknown) return { where: 'cash', msg: CASH_MSG };
   return null;
 }
 /** True when an hoursProblem result is about text that isn't a number (not, say, more than 24 hours). */
@@ -527,15 +538,13 @@ export function typoProblem(p, d) {
 }
 /**
  * Everything that blocks saving, in the order the person meets it: {where: 'cc'|'cash'|'hours'|'date', msg, id?} or
- * null. At least one of CC tips, Cash tips or the hours has to be typed, and the night has to come to more than $0.
- * today: the business date for tonight (dates may be at most one day after it).
+ * null. CC tips and Cash tips have to be typed (tipsMissing), and the night has to come to more than $0. today: the business date for tonight (dates may be at most one day after it).
  */
 export function entryCheck(p, d, { when = 'tonight', today = todayISO() } = {}) {
   const typo = typoProblem(p, d);
   if (typo) return typo;
-  const tp = tipsProblem(d);
+  const tp = tipsProblem(d) || tipsMissing(d);
   if (tp) return tp;
-  if (nothingTyped(d)) return { where: 'cc', msg: NOTHING_MSG };
   const miss = missingHoursRow(p, d);
   if (miss != null) return { where: 'hours', msg: 'Enter the hours you worked ' + when + '.', id: miss };
   const bad = hoursProblem(p, d);
@@ -768,7 +777,7 @@ export function nightFields(
     el(
       'p',
       { class: 'hint', id: sharedId },
-      'Tips only: TipNet adds the pay for the jobs below. A blank box counts as $0.',
+      'Tips only: TipNet adds the pay for the jobs below. Type 0 in a box if you had none.',
     ),
     // a night saved without a cash amount: its tips are all in CC tips until its cash is typed
     d.cashUnknown

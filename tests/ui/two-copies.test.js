@@ -71,6 +71,7 @@ for (const withData of [false, true]) {
     const page = await boot({ seed: seed() });
     try {
       page.type(key(page, 'night-cc'), '178'); // + 6 hours at $12: $250
+      page.type(page.$('[data-focus-key="night-cash"]'), '0');
       await otherWindowSaves(page, withData);
       assert.equal(key(page, 'night-cc').value, '178', 'what A typed is still there');
       page.type(key(page, 'night-pay-p1'), '6');

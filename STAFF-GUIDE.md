@@ -59,7 +59,7 @@ Something changed (raise, new insurance)? Update it in **Setup**. Once you are s
 ## 4. Every night
 
 - **Two establishments?** First pick where you worked under **Working at:** at the top. Nothing is picked until you do, and after you save it is cleared for the next night. Each establishment keeps what you half-typed there while the app is open.
-- **CC tips** and **Cash tips:** type your credit card tips and your cash tips, before tipping out. A blank box counts as $0. TipNet adds the pay for the jobs you worked.
+- **CC tips** and **Cash tips:** type your credit card tips and your cash tips, before tipping out. Fill in both: type 0 if you had none (a night with only hours is 0 and 0). TipNet adds the pay for the jobs you worked.
 - **What did you work tonight?** Your main job is already picked (with only one job, TipNet just shows it). Type the **hours** (8, 7.5 or 7:30); the rate fills in by itself. Worked a double? Tap **+ Add another job**, pick it and type its hours (for example Prep 2 hours, then Bartender 6 hours). Overtime, holiday hours or a bonus? Tap **+ Add other pay**.
 - **Cash not run through payroll:** If your bar doesn't run cash tips through payroll, tick the box; set aside the amount TipNet shows for tax time.
 - **Tipped out tonight:** everyone you tip out is ticked. Untick anyone you did not tip out tonight. Your result lists each tip-out, for example Barback (15% of tips) −$73.35.

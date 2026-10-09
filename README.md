@@ -6,7 +6,7 @@ All the numbers stay on your phone or computer. Your bar cannot see them. No acc
 
 ## What you can do with TipNet
 
-- **Record your shift**: Type your **CC tips** and **Cash tips** (before tip-outs) and your hours; TipNet adds your hourly pay and takes out your tip-outs. A blank box counts as $0. Nights saved by earlier versions keep their numbers.
+- **Record your shift**: Type your **CC tips** and **Cash tips** (before tip-outs) and your hours; TipNet adds your hourly pay and takes out your tip-outs. Both boxes are needed: type 0 if you had none. Nights saved by earlier versions keep their numbers.
 - **Start with your paystub**: A new install opens in Setup. Tonight and Pay periods show no numbers until setup is done (or a backup is restored), so no estimate is ever based on example taxes. "See an example first" shows made-up numbers, clearly marked.
 - **See your split**: Find out instantly how much is cash in hand and how much hits your check.
 - **Set up once**: Tell TipNet about your pay schedule (weekly, every two weeks, twice a month, or monthly), your gross pay, and your deductions (taxes, health insurance, etc.).

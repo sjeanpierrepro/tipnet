@@ -43,23 +43,24 @@ for (const [box, what] of [
   );
 }
 
-test('tonight: nothing typed is refused and not saved', async () => {
+test('tonight: nothing typed is refused and not saved; the CC tips box is asked for first', async () => {
   const page = await boot({ seed: seed() });
   try {
     submit(page);
     assert.equal(page.state().nights.length, 0);
-    assert.match(page.text(), /Enter your tips or your hours first\./);
-    assert.equal(page.doc.activeElement, ccInput(page));
+    assert.match(page.text(), /Enter your credit card tips, or 0 if you had none\./);
+    assert.ok(page.doc.activeElement === ccInput(page));
   } finally {
     await page.close();
   }
 });
 
-test('tonight: Enter in the CC tips field saves the night; blank Cash tips is $0', async () => {
+test('tonight: Enter in the CC tips field saves the night', async () => {
   const page = await boot({ seed: seed() });
   try {
     const input = ccInput(page);
     page.type(input, '178');
+    page.type(cashInput(page), '0');
     page.type(hoursInput(page), '6');
     page.key(input, 'Enter'); // happy-dom performs the browser's implicit form submission
     const n = page.state().nights;
@@ -72,9 +73,11 @@ test('tonight: Enter in the CC tips field saves the night; blank Cash tips is $0
   }
 });
 
-test('tonight: no tips with hours saves the hourly pay', async () => {
+test('tonight: no tips (0 and 0) with hours saves the hourly pay', async () => {
   const page = await boot({ seed: seed() });
   try {
+    page.type(ccInput(page), '0');
+    page.type(cashInput(page), '0');
     page.type(hoursInput(page), '8');
     submit(page);
     const n = page.state().nights;
@@ -130,7 +133,7 @@ test('tonight: two boxes, CC tips and Cash tips; the cash hint says the barback 
     );
     assert.match(
       page.text(),
-      /Tips only: TipNet adds the pay for the jobs below\. A blank box counts as \$0\./,
+      /Tips only: TipNet adds the pay for the jobs below\. Type 0 in a box if you had none\./,
     );
   } finally {
     await page.close();
@@ -180,6 +183,7 @@ test('tonight: hours typed as 7:30 are saved as 7.5', async () => {
   const page = await boot({ seed: seed() });
   try {
     page.type(ccInput(page), '300');
+    page.type(cashInput(page), '0');
     page.type(payInput(page), '7:30');
     submit(page);
     const n = page.state().nights;
@@ -194,6 +198,7 @@ test('tonight: more than 24 hours is refused with a message', async () => {
   const page = await boot({ seed: seed() });
   try {
     page.type(ccInput(page), '300');
+    page.type(cashInput(page), '0');
     page.type(payInput(page), '730');
     assert.match(page.text(), /more than 24 hours/);
     submit(page);
@@ -207,14 +212,16 @@ test('tonight: after saving, focus moves to the CC tips field (click and Enter)'
   const page = await boot({ seed: seed() });
   try {
     page.type(ccInput(page), '100');
+    page.type(cashInput(page), '0');
     page.type(hoursInput(page), '6');
     submit(page);
-    assert.equal(page.doc.activeElement, ccInput(page));
+    assert.ok(page.doc.activeElement === ccInput(page));
     assert.equal(hoursInput(page).value, '', 'hours are cleared after saving, never remembered');
     assert.equal(ccInput(page).value, '');
     assert.equal(cashInput(page).value, '');
     const input = ccInput(page);
     page.type(input, '120');
+    page.type(cashInput(page), '0');
     page.type(hoursInput(page), '6');
     page.key(input, 'Enter');
     assert.equal(page.state().nights.length, 1, 'same date asks first, so nothing new saved');
@@ -322,7 +329,7 @@ test('tonight: hints are linked to their fields (aria-describedby), together wit
     const cc = ccInput(page);
     assert.deepEqual(texts(cc), [
       'Credit card tips, before tip-outs.',
-      'Tips only: TipNet adds the pay for the jobs below. A blank box counts as $0.',
+      'Tips only: TipNet adds the pay for the jobs below. Type 0 in a box if you had none.',
     ]);
     assert.match(texts(cashInput(page))[0], /All your cash tips/);
     const hours = hoursInput(page);
@@ -339,6 +346,12 @@ test('tonight: hints are linked to their fields (aria-describedby), together wit
     assert.match(texts(cc)[1], /Credit card tips/);
     page.type(cashInput(page), '20');
     assert.equal(cc.getAttribute('aria-invalid'), null, 'typing clears what Save said');
+    // the blank Cash tips box on Save: its own message, linked to it
+    page.type(cc, '20');
+    page.type(cashInput(page), '');
+    submit(page);
+    assert.match(texts(cashInput(page))[0], /Enter your cash tips, or 0 if you had none\./);
+    page.type(cashInput(page), '20');
     const off = page.must(page.$('[data-focus-key="night-cashoff"]'), 'cash checkbox');
     assert.match(texts(off)[0], /Tick this if no tax was taken out/);
   } finally {
@@ -350,6 +363,7 @@ test('tonight: the result card says estimates use one tax rate, and Check my acc
   const page = await boot({ seed: seed() });
   try {
     page.type(ccInput(page), '128');
+    page.type(cashInput(page), '0');
     page.type(hoursInput(page), '6');
     const line = page.must(page.$('#result-one-rate'), 'one-rate line');
     assert.equal(
@@ -370,6 +384,7 @@ test('tonight: clearing the Date field falls back to the Late-nights business da
       page.type(date, '2026-09-20');
       page.type(date, ''); // cleared
       page.type(ccInput(page), '28');
+      page.type(cashInput(page), '0');
       page.type(hoursInput(page), '6');
       submit(page);
       await page.settle();

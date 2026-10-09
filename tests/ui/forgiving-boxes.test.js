@@ -72,6 +72,7 @@ test('Tonight: "$ 12.50", "+12" and "7h 30m." are accepted and saved as 12.5, 12
     const hours = key(page, 'night-pay-p1');
     typeOut(page, hours, '7h 30m.');
     typeOut(page, total, '$ 12.50');
+    page.type(page.$('[data-focus-key="night-cash"]'), '0');
     assert.equal(errOf(page, total), '');
     page.click(page.$('form button[type=submit]'));
     const n = page.state().nights;

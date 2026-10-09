@@ -254,6 +254,7 @@ test('Saving a night on Tonight keeps the backup reminder and the TipNet Budget 
     assert.ok(page.$('#budget-teaser'), 'Budget card before');
     const before = page.state().nights.length;
     page.type(page.$('[data-focus-key="night-cc"]'), '150');
+    page.type(page.$('[data-focus-key="night-cash"]'), '0');
     page.type(page.$('[data-focus-key="night-pay-p1"]'), '6');
     page.click(page.button('Save night'));
     await page.settle();

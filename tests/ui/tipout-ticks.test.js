@@ -117,6 +117,7 @@ test('a) Tonight "Replace it" / "Add to that night" carry the choice to the re-c
     assert.equal(money(page, nightOf(page, 'n1')).tipout, 0);
     // Add (barback ticked tonight): ticked in either part = ticked; the totals add up
     page.type(key(page, 'night-cc'), '100');
+    page.type(page.$('[data-focus-key="night-cash"]'), '0');
     page.type(key(page, 'night-pay-p1'), '0');
     page.type(key(page, 'night-date'), lockedDate);
     page.click(page.button('Save night'));
@@ -301,6 +302,7 @@ test('d) Tonight Replace and Add while tip-outs are off keep the night’s ticks
     page.click(page.button('Replace it'));
     assert.deepEqual(nightOf(page, 'n1').tipouts, { t1: true, t2: false });
     page.type(key(page, 'night-cc'), '38'); // + 1 hour at $12
+    page.type(page.$('[data-focus-key="night-cash"]'), '0');
     page.type(key(page, 'night-pay-p1'), '1');
     page.type(key(page, 'night-date'), date);
     page.click(page.button('Save night'));

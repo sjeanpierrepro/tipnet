@@ -31,6 +31,7 @@ test('lockFinished stamps nights in place: the same objects and the same array',
   const page = await boot({ seed: seed() });
   try {
     page.type(ccInput(page), '28'); // + 6 h at $12 = $100
+    page.type(page.$('[data-focus-key="night-cash"]'), '0');
     page.type(hoursInput(page), '6');
     submit(page);
     const S = page.state();
@@ -53,9 +54,11 @@ for (const [btn, total] of [
     const page = await boot({ seed: seed() });
     try {
       page.type(ccInput(page), '28'); // + 6 h at $12 = $100
+      page.type(page.$('[data-focus-key="night-cash"]'), '0');
       page.type(hoursInput(page), '6');
       submit(page);
       page.type(ccInput(page), '102'); // + 4 h at $12 = $150
+      page.type(page.$('[data-focus-key="night-cash"]'), '0');
       page.type(hoursInput(page), '4');
       submit(page);
       assert.ok(page.$('[data-focus-key="' + btn + '"]'), 'the question is shown');
@@ -77,9 +80,11 @@ test('Tonight same-date question: a night swapped for a copy (another window) is
   const page = await boot({ seed: seed() });
   try {
     page.type(ccInput(page), '28'); // + 6 h at $12 = $100
+    page.type(page.$('[data-focus-key="night-cash"]'), '0');
     page.type(hoursInput(page), '6');
     submit(page);
     page.type(ccInput(page), '102'); // + 4 h at $12 = $150
+    page.type(page.$('[data-focus-key="night-cash"]'), '0');
     page.type(hoursInput(page), '4');
     submit(page);
     const S = page.state();

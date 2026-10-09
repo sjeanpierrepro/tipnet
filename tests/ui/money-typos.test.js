@@ -119,6 +119,7 @@ test('Tonight: the CC tips box refuses a typo, and so does an amount in Other pa
     submit(page);
     assert.equal(page.state().nights.length, 0);
     typeOut(page, total, '350');
+    page.type(page.$('[data-focus-key="night-cash"]'), '0');
     page.click(page.button('+ Add other pay'));
     const bonus = key(page, 'night-pay-bonus');
     typeOut(page, bonus, '5.5.5');

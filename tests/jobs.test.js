@@ -185,7 +185,7 @@ test('a double (Prep 2 h + Bartender 6 h): stored, described, and merged by job'
   const p = jobsProfile();
   const d = {
     cc: '400',
-    cash: '',
+    cash: '0',
     pay: { bar: '6', prep: '2' },
     rows: ['prep', 'bar'],
     barback: true,

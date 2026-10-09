@@ -117,6 +117,7 @@ test('nontax Tonight: a non-taxable amount is added with no tax and shown as suc
   });
   try {
     page.type(page.$('[data-focus-key="night-cc"]'), '200');
+    page.type(page.$('[data-focus-key="night-cash"]'), '0');
     page.type(page.$('[data-focus-key="night-pay-bar"]'), '5');
     await page.settle();
     const taxRe = /Taxes and % deductions \([^)]*\)\s*−\$([\d.,]+)/;

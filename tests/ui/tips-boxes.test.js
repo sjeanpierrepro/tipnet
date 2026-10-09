@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { boot, realState } from './harness.js';
 import { businessDate } from '../../app/js/inputs.js';
-import { snapshotFor, computeNight } from '../../app/js/math.js';
+import { snapshotFor, computeNight, addDays } from '../../app/js/math.js';
 import { fmtDate } from '../../app/js/ui/common.js';
 
 const seed = (mutate) =>
@@ -70,6 +70,7 @@ test('hours are typed each night: empty at first, never the usual amount, nothin
   try {
     assert.equal(hours(page).value, '', 'empty, although the profile still has a usual amount');
     page.type(cc(page), '200');
+    page.type(cash(page), '0');
     assert.doesNotMatch(page.text(), /Made tonight/, 'no numbers before the hours are in');
     assert.match(page.text(), /Add tonight’s hours to see your take-home\./);
     page.type(hours(page), '8');
@@ -89,6 +90,7 @@ test('hours are required to save (0 is fine when typed)', async () => {
   const page = await boot({ seed: seed() });
   try {
     page.type(cc(page), '200');
+    page.type(cash(page), '0');
     submit(page);
     assert.match(page.text(), /Enter the hours you worked tonight\./);
     assert.equal(page.state().nights.length, 0);
@@ -102,9 +104,10 @@ test('hours are required to save (0 is fine when typed)', async () => {
   }
 });
 
-test('only cash tips, CC blank: the CC tips are $0', async () => {
+test('only cash tips: CC tips 0', async () => {
   const page = await boot({ seed: seed() });
   try {
+    page.type(cc(page), '0');
     page.type(cash(page), '75');
     page.type(hours(page), '5');
     submit(page);
@@ -173,12 +176,13 @@ test('"Add to that night" on a night with cash adds the cash; cash that skipped 
   });
   try {
     page.type(cc(page), '50');
+    page.type(cash(page), '0');
     page.type(hours(page), '1');
     submit(page);
     page.click(page.button('Add to that night'));
     const [n] = page.state().nights;
     assert.equal(n.tips, 450);
-    assert.equal(n.cash, 100, 'blank cash added $0');
+    assert.equal(n.cash, 100, '$0 cash added');
     assert.equal(n.cashOffPayroll, true, 'a part with no cash says nothing about the cash');
   } finally {
     await page.close();
@@ -196,6 +200,7 @@ test('"Replace it" on a locked night keeps its rate and stores tips + pay at tha
   });
   try {
     page.type(cc(page), '300');
+    page.type(cash(page), '0');
     page.type(hours(page), '5');
     submit(page);
     page.click(page.button('Replace it'));
@@ -402,6 +407,133 @@ test('night editor: a night saved with more cash than tips says so; changing onl
     assert.equal(n.tips, 24, 'its tips, not CC + cash');
     assert.equal(n.cash, 50);
     assert.equal(n.total, 108);
+  } finally {
+    await page.close();
+  }
+});
+
+/* ---------- both tips boxes are required (accuracy first: a forgotten box is never read as $0) ---------- */
+const CASH_MSG = 'Enter your cash tips, or 0 if you had none.';
+const CC_MSG = 'Enter your credit card tips, or 0 if you had none.';
+const errText = (page, input) => {
+  const ids = (input.getAttribute('aria-describedby') || '').split(/\s+/);
+  const e = ids.map((i) => page.doc.getElementById(i)).find((n) => n && n.classList.contains('field-error'));
+  return e && !e.hidden ? e.textContent : '';
+};
+
+test('Tonight: a blank Cash tips or CC tips box refuses Save with a message on that box; 0 is fine', async () => {
+  const page = await boot({ seed: seed() });
+  try {
+    page.type(cc(page), '120');
+    page.type(hours(page), '6');
+    submit(page);
+    assert.equal(page.state().nights.length, 0, 'blank cash: not saved');
+    assert.equal(errText(page, cash(page)), CASH_MSG);
+    assert.equal(cash(page).getAttribute('aria-invalid'), 'true');
+    assert.ok(page.doc.activeElement === cash(page), 'focus on the Cash tips box');
+    page.type(cash(page), '0');
+    assert.equal(errText(page, cash(page)), '', 'typing clears it');
+    page.type(cc(page), '');
+    submit(page);
+    assert.equal(page.state().nights.length, 0, 'blank CC: not saved');
+    assert.equal(errText(page, cc(page)), CC_MSG);
+    assert.ok(page.doc.activeElement === cc(page), 'focus on the CC tips box');
+    page.type(cc(page), '120');
+    submit(page);
+    const [n] = page.state().nights;
+    assert.equal(n.cash, 0);
+    assert.equal(n.tips, 120);
+  } finally {
+    await page.close();
+  }
+});
+
+test('Tonight: an hours-only night needs 0 typed in both tips boxes', async () => {
+  const page = await boot({ seed: seed() });
+  try {
+    page.type(hours(page), '8');
+    submit(page);
+    assert.equal(page.state().nights.length, 0);
+    assert.equal(errText(page, cc(page)), CC_MSG);
+    page.type(cc(page), '0');
+    submit(page);
+    assert.equal(page.state().nights.length, 0);
+    assert.equal(errText(page, cash(page)), CASH_MSG);
+    page.type(cash(page), '0');
+    submit(page);
+    assert.equal(page.state().nights.length, 1);
+    assert.equal(page.state().nights[0].total, 96);
+  } finally {
+    await page.close();
+  }
+});
+
+test('Tonight: the result shows no check amount until Cash tips is typed', async () => {
+  const page = await boot({ seed: seed() });
+  try {
+    page.type(cc(page), '200');
+    page.type(hours(page), '8');
+    assert.match(page.text(), /Add your cash amount to see what lands on your check\./);
+    assert.doesNotMatch(page.text(), /On your check/);
+    page.type(cash(page), '0');
+    assert.match(page.text(), /On your check/);
+  } finally {
+    await page.close();
+  }
+});
+
+test('same date: the part being added follows the rule (blank cash refused before asking Add or Replace)', async () => {
+  const D = today();
+  const page = await boot({
+    seed: seed((S) => {
+      S.nights = [{ id: 1, date: D, total: 496, tips: 400, cash: 100, pay: { p1: 8 }, barback: true }];
+    }),
+  });
+  try {
+    page.type(cc(page), '50');
+    page.type(hours(page), '1');
+    submit(page);
+    assert.ok(page.byText('button', 'Add to that night') === null, 'not asked yet');
+    assert.equal(errText(page, cash(page)), CASH_MSG);
+    page.type(cash(page), '0');
+    submit(page);
+    page.click(page.button('Add to that night'));
+    assert.equal(page.state().nights[0].tips, 450);
+    assert.equal(page.state().nights[0].cash, 100);
+  } finally {
+    await page.close();
+  }
+});
+
+test('night editor: a night with cash can’t have its Cash tips box emptied; a night saved without cash still can stay blank', async () => {
+  const D = today();
+  const page = await boot({
+    seed: seed((S) => {
+      S.nights = [
+        { id: 1, date: D, total: 496, cash: 150, pay: { p1: 8 }, barback: false },
+        { id: 2, date: addDays(D, -1), total: 496, cash: null, pay: { p1: 8 }, barback: false },
+      ];
+    }),
+  });
+  try {
+    page.tab('periods');
+    openEditor(page, fmtDate(D));
+    page.type(editCash(page, 1), '');
+    saveEdit(page);
+    assert.equal(nightOf(page, 1).cash, 150, 'not saved');
+    assert.equal(errText(page, editCash(page, 1)), CASH_MSG);
+    page.type(editCc(page, 1), '');
+    page.type(editCash(page, 1), '150');
+    saveEdit(page);
+    assert.equal(errText(page, editCc(page, 1)), CC_MSG);
+    page.click(page.button('Cancel'));
+    // the night saved without cash: its Cash tips box may stay blank, and its cash stays unknown
+    openEditor(page, fmtDate(addDays(D, -1)));
+    assert.equal(editCash(page, 2).value, '');
+    page.type(page.$('[data-focus-key="edit-2-pay-p1"]'), '7');
+    saveEdit(page);
+    assert.equal(nightOf(page, 2).cash, null);
+    assert.equal(nightOf(page, 2).tips, 400);
   } finally {
     await page.close();
   }

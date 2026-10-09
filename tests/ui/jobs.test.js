@@ -149,6 +149,7 @@ test('Tonight: main job preselected with empty hours; the rate fills in; add, pi
     assert.equal(page.$('[data-focus-key="night-job-1"]'), null);
     assert.equal(page.$$('button[aria-label^="Remove"]', page.app).length, 0, 'the first row has no Remove');
     page.type(box(page), '100');
+    page.type(page.$('[data-focus-key="night-cash"]'), '0');
     submit(page);
     assert.deepEqual(page.state().nights[0].pay, { bar: 8, prep: 0, lead: 0, ot: 0, bonus: 0 });
   } finally {
@@ -160,6 +161,7 @@ test('Tonight: hours are required, over 24 and negative hours are refused, and s
   const page = await boot({ seed: jobsState() });
   try {
     page.type(box(page), '100');
+    page.type(page.$('[data-focus-key="night-cash"]'), '0');
     submit(page);
     assert.match(page.text(), /Enter the hours you worked tonight\./);
     assert.equal(page.doc.activeElement, hrs(page, 'bar'));
@@ -198,6 +200,7 @@ test('Tonight: other pay is hidden until "+ Add other pay"', async () => {
     assert.ok(page.$('[data-focus-key="night-pay-bonus"]'));
     assert.equal(page.doc.activeElement, page.$('[data-focus-key="night-pay-ot"]'));
     page.type(box(page), '100');
+    page.type(page.$('[data-focus-key="night-cash"]'), '0');
     page.type(hrs(page, 'bar'), '8');
     page.type(page.$('[data-focus-key="night-pay-ot"]'), '2');
     page.type(page.$('[data-focus-key="night-pay-bonus"]'), '50');
@@ -222,6 +225,7 @@ test('Tonight: other pay is hidden until "+ Add other pay"', async () => {
       assert.equal(job(page, 1).value, 'bar');
       page.type(hrs(page, 'bar'), '6');
       page.type(box(page), '400');
+      page.type(page.$('[data-focus-key="night-cash"]'), '0');
       assert.match(page.text(), /Made tonight\$492\.00/);
       assert.match(page.text(), /of which base pay\$92\.00/);
       assert.match(page.text(), /of which tips\$400\.00/);
@@ -244,6 +248,7 @@ test('no numbers until the hours are in', async () => {
   const page = await boot({ seed: jobsState() });
   try {
     page.type(box(page), '400');
+    page.type(page.$('[data-focus-key="night-cash"]'), '0');
     assert.match(page.text(), /Add tonight’s hours to see your take-home\./);
     assert.equal(page.$('.result .hero'), null);
     page.type(hrs(page, 'bar'), '8');
@@ -259,11 +264,13 @@ test('same date, "Add to that night": job hours merge by job', async () => {
     pick(page, job(page, 0), 'prep');
     page.type(hrs(page, 'prep'), '2');
     page.type(box(page), '100');
+    page.type(page.$('[data-focus-key="night-cash"]'), '0');
     submit(page);
     page.type(hrs(page, 'bar'), '6');
     page.click(page.button('+ Add another job'));
     page.type(hrs(page, 'prep'), '1');
     page.type(box(page), '300');
+    page.type(page.$('[data-focus-key="night-cash"]'), '0');
     submit(page);
     assert.match(page.text(), /You already saved .*Prep 2 h/);
     page.click(page.button('Add to that night'));
@@ -282,6 +289,7 @@ test('changing a job rate later keeps the tips typed (the period is not finished
   const page = await boot({ seed: jobsState() });
   try {
     page.type(box(page), '400');
+    page.type(page.$('[data-focus-key="night-cash"]'), '0');
     page.type(hrs(page, 'bar'), '8');
     submit(page);
     page.tab('periods');

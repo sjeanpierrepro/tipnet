@@ -146,6 +146,7 @@ test('after Finish: Tonight asks for CC tips and Cash tips, $400 + 8 h x $12 sav
     assert.ok(page.$('[data-focus-key="night-cash"]'), 'a Cash tips box');
     assert.match(page.text(), /Tips only: TipNet adds the pay for the jobs below\./);
     page.type(page.$('[data-focus-key="night-cc"]'), '400');
+    page.type(page.$('[data-focus-key="night-cash"]'), '0');
     page.type(page.$('[data-focus-key="night-pay-p1"]'), '8');
     const hero = page.$('.result .hero').textContent;
     const expected = computeNight(

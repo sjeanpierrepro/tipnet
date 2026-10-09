@@ -63,6 +63,7 @@ test('tonight: unticked people are saved as such', async () => {
   const page = await boot({ seed: seed() });
   try {
     page.type(key(page, 'night-cc'), '489');
+    page.type(page.$('[data-focus-key="night-cash"]'), '0');
     page.type(key(page, 'night-pay-p1'), '8');
     const rn = key(page, 'night-tipout-t2');
     rn.checked = false;
@@ -215,6 +216,7 @@ test('pay periods editor: the night’s boxes round-trip; a same-date Add ticks 
     // Tonight on the same date: Add puts the two together
     page.tab('tonight');
     page.type(key(page, 'night-cc'), '176');
+    page.type(page.$('[data-focus-key="night-cash"]'), '0');
     page.type(key(page, 'night-pay-p1'), '2');
     const rt = key(page, 'night-tipout-t2');
     rt.checked = false;
