@@ -539,3 +539,48 @@ test('night editor: a night with cash can’t have its Cash tips box emptied; a 
     await page.close();
   }
 });
+
+test('night editor: a night saved without cash: typing only its cash takes it out of CC tips, so its tips stay the same', async () => {
+  const D = today();
+  const D2 = addDays(D, -1);
+  const page = await boot({
+    seed: seed((S) => {
+      S.nights = [
+        { id: 1, date: D, total: 496, cash: null, pay: { p1: 8 }, barback: false },
+        { id: 2, date: D2, total: 496, cash: null, pay: { p1: 8 }, barback: false },
+      ];
+    }),
+  });
+  try {
+    page.tab('periods');
+    openEditor(page, fmtDate(D));
+    const note = (id) =>
+      page.must(page.$('[data-focus-key="edit-' + id + '-cash-unknown"]'), 'note').textContent;
+    assert.match(
+      note(1),
+      /If you enter the cash, it comes out of CC tips, so the night’s tips stay \$400\.00\./,
+    );
+    page.type(editCash(page, 1), '100');
+    assert.equal(editCc(page, 1).value, '300', 'CC tips follows');
+    assert.equal(note(1), 'Your cash comes out of the CC tips, so the night’s tips stay $400.00.');
+    page.type(editCash(page, 1), '120');
+    assert.equal(editCc(page, 1).value, '280');
+    saveEdit(page);
+    let n = nightOf(page, 1);
+    assert.equal(n.tips, 400, 'not $520: the cash is not counted twice');
+    assert.equal(n.cash, 120);
+    assert.equal(n.total, 496);
+    // CC tips changed by hand first: the cash typed after it is added as typed
+    openEditor(page, fmtDate(D2));
+    page.type(editCc(page, 2), '350');
+    page.type(editCash(page, 2), '100');
+    assert.equal(editCc(page, 2).value, '350');
+    assert.match(note(2), /CC tips \+ Cash tips as you typed them/);
+    saveEdit(page);
+    n = nightOf(page, 2);
+    assert.equal(n.tips, 450);
+    assert.equal(n.cash, 100);
+  } finally {
+    await page.close();
+  }
+});

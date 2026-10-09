@@ -234,7 +234,8 @@ export function syncDraft(d, p) {
  * or for a night typed as one total (before v38) the part of the total above its pay (tipsFromTotal: the night's own
  * rates when it is locked). A night saved without a cash amount (cash unknown) shows Cash blank and all its tips as CC
  * tips, and its cash stays unknown unless a cash amount is typed (d.cashUnknown), so what lands on its check stays
- * unknown, as it was. CC tips are never shown below $0 (old data with more cash than tips). Saving with the tips and
+ * unknown, as it was. Its cash typed comes out of CC tips (d.tipsWas, d.ccAuto: see the tips boxes), so the night's
+ * tips stay the same and nothing is counted twice, until CC tips is changed by hand. CC tips are never shown below $0 (old data with more cash than tips). Saving with the tips and
  * hours as they were opened keeps the stored numbers exactly (see the editor in periods.js).
  */
 export function draftFromNight(n, p) {
@@ -244,6 +245,8 @@ export function draftFromNight(n, p) {
     cc: String(fromCents(Math.max(0, tipsC - cashC))),
     cash: n.cash == null ? '' : String(n.cash),
     cashUnknown: n.cash == null,
+    tipsWas: n.cash == null ? fromCents(Math.max(0, tipsC)) : undefined, // its tips, all in CC tips
+    ccAuto: n.cash == null, // CC tips follows the cash typed (tips - cash) until it is changed by hand
     cashOver: cashC > Math.max(0, tipsC), // saved with more cash than tips: CC tips shows $0
     pay: {},
     rows: [],
@@ -730,6 +733,31 @@ export function nightFields(
     };
     return { input, node, setError };
   };
+  // A night saved without a cash amount (the night editor): what typing its cash does to CC tips, said as it happens.
+  const unknownNote = d.cashUnknown
+    ? el('p', { class: 'note', 'data-focus-key': key + '-cash-unknown', 'aria-live': 'polite' })
+    : null;
+  const unknownText = () => {
+    const was = money(num(d.tipsWas));
+    if (!cashTyped(d))
+      return (
+        'This night was saved without a cash amount, so CC tips shows all its tips. If you enter the cash, it comes out of CC tips, so the night’s tips stay ' +
+        was +
+        '.'
+      );
+    if (!d.ccAuto)
+      return 'This night was saved without a cash amount. Its tips are now CC tips + Cash tips as you typed them.';
+    const c = tipsCents(d.cash);
+    if (c != null && c > toCents(num(d.tipsWas)))
+      return 'That is more cash than this night’s tips (' + was + '), so CC tips is $0.';
+    return 'Your cash comes out of the CC tips, so the night’s tips stay ' + was + '.';
+  };
+  function showUnknown() {
+    if (!unknownNote) return;
+    const t = unknownText();
+    if (unknownNote.textContent !== t) unknownNote.textContent = t;
+  }
+  showUnknown();
   // Someone is paid out of the cash: the Cash tips box takes all the cash, and TipNet takes their cash out.
   const fromCash = people.filter((r) => r.from !== 'payroll');
   const whoText = (r) => (r.k && r.k !== 'other' ? 'the ' + r.who.toLowerCase() : r.who);
@@ -751,6 +779,10 @@ export function nightFields(
     () => d.cc,
     (v) => {
       d.cc = v;
+      if (d.cashUnknown) {
+        d.ccAuto = false; // changed by hand: the cash no longer moves it
+        showUnknown();
+      }
     },
   );
   const cashBox = tipsBox(
@@ -760,6 +792,16 @@ export function nightFields(
     () => d.cash,
     (v) => {
       d.cash = v;
+      if (d.cashUnknown && d.ccAuto) {
+        // A night saved without its cash has all its tips in CC tips: the cash typed comes out of them, so the night's
+        // tips stay what they were (typing the cash on top would count it twice). A typo leaves CC tips as it was.
+        const c = tipsCents(v);
+        if (c != null) {
+          d.cc = String(fromCents(Math.max(0, toCents(d.tipsWas) - c)));
+          ccBox.input.value = d.cc;
+        }
+      }
+      if (d.cashUnknown) showUnknown();
     },
   );
   const offCb = el('input', { type: 'checkbox', id: uid('cop'), 'data-focus-key': key + '-cashoff' });
@@ -796,13 +838,7 @@ export function nightFields(
       'Tips only: TipNet adds the pay for the jobs below. Type 0 in a box if you had none.',
     ),
     // a night saved without a cash amount: its tips are all in CC tips until its cash is typed
-    d.cashUnknown
-      ? el(
-          'p',
-          { class: 'note', 'data-focus-key': key + '-cash-unknown' },
-          'This night was saved without a cash amount, so CC tips shows all its tips. If you enter the cash, take it out of CC tips.',
-        )
-      : null,
+    unknownNote,
     d.cashOver
       ? el(
           'p',
