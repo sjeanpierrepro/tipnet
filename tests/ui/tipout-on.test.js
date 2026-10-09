@@ -4,6 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { boot, realState } from './harness.js';
 import { todayISO, addDays, computeNight, snapshotFor, exampleProfile } from '../../app/js/math.js';
+import { money } from '../../app/js/ui/common.js';
 
 const today = todayISO();
 const BARBACK = { id: 't1', k: 'barback', who: 'Barback', mode: 'pctTips', value: 15, from: 'cash' };
@@ -192,6 +193,7 @@ test('same date: Add keeps the saved night’s switch; Replace takes tonight’s
     // the night was saved with tip-outs on (barback ticked); they are off tonight
     const page = await boot({ seed: seed(false, [savedNight('n1', true)]) });
     try {
+      const was = net(page, nightOf(page, 'n1'));
       enter(page, addDays(today, -1));
       page.click(page.button('Save night'));
       page.click(page.button(verb));
@@ -201,8 +203,20 @@ test('same date: Add keeps the saved night’s switch; Replace takes tonight’s
         assert.equal(n.tipoutOn, true, verb);
         assert.equal(n.total, 1000);
         assert.equal(computeNight(n, page.state().workplaces[0].profile, 10).tipout, 121.2, verb);
-        // the part added, the way the night it joined counts it (tip-outs on): not $410.75
-        assert.match(page.text(page.$('#night-saved')), /^Saved\. \$360\.24 take-home for /);
+        // the night's new take-home as stored, and what the part changed it by (tip-outs on, as the night has them)
+        const line = page.text(page.$('#night-saved'));
+        assert.ok(line.startsWith('Saved. ' + money(net(page, n)) + ' take-home for '), line);
+        assert.ok(
+          line.endsWith(
+            '(+' + money(Math.round((net(page, n) - was) * 100) / 100) + ' from what you added).',
+          ),
+          line,
+        );
+        assert.equal(
+          Math.round((net(page, n) - was) * 100) / 100,
+          366.24,
+          'not $410.75 (tip-outs off), nor $360.24 (a second $6 share of fixed deductions)',
+        );
       } else {
         assert.equal(n.tipoutOn, false, verb);
         assert.equal(net(page, n), 410.75, verb);

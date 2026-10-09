@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { boot, realState } from './harness.js';
 import { todayISO, addDays, computeNight, exampleProfile, snapshotFor } from '../../app/js/math.js';
-import { fmtDate, fmtShort } from '../../app/js/ui/common.js';
+import { fmtDate, fmtShort, money } from '../../app/js/ui/common.js';
 
 const today = todayISO();
 const BARBACK = { id: 't1', k: 'barback', who: 'Barback', mode: 'pctTips', value: 15, from: 'cash' };
@@ -210,7 +210,7 @@ test('finished pay period, same date: Replace keeps the night’s snapshot and s
   }
 });
 
-test('finished pay period locked with the same Setup as today (e.g. after midnight): no note; Add says the part added', async () => {
+test('finished pay period locked with the same Setup as today (e.g. after midnight): no note; Add says the night as stored', async () => {
   const page = await boot({ seed: seed([BARBACK]) });
   try {
     const date = addDays(start, 5);
@@ -221,14 +221,19 @@ test('finished pay period locked with the same Setup as today (e.g. after midnig
     page.click(page.button('Save night'));
     await page.settle();
     assert.equal(page.text(page.$('#night-saved')), 'Saved. $360.24 take-home for ' + fmtDate(date) + '.');
-    // the same date again: "Add to that night" says what this part adds, as the locked night counts it
+    // the same date again: "Add to that night" says the night's new take-home as stored (locked), and what this part
+    // changed it by: $366.24, not $360.24 (the part as a night of its own carried a second $6 of fixed deductions)
     enter(page, date);
     page.click(page.button('Save night'));
     page.click(page.button('Add to that night'));
     await page.settle();
     const n = page.state().nights.find((x) => x.date === date);
     assert.equal(n.total, 1000);
-    assert.equal(page.text(page.$('#night-saved')), 'Saved. $360.24 take-home for ' + fmtDate(date) + '.');
+    const now = computeNight(n, page.state().workplaces[0].profile, 10).net;
+    assert.equal(
+      page.text(page.$('#night-saved')),
+      'Saved. ' + money(now) + ' take-home for ' + fmtDate(date) + ' (+$366.24 from what you added).',
+    );
   } finally {
     await page.close();
   }

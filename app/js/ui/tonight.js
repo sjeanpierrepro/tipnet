@@ -1593,8 +1593,8 @@ export function render(root) {
   );
   fields.tipsNode.after(quick);
   /**
-   * verb() stores the night and returns {stored} (the night as stored), plus {part} for "Add to that night" (the part
-   * added). shifts: the shift count the preview used.
+   * verb() stores the night and returns {stored} (the night as stored), plus {was} for "Add to that night" (the take-home
+   * of the night it joined, as stored before). shifts: the shift count the preview used (Setup's).
    */
   const finish = (night, shifts, verb) => {
     if (S.nightsExample) {
@@ -1608,15 +1608,11 @@ export function render(root) {
     if (S.nights.length > had) countSavedNight(S);
     lockFinished({ force: true });
     // The take-home said is what was stored, locked as it now is (a night in a finished pay period gets its snapshot
-    // when saved). "Add to that night": the part added, worked out the way the night it joined is (its snapshot, and
-    // whether tip-outs were on for it: the night keeps its own).
-    const st = kept.stored;
-    const joined = (part) => ({
-      ...part,
-      tipoutOn: nightTipout(st, p).on,
-      ...(st.snap ? { snap: st.snap } : {}),
-    });
-    const net = computeNight(kept.part ? joined(kept.part) : st, p, shifts).net;
+    // when saved). "Add to that night": the night's new take-home, and what the part added changed it by (stored after
+    // minus stored before), never the part worked out as a night of its own (a second share of the fixed deductions,
+    // a flat tip-out charged again).
+    const net = computeNight(kept.stored, p, shifts).net;
+    const added = kept.was == null ? null : fromCents(toCents(net) - toCents(kept.was));
     save();
     drafts.set(w.id, blankDraft(S, p));
     if (many) picked = null; // the next night: where it was worked is picked again
@@ -1632,7 +1628,9 @@ export function render(root) {
         money(net) +
         ' take-home for ' +
         fmtDate(night.date) +
-        '.';
+        (added == null
+          ? '.'
+          : ' (' + (added < 0 ? minus(added) : '+' + money(added)) + ' from what you added).');
   };
   form.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -1680,16 +1678,12 @@ export function render(root) {
     add.addEventListener(
       'click',
       choose(() => {
-        let part = night;
+        let was = null; // the night's take-home as it was stored (null: it is gone, tonight is saved on its own)
         const stored = overDup((cur) => {
-          part = alignNight(onto(cur), d, p, null, peopleOf(cur, p));
-          return mergeNights(cur, part, p);
+          was = computeNight(cur, p, shifts).net;
+          return mergeNights(cur, alignNight(onto(cur), d, p, null, peopleOf(cur, p)), p);
         });
-        // A part entered with no boxes on screen (tip-outs off tonight) says nothing about who was tipped out: the
-        // night keeps its own choices (and its own switch), so the part is said with them too.
-        if (stored !== part && !draftTipouts(d, p).length)
-          part = { ...part, tipouts: stored.tipouts, barback: stored.barback };
-        return { stored, part };
+        return { stored, was };
       }),
     );
     const rep = el(
