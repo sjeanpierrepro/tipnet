@@ -311,7 +311,9 @@ test('tonight: at 1 a.m. on a pay period’s first day, the pay period summary i
     try {
       assert.equal(page.$('[data-focus-key="night-date"]').value, '2026-10-04', 'tonight is still Oct 4');
       const t = page.text();
-      assert.match(t, /Check so far this pay period \(1 night\): \$/);
+      // the period the night belongs to, finished since midnight (as Pay periods shows it: locked, final)
+      assert.match(t, /This pay period · Sep 21 – Oct 4 · final/);
+      assert.match(t, /This pay period’s check \(1 night\): \$/);
       assert.doesNotMatch(t, /No nights logged yet this period/);
     } finally {
       await page.close();

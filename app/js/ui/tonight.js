@@ -1274,29 +1274,30 @@ export function resultCard(c, w, note, hoursMissing = false) {
 }
 
 function stripCard(S, w) {
-  // The business date (Late nights rule), the same date Tonight's entries use: at 1 a.m. on a period's first day the
-  // night still belongs to the period before.
-  const p = w.profile,
-    today = tonightOf(S);
-  const idx = periodIndex(p, today);
+  // WHICH period: the business date (Late nights rule), the same date Tonight's entries use: at 1 a.m. on a period's
+  // first day the night still belongs to the period before. Whether it is FINISHED: the calendar date, as everywhere
+  // (its nights were locked at midnight, and Pay periods shows it final), so both screens show the same amounts.
+  const p = w.profile;
+  const idx = periodIndex(p, tonightOf(S));
   const nights = S.nightsExample && !S.profileExample ? [] : nightsOf(S, w.id);
-  const t = periodTotals(p, nights, idx, today);
+  const t = periodTotals(p, nights, idx, todayISO());
+  // with cents, like Pay periods: rounding can't make the two disagree
   const strip = el(
     'div',
     { class: 'strip' },
-    el('div', null, el('span', { class: 'label' }, 'Take-home'), el('b', null, money0(t.net))),
+    el('div', null, el('span', { class: 'label' }, 'Take-home'), el('b', null, money(t.net))),
     el('div', null, el('span', { class: 'label' }, 'Nights'), el('b', null, String(t.ns.length))),
     el(
       'div',
       null,
       el('span', { class: 'label' }, 'Per hour'),
-      el('b', null, t.hrs ? money0(t.net / t.hrs) : '—'),
+      el('b', null, t.hrs ? money(t.net / t.hrs) : '—'),
     ),
   );
   // Not "your next check": with a payday delay the next check can belong to the previous pay period.
   const cap = t.ns.length
     ? t.allCash
-      ? 'Check so far this pay period (' +
+      ? (t.exact ? 'This pay period’s check (' : 'Check so far this pay period (') +
         t.ns.length +
         (t.ns.length === 1 ? ' night' : ' nights') +
         '): ' +
@@ -1307,7 +1308,7 @@ function stripCard(S, w) {
   return el(
     'div',
     { class: 'stack-sm' },
-    el('div', { class: 'label' }, 'This pay period · ' + periodLabel(p, idx)),
+    el('div', { class: 'label' }, 'This pay period · ' + periodLabel(p, idx) + (t.exact ? ' · final' : '')),
     strip,
     el('p', { class: 'hint' }, cap),
   );
