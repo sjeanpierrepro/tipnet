@@ -26,7 +26,7 @@ const seedWith = (pay = { bar: 5, tr: 6, pr: 0 }) =>
     S.nights = [
       {
         id: 'n1',
-        date: addDays(today, -1),
+        date: addDays(today, -2), // not tonight's date, even before the Late-nights cutoff
         tips: 200,
         cash: 50,
         total: 200 + 5 * 12 + num(pay.tr) * 15,
