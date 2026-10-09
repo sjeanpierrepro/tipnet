@@ -44,7 +44,7 @@ test('Nightly reminder: row, defaults, refuses no days, saves the .ics and the s
     assert.equal(saved[0].name, 'tipnet-reminder.ics');
     assert.equal(saved[0].type, 'text/calendar;charset=utf-8');
     assert.match(saved[0].text, /^BEGIN:VCALENDAR\r\n/);
-    // Mon-Sat NIGHTS at 1:30 AM (before the 6 a.m. Late-nights cutoff): Tuesday to Sunday mornings
+    // Mon-Sat NIGHTS at 1:30 AM (before noon): Tuesday to Sunday mornings
     assert.match(saved[0].text, /RRULE:FREQ=WEEKLY;BYDAY=TU,WE,TH,FR,SA,SU\r\n/);
     assert.match(saved[0].text, /DTSTART:\d{8}T013000\r\n/);
     assert.match(saved[0].text, /SEQUENCE:0\r\n/);
@@ -78,7 +78,7 @@ test('Nightly reminder: the boxes are the nights you work; Fri and Sat at 2:00 A
     assert.ok(group.contains(page.$('#rem-day-4')));
     assert.equal(
       page.$('#rem-early').textContent,
-      'Reminders before 6:00 AM (your Late-nights cutoff) come the morning after each night you work.',
+      'Times before noon remind you the morning after each night you work.',
     );
     for (let i = 0; i < 7; i++) {
       page.$('#rem-day-' + i).checked = i === 4 || i === 5;
@@ -98,3 +98,41 @@ test('Nightly reminder: the boxes are the nights you work; Fri and Sat at 2:00 A
     await page.close();
   }
 });
+
+// Sixth review: the day only moved when the time was before the Late-nights cutoff, so 2:00 AM with Late nights off,
+// or 9:00 AM, reminded after Thursday and Friday nights (none after Saturday's). Before noon is now the morning after.
+for (const [cutoff, time, want, hint] of [
+  [0, '02:00', 'SA,SU', true],
+  [6, '09:00', 'SA,SU', true],
+  [3, '04:00', 'SA,SU', true],
+  [6, '23:00', 'FR,SA', false],
+  [0, '12:00', 'FR,SA', false],
+]) {
+  test(
+    'Nightly reminder: Fri and Sat nights at ' + time + ' (Late nights ' + cutoff + ') remind ' + want,
+    async () => {
+      saved.length = 0;
+      const page = await boot({ seed: realState((S) => (S.settings.dayCutoffHour = cutoff)) });
+      try {
+        page.tab('setup');
+        page.click(page.must(page.$('#fold-reminder'), 'reminder row'));
+        for (let i = 0; i < 7; i++) {
+          page.$('#rem-day-' + i).checked = i === 4 || i === 5;
+          page.change(page.$('#rem-day-' + i));
+        }
+        page.$('#rem-time').value = time;
+        page.change(page.$('#rem-time'));
+        assert.equal(page.$('#rem-early').hidden, !hint);
+        if (hint)
+          assert.equal(
+            page.$('#rem-early').textContent,
+            'Times before noon remind you the morning after each night you work.',
+          );
+        page.click(page.button('Add to my calendar'));
+        assert.match(saved[0].text, new RegExp('RRULE:FREQ=WEEKLY;BYDAY=' + want + '\r\n'));
+      } finally {
+        await page.close();
+      }
+    },
+  );
+}

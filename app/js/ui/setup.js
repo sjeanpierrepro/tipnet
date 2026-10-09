@@ -74,7 +74,7 @@ import {
   flush,
 } from '../storage.js';
 import { renderBackup, renderInstall, fileSaver } from './backup.js';
-import { buildIcs, makeUid, timeLabel, nightsLabel, reminderDays, DAY_NAMES } from '../ics.js';
+import { buildIcs, makeUid, timeLabel, nightsLabel, isMorning, DAY_NAMES } from '../ics.js';
 import { redateDraft, dropDraft } from './tonight.js';
 
 let guidedStep = 0;
@@ -1665,16 +1665,11 @@ function reminderCard(ctx) {
   const days = () => DAY_NAMES.map((_, i) => i).filter((i) => boxes[i].querySelector('input').checked);
   const msg = el('p', { class: 'field-error', id: 'rem-err', role: 'alert', hidden: true });
   const last = el('p', { class: 'hint', id: 'rem-last' }, reminderText(cur));
-  // The boxes are the nights worked: a time before the Late-nights cutoff goes off the next morning (reminderDays).
-  const cutoff = () => cutoffFromSettings(S.settings);
+  // The boxes are the nights worked: a time before noon goes off the morning after (ics.reminderDays).
   const early = el('p', { class: 'hint', id: 'rem-early' });
   const showEarly = () => {
-    const next = reminderDays(time.value, [0], cutoff())[0] === 1; // a night moves to the morning after it
-    const text = next
-      ? 'Reminders before ' +
-        timeLabel(String(cutoff()).padStart(2, '0') + ':00') +
-        ' (your Late-nights cutoff) come the morning after each night you work.'
-      : '';
+    const next = isMorning(time.value);
+    const text = next ? 'Times before noon remind you the morning after each night you work.' : '';
     if (early.textContent !== text) early.textContent = text;
     early.hidden = !next;
   };
@@ -1710,7 +1705,6 @@ function reminderCard(ctx) {
       sequence: seq,
       now,
       url: location.origin + location.pathname,
-      cutoffHour: cutoff(),
     });
     S.settings.reminder = { time: time.value, days: d, addedAt: now.getTime(), uid, seq };
     save();

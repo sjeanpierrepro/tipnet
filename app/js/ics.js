@@ -83,16 +83,19 @@ export function timeLabel(time) {
   return (h % 12 || 12) + ':' + m[2] + ' ' + (h < 12 ? 'AM' : 'PM');
 }
 
-/**
- * The days the reminder goes off, from the NIGHTS ticked (0 = Monday night): a time before the Late-nights cutoff
- * (cutoffHour, 0 = off) is the next morning, so each night moves on a day (Friday and Saturday nights at 2:00 AM are
- * Saturday and Sunday mornings; Sunday night is Monday). At or after the cutoff the reminder comes on the night itself.
- */
-export function reminderDays(time, nights, cutoffHour = 0) {
+/** True for a reminder time from 12:00 AM to 11:59 AM: it goes off the morning after each night ticked. */
+export const isMorning = (time) => {
   const m = TIME_RE.exec(time);
+  return !!m && +m[1] < 12;
+};
+/**
+ * The days the reminder goes off, from the NIGHTS ticked (0 = Monday night): a time before noon (12:00 AM to 11:59 AM)
+ * is the morning after, so each night moves on a day (Friday and Saturday nights at 2:00 AM are Saturday and Sunday
+ * mornings; Sunday night is Monday). 12:00 PM to 11:59 PM is the night itself. The Late-nights cutoff plays no part.
+ */
+export function reminderDays(time, nights) {
   const set = cleanDays(nights);
-  if (!m || !(cutoffHour > 0) || +m[1] >= cutoffHour) return set;
-  return cleanDays(set.map((d) => (d + 1) % 7));
+  return isMorning(time) ? cleanDays(set.map((d) => (d + 1) % 7)) : set;
 }
 
 /** "every day", "Mon–Sat", "Mon, Wed, Fri". */
@@ -109,11 +112,10 @@ export const nightsLabel = (days) =>
 
 /**
  * The .ics text for the nightly reminder.
- * { time, days (the nights worked), uid, sequence, now (Date), url, cutoffHour (Late nights; see reminderDays) } ->
- * string with CRLF line endings.
+ * { time, days (the nights worked; see reminderDays), uid, sequence, now (Date), url } -> string with CRLF line endings.
  */
-export function buildIcs({ time, days, uid, sequence = 0, now = new Date(), url = '', cutoffHour = 0 }) {
-  const set = reminderDays(time, days, cutoffHour);
+export function buildIcs({ time, days, uid, sequence = 0, now = new Date(), url = '' }) {
+  const set = reminderDays(time, days);
   const start = nextStart(now, time, set);
   if (!start) throw new Error('Pick a time and at least one day.');
   const rrule =

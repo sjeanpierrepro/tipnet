@@ -21,15 +21,15 @@ const prop = (t, name) => lines(t).find((l) => l.startsWith(name + ':'));
 const ALL = [0, 1, 2, 3, 4, 5, 6];
 const UID = 'tipnet-reminder-abc123def456@tipnet';
 
-test('BYDAY mapping: Monday first, WEEKLY for some days, DAILY for all seven', () => {
+test('BYDAY mapping: Monday first, WEEKLY for some days, DAILY for all seven (an evening time: the nights themselves)', () => {
   const now = new Date(2026, 8, 29, 12, 0);
-  const t = buildIcs({ time: '02:00', days: [0, 2, 4, 5, 6], uid: UID, now });
+  const t = buildIcs({ time: '20:00', days: [0, 2, 4, 5, 6], uid: UID, now });
   assert.equal(prop(t, 'RRULE'), 'RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR,SA,SU');
   assert.equal(
-    prop(buildIcs({ time: '02:00', days: [3], uid: UID, now }), 'RRULE'),
+    prop(buildIcs({ time: '20:00', days: [3], uid: UID, now }), 'RRULE'),
     'RRULE:FREQ=WEEKLY;BYDAY=TH',
   );
-  assert.equal(prop(buildIcs({ time: '02:00', days: ALL, uid: UID, now }), 'RRULE'), 'RRULE:FREQ=DAILY');
+  assert.equal(prop(buildIcs({ time: '20:00', days: ALL, uid: UID, now }), 'RRULE'), 'RRULE:FREQ=DAILY');
 });
 
 test('nextStart: right now vs later today, across week, month and year ends', () => {
@@ -152,33 +152,35 @@ test('settings.reminder: a valid one is kept, junk is dropped', () => {
     assert.equal(get(bad), undefined, JSON.stringify(bad));
 });
 
-test('the boxes are the nights worked: a time before the Late-nights cutoff moves each to the next morning', () => {
+test('the boxes are the nights worked: a time before noon moves each to the next morning', () => {
   const now = new Date(2026, 8, 29, 12, 0); // Tuesday
-  const t = buildIcs({ time: '02:00', days: [4, 5], uid: UID, now, cutoffHour: 6 });
+  const t = buildIcs({ time: '02:00', days: [4, 5], uid: UID, now });
   // Friday and Saturday nights at 2:00 AM: Saturday and Sunday mornings (not Thursday and Friday nights)
   assert.equal(prop(t, 'RRULE'), 'RRULE:FREQ=WEEKLY;BYDAY=SA,SU');
   assert.equal(prop(t, 'DTSTART'), 'DTSTART:20261003T020000'); // Sat Oct 3, after Friday night
-  assert.deepEqual(reminderDays('02:00', [4, 5], 6), [5, 6]);
+  assert.deepEqual(reminderDays('02:00', [4, 5]), [5, 6]);
   // Saturday and Sunday nights: Sunday and Monday mornings
   assert.equal(
-    prop(buildIcs({ time: '02:00', days: [5, 6], uid: UID, now, cutoffHour: 6 }), 'RRULE'),
+    prop(buildIcs({ time: '02:00', days: [5, 6], uid: UID, now }), 'RRULE'),
     'RRULE:FREQ=WEEKLY;BYDAY=MO,SU',
   );
-  assert.equal(
-    prop(buildIcs({ time: '05:59', days: ALL, uid: UID, now, cutoffHour: 6 }), 'RRULE'),
-    'RRULE:FREQ=DAILY',
-  );
-  // at or after the cutoff, or with Late nights off, the reminder comes on the night itself
-  ['23:00', '06:00'].forEach((time) =>
+  assert.equal(prop(buildIcs({ time: '05:59', days: ALL, uid: UID, now }), 'RRULE'), 'RRULE:FREQ=DAILY');
+  // Sixth review: any time from 12:00 AM to 11:59 AM is the morning after (whatever the Late-nights cutoff: it was
+  // only moved before the cutoff, so 2:00 AM with Late nights off, or 9:00 AM, reminded after Thursday and Friday
+  // nights); 12:00 PM to 11:59 PM is the night itself.
+  ['00:00', '02:00', '04:00', '09:00', '11:59'].forEach((time) =>
     assert.equal(
-      prop(buildIcs({ time, days: [4, 5], uid: UID, now, cutoffHour: 6 }), 'RRULE'),
-      'RRULE:FREQ=WEEKLY;BYDAY=FR,SA',
+      prop(buildIcs({ time, days: [4, 5], uid: UID, now }), 'RRULE'),
+      'RRULE:FREQ=WEEKLY;BYDAY=SA,SU',
       time,
     ),
   );
-  assert.equal(
-    prop(buildIcs({ time: '02:00', days: [4, 5], uid: UID, now, cutoffHour: 0 }), 'RRULE'),
-    'RRULE:FREQ=WEEKLY;BYDAY=FR,SA',
+  ['12:00', '18:30', '23:00'].forEach((time) =>
+    assert.equal(
+      prop(buildIcs({ time, days: [4, 5], uid: UID, now }), 'RRULE'),
+      'RRULE:FREQ=WEEKLY;BYDAY=FR,SA',
+      time,
+    ),
   );
   assert.equal(nightsLabel([4, 5]), 'Fri, Sat nights');
   assert.equal(nightsLabel(ALL), 'every night');
