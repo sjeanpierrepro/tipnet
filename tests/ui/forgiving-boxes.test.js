@@ -63,13 +63,12 @@ test('Tonight: "$ 12.50", "+12" and "7h 30m." are accepted and saved as 12.5, 12
   const page = await boot({
     seed: realState((S) => {
       S.workplaces[0].setupDone = true;
-      S.workplaces[0].profile.entryMode = 'total';
-      S.workplaces[0].profile.tipout = { on: false, basis: 'before' };
+      S.workplaces[0].profile.tipout = { on: false };
       S.workplaces[0].profile.payTypes[0].unit = 'hr';
     }),
   });
   try {
-    const total = key(page, 'night-total');
+    const total = key(page, 'night-cc');
     const hours = key(page, 'night-pay-p1');
     typeOut(page, hours, '7h 30m.');
     typeOut(page, total, '$ 12.50');
@@ -77,7 +76,8 @@ test('Tonight: "$ 12.50", "+12" and "7h 30m." are accepted and saved as 12.5, 12
     page.click(page.$('form button[type=submit]'));
     const n = page.state().nights;
     assert.equal(n.length, 1);
-    assert.equal(n[0].total, 12.5);
+    assert.equal(n[0].tips, 12.5);
+    assert.equal(n[0].total, 102.5, '$12.50 tips + 7.5 hours at $12');
     assert.equal(n[0].pay.p1, 7.5);
     typeOut(page, total, '+12');
     assert.equal(errOf(page, total), '');

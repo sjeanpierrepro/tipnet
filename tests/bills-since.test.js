@@ -71,7 +71,7 @@ test('bills: the example budget opens with a positive safe-to-spend on any day (
   for (let i = 0; i < 400; i++) days.push(M.addDays(real, i));
   for (let i = 0; i < 400; i++) days.push(M.addDays('2026-10-01', i));
   days.forEach((d) => {
-    const p = { ...M.exampleProfile(d), entryMode: 'tips' };
+    const p = M.exampleProfile(d);
     const ex = B.exampleBudget(d);
     const r = B.safeToSpend(ex, p, M.exampleNights(d), d);
     assert.ok(r.safe >= 0, 'safe to spend on ' + d + ' is ' + r.safe);

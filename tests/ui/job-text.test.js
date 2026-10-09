@@ -24,7 +24,7 @@ test('one job: its name and rate as labelled text, no dropdown; hours still work
     assert.equal(txt.textContent, 'Job: Bartender · $12.00/h');
     assert.equal(txt.querySelector('.sr-only').textContent, 'Job: ', 'screen readers hear "Job: Bartender"');
     assert.equal(page.$('[data-focus-key="night-add-job"]'), null, 'nothing to add');
-    page.type(page.$('[data-focus-key="night-total"]'), '585');
+    page.type(page.$('[data-focus-key="night-cc"]'), '489');
     page.type(page.$('[data-focus-key="night-pay-p1"]'), '8');
     assert.equal(page.$('.result .hero').textContent, '$420.46');
   } finally {

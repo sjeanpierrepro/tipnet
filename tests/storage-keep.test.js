@@ -65,7 +65,7 @@ test('migrate keeps settings.guidedDraft, cleaned like a profile, with blank dat
   assert.equal(g.profile.freq, 7);
   assert.equal(g.profile.deductions.length, 1);
   assert.equal(g.profile.tipout.on, true);
-  assert.equal(g.profile.entryMode, 'tips');
+  assert.equal('entryMode' in g.profile, false, 'entry modes are gone');
   assert.equal(g.profile.evil, undefined);
   // junk drafts: a bad step is 0, a non-object draft is dropped
   assert.equal(

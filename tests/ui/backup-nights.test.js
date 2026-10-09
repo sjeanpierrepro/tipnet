@@ -17,8 +17,8 @@ const seed = (mutate) =>
     if (mutate) mutate(S);
   });
 const key = (page, k) => page.must(page.$('[data-focus-key="' + k + '"]'), k);
-const logNight = (page, total = '300') => {
-  page.type(key(page, 'night-total'), total);
+const logNight = (page, tips = '228') => {
+  page.type(key(page, 'night-cc'), tips);
   page.type(key(page, 'night-pay-p1'), '6');
   page.click(page.button('Save night'));
   // a second night on the same date: keep it separate
@@ -98,13 +98,13 @@ test('adding to or replacing a night already saved for that date is not a new ni
     logNight(page);
     assert.equal(page.state().settings.nightsSinceBackup, 6);
     const nights = page.state().nights.length;
-    page.type(key(page, 'night-total'), '100');
+    page.type(key(page, 'night-cc'), '100');
     page.type(key(page, 'night-pay-p1'), '2');
     page.click(page.button('Save night'));
     page.click(page.must(page.byText('button', 'Add to that night'), 'Add'));
     assert.equal(page.state().nights.length, nights);
     assert.equal(page.state().settings.nightsSinceBackup, 6);
-    page.type(key(page, 'night-total'), '120');
+    page.type(key(page, 'night-cc'), '120');
     page.type(key(page, 'night-pay-p1'), '2');
     page.click(page.button('Save night'));
     page.click(page.must(page.byText('button', 'Replace it'), 'Replace'));

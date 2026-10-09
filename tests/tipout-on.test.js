@@ -17,7 +17,6 @@ const prof = (on, basis = 'before') => ({
   shifts: 10,
   tipout: { on, basis },
   tipouts: [{ ...BARBACK }],
-  entryMode: 'total',
 });
 // $500 made, 8 hours at $12 = $96 pay: $404 tips, 15% for the barback is $60.60 ($360.24 take-home, $410.75 without)
 const night = (extra = {}) => ({

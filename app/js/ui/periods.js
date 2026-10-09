@@ -69,6 +69,7 @@ import {
   jobsText,
   moneyNum,
   typoProblem,
+  tipsProblem,
   alignNight,
   peopleOf,
   draftTipouts,
@@ -290,7 +291,7 @@ function editor(S, n) {
   };
   /** quiet: the first draw (opening the editor) shows the estimate without speaking it. */
   const upd = (quiet) => {
-    if (typoProblem(p, d)) {
+    if (typoProblem(p, d) || tipsProblem(d)) {
       preview.textContent = 'Fix the number marked above to see the estimate.';
       return quiet === true ? undefined : speak();
     }

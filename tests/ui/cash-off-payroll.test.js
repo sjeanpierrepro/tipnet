@@ -10,8 +10,8 @@ const seed = (mutate) =>
     if (mutate) mutate(S);
   });
 const key = (page, k) => page.must(page.$('[data-focus-key="' + k + '"]'), k);
-const fill = (page, total, hours, cash) => {
-  page.type(key(page, 'night-total'), total);
+const fill = (page, tips, hours, cash) => {
+  page.type(key(page, 'night-cc'), tips);
   page.type(key(page, 'night-pay-p1'), hours);
   if (cash !== undefined) page.type(key(page, 'night-cash'), cash);
 };
@@ -23,7 +23,7 @@ test('tonight: the cash box shows only once cash is typed; ticking it raises tak
   try {
     const cb = key(page, 'night-cashoff');
     assert.equal(wrap(cb).hidden, true, 'hidden until cash is entered');
-    fill(page, '585', '8');
+    fill(page, '279', '8');
     assert.doesNotMatch(page.text(), /Set aside about/);
     page.type(key(page, 'night-cash'), '210');
     assert.equal(wrap(cb).hidden, false);
@@ -51,7 +51,7 @@ test('tonight: the cash box shows only once cash is typed; ticking it raises tak
 test('tonight: the establishment default pre-ticks the box; Setup saves the default', async () => {
   const page = await boot({ seed: seed((S) => (S.workplaces[0].profile.cashOffPayroll = true)) });
   try {
-    fill(page, '585', '8', '210');
+    fill(page, '279', '8', '210');
     assert.equal(key(page, 'night-cashoff').checked, true);
     page.openSetup();
     const box = page.must(page.$('#cash-off-payroll'), 'setup box');
@@ -64,7 +64,7 @@ test('tonight: the establishment default pre-ticks the box; Setup saves the defa
     await page.saveSetup();
     assert.equal(page.state().workplaces[0].profile.cashOffPayroll, false);
     page.tab('tonight');
-    fill(page, '585', '8', '210');
+    fill(page, '279', '8', '210');
     assert.equal(key(page, 'night-cashoff').checked, false, 'untouched tonight follows the new default');
   } finally {
     await page.close();
@@ -82,10 +82,10 @@ test('tonight: each establishment has its own default and keeps its own tick', a
   });
   try {
     const radios = () => page.$$('[role=radio]', page.app);
-    fill(page, '300', '6', '80');
+    fill(page, '148', '6', '80');
     assert.equal(key(page, 'night-cashoff').checked, true);
     page.click(radios()[1]);
-    fill(page, '300', '6', '80');
+    fill(page, '148', '6', '80');
     assert.equal(key(page, 'night-cashoff').checked, false, 'second establishment default is off');
     const cb2 = key(page, 'night-cashoff');
     cb2.checked = true;

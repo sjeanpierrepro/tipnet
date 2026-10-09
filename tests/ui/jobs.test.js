@@ -6,10 +6,9 @@ import { businessDate } from '../../app/js/inputs.js';
 import { JOB_PRESETS, OTHER_PAY_PRESETS } from '../../app/js/math.js';
 import * as storage from '../../app/js/storage.js';
 
-const jobsState = (mode = 'tips', mutate) =>
+const jobsState = (mutate) =>
   realState((S) => {
     S.workplaces[0].setupDone = true;
-    S.workplaces[0].profile.entryMode = mode;
     S.workplaces[0].profile.tipout.on = false;
     S.workplaces[0].profile.payTypes = [
       { id: 'bar', k: 'bartender', name: 'Bartender', unit: 'hr', rate: 12, usual: 7 },
@@ -20,7 +19,7 @@ const jobsState = (mode = 'tips', mutate) =>
     ];
     if (mutate) mutate(S);
   });
-const box = (page) => page.must(page.$('[data-focus-key="night-total"]'), 'tips/total box');
+const box = (page) => page.must(page.$('[data-focus-key="night-cc"]'), 'CC tips box');
 const job = (page, r) => page.must(page.$('[data-focus-key="night-job-' + r + '"]'), 'job ' + r);
 const hrs = (page, id) => page.must(page.$('[data-focus-key="night-pay-' + id + '"]'), 'hours ' + id);
 const submit = (page) => page.click(page.$('form button[type=submit]'));
@@ -213,16 +212,16 @@ test('Tonight: other pay is hidden until "+ Add other pay"', async () => {
   }
 });
 
-for (const mode of ['tips', 'total']) {
-  test(mode + ' mode: a double (Prep 2 h + Bartender 6 h), preview == saved', async () => {
-    const page = await boot({ seed: jobsState(mode) });
+{
+  test('a double (Prep 2 h + Bartender 6 h), preview == saved', async () => {
+    const page = await boot({ seed: jobsState() });
     try {
       pick(page, job(page, 0), 'prep');
       page.type(hrs(page, 'prep'), '2');
       page.click(page.button('+ Add another job'));
       assert.equal(job(page, 1).value, 'bar');
       page.type(hrs(page, 'bar'), '6');
-      page.type(box(page), mode === 'tips' ? '400' : '492');
+      page.type(box(page), '400');
       assert.match(page.text(), /Made tonight\$492\.00/);
       assert.match(page.text(), /of which base pay\$92\.00/);
       assert.match(page.text(), /of which tips\$400\.00/);
@@ -231,8 +230,7 @@ for (const mode of ['tips', 'total']) {
       const [n] = page.state().nights;
       assert.equal(n.total, 492);
       assert.deepEqual(n.pay, { bar: 6, prep: 2, lead: 0, ot: 0, bonus: 0 });
-      if (mode === 'tips') assert.equal(n.tips, 400);
-      else assert.equal(n.tips, undefined);
+      assert.equal(n.tips, 400);
       assert.ok(page.$('p.hint[role=status]').textContent.includes(hero), 'saved take-home == preview');
       assert.equal(job(page, 0).value, 'bar', 'the next night starts on the main job again');
       assert.equal(hrs(page, 'bar').value, '');
@@ -242,7 +240,7 @@ for (const mode of ['tips', 'total']) {
   });
 }
 
-test('tips mode: no numbers until the hours are in', async () => {
+test('no numbers until the hours are in', async () => {
   const page = await boot({ seed: jobsState() });
   try {
     page.type(box(page), '400');
@@ -280,7 +278,7 @@ test('same date, "Add to that night": job hours merge by job', async () => {
   }
 });
 
-test('changing a job rate later keeps the tips typed in tips mode (the period is not finished)', async () => {
+test('changing a job rate later keeps the tips typed (the period is not finished)', async () => {
   const page = await boot({ seed: jobsState() });
   try {
     page.type(box(page), '400');
@@ -302,7 +300,7 @@ test('changing a job rate later keeps the tips typed in tips mode (the period is
 test('night editor: job rows round-trip any night (several jobs, other pay, a locked night)', async () => {
   const D = today();
   const page = await boot({
-    seed: jobsState('tips', (S) => {
+    seed: jobsState((S) => {
       S.nights = [
         {
           id: 7,
@@ -327,7 +325,8 @@ test('night editor: job rows round-trip any night (several jobs, other pay, a lo
     assert.equal(k('pay-prep').value, '2');
     assert.equal(k('pay-ot').value, '1', 'other pay shown because the night has some');
     assert.equal(k('pay-bonus').value, '25');
-    assert.equal(k('total').value, '460');
+    assert.equal(k('cc').value, '360', 'its $460 of tips minus its $100 cash');
+    assert.equal(k('cash').value, '100');
     const before = JSON.stringify(page.state().nights[0]);
     page.click(page.button('Save changes'));
     assert.equal(JSON.stringify(page.state().nights[0]), before, 'unchanged round trip');
@@ -346,7 +345,7 @@ test('night editor: job rows round-trip any night (several jobs, other pay, a lo
 
 test('night editor: a locked night shows its own rates until "Recalculate with current Setup"', async () => {
   const page = await boot({
-    seed: jobsState('tips', (S) => {
+    seed: jobsState((S) => {
       S.nights = [
         {
           id: 3,
@@ -422,16 +421,13 @@ test('guided setup: after a reload the same step comes back with the typed numbe
   }
 });
 
-test('Tonight: a date far in the future or before 2000 is refused; $0 tips cannot carry cash', async () => {
+test('Tonight: a date far in the future or before 2000 is refused', async () => {
   const page = await boot({ seed: jobsState() });
   try {
     const date = page.$('[data-focus-key="night-date"]');
     assert.equal(date.getAttribute('min'), '2000-01-01');
     page.type(box(page), '0');
     page.type(hrs(page, 'bar'), '8');
-    page.type(page.$('[data-focus-key="night-cash"]'), '50');
-    assert.match(page.text(), /Cash is more than the tips you entered/);
-    page.type(page.$('[data-focus-key="night-cash"]'), '');
     for (const d of ['2099-01-01', '1999-12-31']) {
       page.type(date, d);
       submit(page);

@@ -91,8 +91,9 @@ test('before setup: "See an example first" shows the example estimate with a cle
     assert.match(page.text(), /These are example numbers, not yours/);
     assert.equal(page.doc.activeElement, page.$('#example-heading'), 'focus on the banner heading');
     assert.equal(page.$('.result .hero').textContent, '$420.46');
-    // new installs type tips: the $585 example night is $489 of tips plus 8 hours at $12
-    assert.match(page.text(), /Tips typed \(cash \+ card\)\$489\.00/);
+    // the $585 example night is $489 of tips ($279 CC + $210 cash) plus 8 hours at $12
+    assert.match(page.text(), /CC tips\$279\.00/);
+    assert.match(page.text(), /Cash tips\$210\.00/);
     assert.match(
       page.text(),
       /made \$489 in tips, \$210 of it in cash, \$73\.35 of which went to the barback\./,
@@ -134,17 +135,17 @@ test('before setup: Budget (dev unlock) shows the same card', async () => {
   }
 });
 
-test('after Finish: Tonight asks for tips, $400 + 8 h x $12 saves 496 and shows the real estimate', async () => {
+test('after Finish: Tonight asks for CC tips and Cash tips, $400 + 8 h x $12 saves 496 and shows the real estimate', async () => {
   const page = await boot();
   try {
     finishSetup(page);
     assert.equal(selectedTab(page), 'tonight');
     const S = page.state();
-    assert.equal(S.workplaces[0].profile.entryMode, 'tips');
+    assert.equal('entryMode' in S.workplaces[0].profile, false);
     assert.equal(S.workplaces[0].setupDone, true);
-    assert.match(page.text(), /Tips you made tonight/);
-    assert.match(page.text(), /Cash tips \+ card tips\. TipNet adds the pay for the jobs below\./);
-    page.type(page.$('[data-focus-key="night-total"]'), '400');
+    assert.ok(page.$('[data-focus-key="night-cash"]'), 'a Cash tips box');
+    assert.match(page.text(), /Tips only: TipNet adds the pay for the jobs below\./);
+    page.type(page.$('[data-focus-key="night-cc"]'), '400');
     page.type(page.$('[data-focus-key="night-pay-p1"]'), '8');
     const hero = page.$('.result .hero').textContent;
     const expected = computeNight(
@@ -182,17 +183,14 @@ test('restore from the first launch lands on a working Tonight', async () => {
     assert.equal(selectedTab(page), 'tonight');
     assert.ok(page.$('form button[type=submit]', page.app));
     assert.ok(page.$('.result', page.app));
-    assert.equal(
-      page.state().workplaces[0].profile.entryMode,
-      'total',
-      'an old code with real nights keeps typing totals',
-    );
+    assert.ok(page.$('[data-focus-key="night-cc"]'), 'CC tips, whatever the old code typed');
+    assert.equal(page.state().nights[0].total, 300, 'its night keeps its total');
   } finally {
     await page.close();
   }
 });
 
-test('erase everything goes back to the first-launch Setup, in tips mode', async () => {
+test('erase everything goes back to the first-launch Setup', async () => {
   const page = await boot({ seed: realState((S) => (S.workplaces[0].setupDone = true)) });
   try {
     assert.equal(selectedTab(page), 'tonight');
@@ -202,7 +200,7 @@ test('erase everything goes back to the first-launch Setup, in tips mode', async
     page.click(erase);
     assert.equal(selectedTab(page), 'setup');
     assert.match(page.text(), /Set up with one recent paystub/);
-    assert.equal(page.state().workplaces[0].profile.entryMode, 'tips');
+    assert.equal('entryMode' in page.state().workplaces[0].profile, false);
     page.tab('tonight');
     assert.match(page.text(), /Finish setup to see your take-home/);
   } finally {
@@ -210,7 +208,7 @@ test('erase everything goes back to the first-launch Setup, in tips mode', async
   }
 });
 
-test('existing users (real nights, no entry mode saved) open on their last tab and keep typing totals', async () => {
+test('existing users (real nights) open on their last tab; Tonight asks for CC tips and Cash tips', async () => {
   const page = await boot({
     seed: realState((S) => {
       S.settings.lastTab = 'periods';
@@ -219,9 +217,9 @@ test('existing users (real nights, no entry mode saved) open on their last tab a
   });
   try {
     assert.equal(selectedTab(page), 'periods');
-    assert.equal(page.state().workplaces[0].profile.entryMode, 'total');
     page.tab('tonight');
-    assert.match(page.text(), /What you made tonight/);
+    assert.ok(page.$('[data-focus-key="night-cc"]'));
+    assert.ok(page.$('[data-focus-key="night-cash"]'));
   } finally {
     await page.close();
   }

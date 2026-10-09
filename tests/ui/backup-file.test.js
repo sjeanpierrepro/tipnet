@@ -253,7 +253,7 @@ test('Saving a night on Tonight keeps the backup reminder and the TipNet Budget 
     assert.ok(page.$('#backup-nudge'), 'reminder before');
     assert.ok(page.$('#budget-teaser'), 'Budget card before');
     const before = page.state().nights.length;
-    page.type(page.$('[data-focus-key="night-total"]'), '150');
+    page.type(page.$('[data-focus-key="night-cc"]'), '150');
     page.type(page.$('[data-focus-key="night-pay-p1"]'), '6');
     page.click(page.button('Save night'));
     await page.settle();
@@ -261,7 +261,7 @@ test('Saving a night on Tonight keeps the backup reminder and the TipNet Budget 
     assert.ok(page.$('#backup-nudge'), 'reminder still there');
     assert.ok(page.$('#budget-teaser'), 'Budget card still there');
     assert.equal(page.app.lastElementChild, page.$('#budget-teaser'), 'card still last');
-    assert.equal(page.doc.activeElement.getAttribute('data-focus-key'), 'night-total');
+    assert.equal(page.doc.activeElement.getAttribute('data-focus-key'), 'night-cc');
     assert.match(page.$('#night-saved').textContent, /^Saved\. .* take-home for /);
   } finally {
     await page.close();

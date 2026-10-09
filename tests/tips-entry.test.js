@@ -1,4 +1,5 @@
-// Tips-only entry and "set up": the pure pieces (migrate defaults, conversions, isSetUp).
+// Tonight asks for CC tips and Cash tips (TipNet adds the pay), and "set up": the pure pieces (old entry modes dropped,
+// conversions, isSetUp).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -19,71 +20,35 @@ const real = (mutate) => {
   S.profileExample = false;
   S.nightsExample = false;
   S.nights = [];
-  delete S.workplaces[0].profile.entryMode;
   if (mutate) mutate(S);
   return S;
 };
 
-test('entry mode: new install, seed and erased state type tips', () => {
-  assert.equal(seedState().workplaces[0].profile.entryMode, 'tips');
-  assert.equal(erasedState().workplaces[0].profile.entryMode, 'tips');
-  assert.equal(migrate(null).workplaces[0].profile.entryMode, 'tips');
-  assert.equal(migrate('garbage').workplaces[0].profile.entryMode, 'tips');
-  const s = seedState();
-  delete s.workplaces[0].profile.entryMode;
-  assert.equal(migrate(s).workplaces[0].profile.entryMode, 'tips', 'still the example, no real nights');
-});
-
-test('entry mode: existing users without one keep typing totals', () => {
-  // real nights
-  const withNights = real((S) => {
-    S.profileExample = true; // even on the example paystub
-    S.nights = [{ id: 1, date: '2026-01-05', total: 300, cash: null, pay: { p1: 6 }, barback: true }];
-  });
-  assert.equal(migrate(withNights).workplaces[0].profile.entryMode, 'total');
-  // own profile, no nights
-  assert.equal(migrate(real()).workplaces[0].profile.entryMode, 'total');
-  // example nights do not count as real
-  const exNights = seedState();
-  delete exNights.workplaces[0].profile.entryMode;
-  assert.equal(migrate(exNights).workplaces[0].profile.entryMode, 'tips');
-});
-
-test('entry mode: a saved choice is kept; garbage falls back to the rule', () => {
-  assert.equal(
-    migrate(real((S) => (S.workplaces[0].profile.entryMode = 'tips'))).workplaces[0].profile.entryMode,
-    'tips',
-  );
-  assert.equal(
-    migrate(real((S) => (S.workplaces[0].profile.entryMode = 'total'))).workplaces[0].profile.entryMode,
-    'total',
-  );
-  assert.equal(
-    migrate(real((S) => (S.workplaces[0].profile.entryMode = 'TIPS'))).workplaces[0].profile.entryMode,
-    'total',
-  );
-  assert.equal(
-    migrate(real((S) => (S.workplaces[0].profile.entryMode = 7))).workplaces[0].profile.entryMode,
-    'total',
-  );
-  const fresh = seedState();
-  fresh.workplaces[0].profile.entryMode = { x: 1 };
-  assert.equal(migrate(fresh).workplaces[0].profile.entryMode, 'tips');
-});
-
-test('entry mode: travels in backup codes; prototype codes type totals', () => {
-  const S = real((x) => (x.workplaces[0].profile.entryMode = 'tips'));
-  assert.equal(decodeBackup(encodeBackup(S)).workplaces[0].profile.entryMode, 'tips');
-  const T = real((x) => (x.workplaces[0].profile.entryMode = 'total'));
-  assert.equal(decodeBackup(encodeBackup(T)).workplaces[0].profile.entryMode, 'total');
+test('entry modes are gone: an old entryMode ("tips" or "total") is dropped on loading and never written', () => {
+  const has = (S) => S.workplaces.some((w) => 'entryMode' in w.profile);
+  assert.equal(has(seedState()), false);
+  assert.equal(has(erasedState()), false);
+  assert.equal(has(migrate(null)), false);
+  for (const mode of ['tips', 'total', 'TIPS', 7, { x: 1 }]) {
+    const S = real((x) => {
+      x.workplaces[0].profile.entryMode = mode;
+      x.nights = [
+        { id: 1, date: '2026-01-05', total: 300, cash: 50, pay: { p1: 6 }, barback: true }, // typed as one total
+        { id: 2, date: '2026-01-06', total: 296, tips: 200, cash: null, pay: { p1: 8 }, barback: false }, // typed tips
+      ];
+    });
+    const out = migrate(S, { today: TODAY });
+    assert.equal(has(out), false, String(mode));
+    // the nights keep what they had: the total night stays a total, the tips night its tips
+    assert.equal(out.nights[0].total, 300);
+    assert.equal('tips' in out.nights[0], false);
+    assert.equal(out.nights[1].tips, 200);
+    assert.equal(out.nights[1].cash, null);
+    assert.equal(has(decodeBackup(encodeBackup(S))), false);
+  }
   // oldest prototype: hourly + hours, no payTypes, no flags
   const proto = { profile: { hourly: 12, hours: 7, gross: 2000, fed: 180 }, nights: [] };
-  assert.equal(decodeBackup(code(proto)).workplaces[0].profile.entryMode, 'total');
-  const proto2 = {
-    profile: { hourly: 12, hours: 7 },
-    nights: [{ date: '2026-01-05', total: 300, hours: 6 }],
-  };
-  assert.equal(decodeBackup(code(proto2)).workplaces[0].profile.entryMode, 'total');
+  assert.equal(has(decodeBackup(code(proto))), false);
 });
 
 test('totalFromTips / tipsFromTotal: $400 tips + 8 h x $12 = 496, and back', () => {

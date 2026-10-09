@@ -171,9 +171,8 @@ test('night dates: from Jan 1, 2000 to one day after today', () => {
 });
 
 /* ---------- nights with several jobs ---------- */
-const jobsProfile = (mode = 'tips') => {
+const jobsProfile = () => {
   const p = profile();
-  p.entryMode = mode;
   p.payTypes = [
     { id: 'bar', k: 'bartender', name: 'Bartender', unit: 'hr', rate: 12, usual: 0 },
     { id: 'prep', k: 'prep', name: 'Prep', unit: 'hr', rate: 10, usual: 0 },
@@ -185,7 +184,7 @@ const jobsProfile = (mode = 'tips') => {
 test('a double (Prep 2 h + Bartender 6 h): stored, described, and merged by job', () => {
   const p = jobsProfile();
   const d = {
-    total: '400',
+    cc: '400',
     cash: '',
     pay: { bar: '6', prep: '2' },
     rows: ['prep', 'bar'],
@@ -199,10 +198,11 @@ test('a double (Prep 2 h + Bartender 6 h): stored, described, and merged by job'
   assert.equal(jobsText(n, p), 'Bartender 6 h · Prep 2 h');
   const round = draftFromNight(n, p);
   assert.deepEqual(round.rows, ['bar', 'prep']);
-  assert.equal(round.total, '400');
+  assert.equal(round.cc, '400');
+  assert.equal(round.cash, '0');
   assert.equal(round.showOther, false);
   // Add another 3 h of Prep with $50 tips on the same date: hours merge by job
-  const more = storedNight({ ...d, total: '50', pay: { prep: '3' }, rows: ['prep'] }, p, 2);
+  const more = storedNight({ ...d, cc: '50', pay: { prep: '3' }, rows: ['prep'] }, p, 2);
   const m = mergeNights(n, more, p);
   assert.deepEqual(m.pay, { bar: 6, prep: 5, lead: 0, bonus: 0 });
   assert.equal(m.tips, 450);

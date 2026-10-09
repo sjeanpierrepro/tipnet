@@ -1385,8 +1385,9 @@ export function render(root) {
   const quick = el('p', { class: 'quick-net', 'data-focus-key': 'night-quick-net' });
 
   const update = () => {
-    // A typo (like 1.2.3) shows no numbers: they would be worked out from something else than what was typed.
-    if (typoProblem(p, d)) {
+    // A typo (like 1.2.3) or tips below $0 show no numbers: they would be worked out from something else than what was
+    // typed.
+    if (typoProblem(p, d) || tipsProblem(d)) {
       clear(resultHost).append(
         el(
           'div',
