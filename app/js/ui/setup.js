@@ -72,7 +72,7 @@ import {
   flush,
 } from '../storage.js';
 import { renderBackup, renderInstall, fileSaver } from './backup.js';
-import { buildIcs, makeUid, timeLabel, daysLabel, DAY_NAMES } from '../ics.js';
+import { buildIcs, makeUid, timeLabel, nightsLabel, reminderDays, DAY_NAMES } from '../ics.js';
 import { redateDraft, dropDraft } from './tonight.js';
 
 let guidedStep = 0;
@@ -1646,7 +1646,8 @@ function cutoffCard(ctx) {
 }
 
 /* ============ nightly reminder (a calendar event) ============ */
-const reminderText = (r) => (r ? 'Added: ' + timeLabel(r.time) + ', ' + daysLabel(r.days) : 'Not added yet');
+const reminderText = (r) =>
+  r ? 'Added: ' + timeLabel(r.time) + ', ' + nightsLabel(r.days) : 'Not added yet';
 function reminderCard(ctx) {
   const S = ctx.S;
   const cur = S.settings.reminder;
@@ -1660,6 +1661,20 @@ function reminderCard(ctx) {
   const days = () => DAY_NAMES.map((_, i) => i).filter((i) => boxes[i].querySelector('input').checked);
   const msg = el('p', { class: 'field-error', id: 'rem-err', role: 'alert', hidden: true });
   const last = el('p', { class: 'hint', id: 'rem-last' }, reminderText(cur));
+  // The boxes are the nights worked: a time before the Late-nights cutoff goes off the next morning (reminderDays).
+  const cutoff = () => cutoffFromSettings(S.settings);
+  const early = el('p', { class: 'hint', id: 'rem-early' });
+  const showEarly = () => {
+    const next = reminderDays(time.value, [5], cutoff())[0] === 6; // Saturday night -> Sunday morning
+    const text = next
+      ? 'A ' + timeLabel(time.value) + ' reminder for Saturday night comes early Sunday morning.'
+      : '';
+    if (early.textContent !== text) early.textContent = text;
+    early.hidden = !next;
+  };
+  showEarly();
+  time.addEventListener('input', showEarly);
+  time.addEventListener('change', showEarly);
   const add = el(
     'button',
     { type: 'button', class: 'btn btn-secondary', id: 'rem-add' },
@@ -1689,6 +1704,7 @@ function reminderCard(ctx) {
       sequence: seq,
       now,
       url: location.origin + location.pathname,
+      cutoffHour: cutoff(),
     });
     S.settings.reminder = { time: time.value, days: d, addedAt: now.getTime(), uid, seq };
     save();
@@ -1701,7 +1717,9 @@ function reminderCard(ctx) {
     { class: 'card stack' },
     el('h2', null, 'Nightly reminder'),
     field('Time', time),
-    el('div', { class: 'cluster', role: 'group', 'aria-label': 'Days you work' }, boxes),
+    early,
+    el('p', { class: 'label', id: 'rem-days-label' }, 'Nights you work'),
+    el('div', { class: 'cluster', role: 'group', 'aria-labelledby': 'rem-days-label' }, boxes),
     msg,
     add,
     last,

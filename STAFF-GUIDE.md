@@ -79,7 +79,7 @@ The estimate usually gets closer after a check or two. Changing gross pay or a d
 
 ## Nightly reminder (optional)
 
-TipNet cannot send its own notifications (it has no server), so the reminder is an event in your phone's calendar. In **Setup**, open **Nightly reminder**, pick the time (a late time like 2:00 AM is fine) and the days you work, then tap **Add to my calendar** and open the file your phone saves. Your calendar repeats the reminder every week.
+TipNet cannot send its own notifications (it has no server), so the reminder is an event in your phone's calendar. In **Setup**, open **Nightly reminder**, pick the time and tick the **nights you work**, then tap **Add to my calendar** and open the file your phone saves. Your calendar repeats the reminder every week. A late time like 2:00 AM is fine: a time before the **Late nights** hour (6 a.m. unless you changed it) goes off the next morning, so a 2:00 AM reminder for Saturday night comes early Sunday morning.
 
 To change it later, add a new one the same way and delete the old reminder in your calendar.
 

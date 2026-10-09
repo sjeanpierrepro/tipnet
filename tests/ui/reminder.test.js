@@ -44,7 +44,8 @@ test('Nightly reminder: row, defaults, refuses no days, saves the .ics and the s
     assert.equal(saved[0].name, 'tipnet-reminder.ics');
     assert.equal(saved[0].type, 'text/calendar;charset=utf-8');
     assert.match(saved[0].text, /^BEGIN:VCALENDAR\r\n/);
-    assert.match(saved[0].text, /RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA\r\n/);
+    // Mon-Sat NIGHTS at 1:30 AM (before the 6 a.m. Late-nights cutoff): Tuesday to Sunday mornings
+    assert.match(saved[0].text, /RRULE:FREQ=WEEKLY;BYDAY=TU,WE,TH,FR,SA,SU\r\n/);
     assert.match(saved[0].text, /DTSTART:\d{8}T013000\r\n/);
     assert.match(saved[0].text, /SEQUENCE:0\r\n/);
     const r = page.state().settings.reminder;
@@ -52,8 +53,8 @@ test('Nightly reminder: row, defaults, refuses no days, saves the .ics and the s
     assert.deepEqual(r.days, [0, 1, 2, 3, 4, 5]);
     assert.match(r.uid, /^tipnet-reminder-[a-z0-9]+@tipnet$/);
     assert.equal(page.$('#rem-err').hidden, true);
-    assert.match(page.$('#rem-last').textContent, /^Added: 1:30 AM, Mon–Sat$/);
-    assert.match(page.$('#fold-reminder').textContent, /Added: 1:30 AM, Mon–Sat/);
+    assert.match(page.$('#rem-last').textContent, /^Added: 1:30 AM, Mon–Sat nights$/);
+    assert.match(page.$('#fold-reminder').textContent, /Added: 1:30 AM, Mon–Sat nights/);
 
     // adding again keeps the UID and raises SEQUENCE
     page.click(page.button('Add to my calendar'));
@@ -61,6 +62,38 @@ test('Nightly reminder: row, defaults, refuses no days, saves the .ics and the s
     assert.match(saved[1].text, /SEQUENCE:1\r\n/);
     assert.equal(page.state().settings.reminder.uid, r.uid);
     assert.ok(saved[1].text.includes('UID:' + r.uid));
+  } finally {
+    await page.close();
+  }
+});
+
+test('Nightly reminder: the boxes are the nights you work; Fri and Sat at 2:00 AM remind Saturday and Sunday mornings', async () => {
+  saved.length = 0;
+  const page = await boot({ seed: realState() });
+  try {
+    page.tab('setup');
+    page.click(page.must(page.$('#fold-reminder'), 'reminder row'));
+    const group = page.must(page.$('[role=group][aria-labelledby="rem-days-label"]'), 'nights group');
+    assert.equal(page.$('#rem-days-label').textContent, 'Nights you work');
+    assert.ok(group.contains(page.$('#rem-day-4')));
+    assert.equal(
+      page.$('#rem-early').textContent,
+      'A 2:00 AM reminder for Saturday night comes early Sunday morning.',
+    );
+    for (let i = 0; i < 7; i++) {
+      page.$('#rem-day-' + i).checked = i === 4 || i === 5;
+      page.change(page.$('#rem-day-' + i));
+    }
+    page.click(page.button('Add to my calendar'));
+    assert.match(saved[0].text, /RRULE:FREQ=WEEKLY;BYDAY=SA,SU\r\n/);
+    assert.deepEqual(page.state().settings.reminder.days, [4, 5], 'the nights ticked are kept');
+    assert.match(page.$('#rem-last').textContent, /^Added: 2:00 AM, Fri, Sat nights$/);
+    // 10:00 PM comes on the night itself
+    page.$('#rem-time').value = '22:00';
+    page.change(page.$('#rem-time'));
+    assert.equal(page.$('#rem-early').hidden, true);
+    page.click(page.button('Add to my calendar'));
+    assert.match(saved[1].text, /RRULE:FREQ=WEEKLY;BYDAY=FR,SA\r\n/);
   } finally {
     await page.close();
   }

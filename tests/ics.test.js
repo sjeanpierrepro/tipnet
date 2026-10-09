@@ -10,6 +10,8 @@ import {
   makeUid,
   timeLabel,
   daysLabel,
+  nightsLabel,
+  reminderDays,
   cleanDays,
 } from '../app/js/ics.js';
 import { migrate, seedState } from '../app/js/storage.js';
@@ -148,4 +150,36 @@ test('settings.reminder: a valid one is kept, junk is dropped', () => {
     { ...good, addedAt: 'now' },
   ])
     assert.equal(get(bad), undefined, JSON.stringify(bad));
+});
+
+test('the boxes are the nights worked: a time before the Late-nights cutoff moves each to the next morning', () => {
+  const now = new Date(2026, 8, 29, 12, 0); // Tuesday
+  const t = buildIcs({ time: '02:00', days: [4, 5], uid: UID, now, cutoffHour: 6 });
+  // Friday and Saturday nights at 2:00 AM: Saturday and Sunday mornings (not Thursday and Friday nights)
+  assert.equal(prop(t, 'RRULE'), 'RRULE:FREQ=WEEKLY;BYDAY=SA,SU');
+  assert.equal(prop(t, 'DTSTART'), 'DTSTART:20261003T020000'); // Sat Oct 3, after Friday night
+  assert.deepEqual(reminderDays('02:00', [4, 5], 6), [5, 6]);
+  // Saturday and Sunday nights: Sunday and Monday mornings
+  assert.equal(
+    prop(buildIcs({ time: '02:00', days: [5, 6], uid: UID, now, cutoffHour: 6 }), 'RRULE'),
+    'RRULE:FREQ=WEEKLY;BYDAY=MO,SU',
+  );
+  assert.equal(
+    prop(buildIcs({ time: '05:59', days: ALL, uid: UID, now, cutoffHour: 6 }), 'RRULE'),
+    'RRULE:FREQ=DAILY',
+  );
+  // at or after the cutoff, or with Late nights off, the reminder comes on the night itself
+  ['23:00', '06:00'].forEach((time) =>
+    assert.equal(
+      prop(buildIcs({ time, days: [4, 5], uid: UID, now, cutoffHour: 6 }), 'RRULE'),
+      'RRULE:FREQ=WEEKLY;BYDAY=FR,SA',
+      time,
+    ),
+  );
+  assert.equal(
+    prop(buildIcs({ time: '02:00', days: [4, 5], uid: UID, now, cutoffHour: 0 }), 'RRULE'),
+    'RRULE:FREQ=WEEKLY;BYDAY=FR,SA',
+  );
+  assert.equal(nightsLabel([4, 5]), 'Fri, Sat nights');
+  assert.equal(nightsLabel(ALL), 'every night');
 });

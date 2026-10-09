@@ -83,6 +83,18 @@ export function timeLabel(time) {
   return (h % 12 || 12) + ':' + m[2] + ' ' + (h < 12 ? 'AM' : 'PM');
 }
 
+/**
+ * The days the reminder goes off, from the NIGHTS ticked (0 = Monday night): a time before the Late-nights cutoff
+ * (cutoffHour, 0 = off) is the next morning, so each night moves on a day (Friday and Saturday nights at 2:00 AM are
+ * Saturday and Sunday mornings; Sunday night is Monday). At or after the cutoff the reminder comes on the night itself.
+ */
+export function reminderDays(time, nights, cutoffHour = 0) {
+  const m = TIME_RE.exec(time);
+  const set = cleanDays(nights);
+  if (!m || !(cutoffHour > 0) || +m[1] >= cutoffHour) return set;
+  return cleanDays(set.map((d) => (d + 1) % 7));
+}
+
 /** "every day", "Mon–Sat", "Mon, Wed, Fri". */
 export function daysLabel(days) {
   const d = cleanDays(days);
@@ -91,13 +103,17 @@ export function daysLabel(days) {
     return DAY_NAMES[d[0]] + '–' + DAY_NAMES[d[d.length - 1]];
   return d.map((i) => DAY_NAMES[i]).join(', ');
 }
+/** "every night", "Mon–Sat nights", "Fri, Sat nights": the nights a reminder is for. */
+export const nightsLabel = (days) =>
+  cleanDays(days).length === 7 ? 'every night' : daysLabel(days) + ' nights';
 
 /**
  * The .ics text for the nightly reminder.
- * { time, days, uid, sequence, now (Date), url } -> string with CRLF line endings.
+ * { time, days (the nights worked), uid, sequence, now (Date), url, cutoffHour (Late nights; see reminderDays) } ->
+ * string with CRLF line endings.
  */
-export function buildIcs({ time, days, uid, sequence = 0, now = new Date(), url = '' }) {
-  const set = cleanDays(days);
+export function buildIcs({ time, days, uid, sequence = 0, now = new Date(), url = '', cutoffHour = 0 }) {
+  const set = reminderDays(time, days, cutoffHour);
   const start = nextStart(now, time, set);
   if (!start) throw new Error('Pick a time and at least one day.');
   const rrule =
