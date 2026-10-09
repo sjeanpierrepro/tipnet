@@ -802,7 +802,14 @@ function group(S, w, idx, ctx) {
             el(
               'div',
               { class: 'hint' },
-              'Each night above used an estimated share of this check’s fixed deductions. This line makes the nights add up to the real check.',
+              'Each night above used an estimated share of this check’s ' +
+                // what this line really corrects: the fixed deductions, the recurring non-taxable pay, or both
+                (t.adjustFixed !== 0 && t.adjustNontax !== 0
+                  ? 'fixed deductions and non-taxable pay'
+                  : t.adjustNontax !== 0
+                    ? 'non-taxable pay'
+                    : 'fixed deductions') +
+                '. This line makes the nights add up to the real check.',
             ),
           ),
           el('div', { class: 'amount' }, t.adjust < 0 ? minus(t.adjust) : '+' + money(t.adjust)),

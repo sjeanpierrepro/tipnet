@@ -70,6 +70,8 @@ function refPeriodTotals(p, nights, idx, today, shifts) {
     ns,
     net: M.fromCents(net),
     adjust: M.fromCents(adj),
+    adjustFixed: M.fromCents(adj), // no non-taxable money in these profiles
+    adjustNontax: 0,
     hrs,
     chk: M.fromCents(chk),
     kept: M.fromCents(kept),

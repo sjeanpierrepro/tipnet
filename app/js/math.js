@@ -893,10 +893,14 @@ export function periodTotals(p, nights, idx, today = todayISO(), shifts, index) 
     }
   });
   const exact = ns.length > 0 && isFinal(p, idx, today);
-  let adj = 0;
+  let adj = 0,
+    adjFixed = 0,
+    adjNontax = 0;
   if (exact) {
     // and the per-shift shares of recurring non-taxable money by the exact amount on that check
-    adj = fixedShares - toCents(periodFixed(p, ns)) + toCents(periodNontax(p, ns)) - nontaxShares;
+    adjFixed = fixedShares - toCents(periodFixed(p, ns));
+    adjNontax = toCents(periodNontax(p, ns)) - nontaxShares;
+    adj = adjFixed + adjNontax;
     net += adj;
     chk += adj;
   }
@@ -906,6 +910,9 @@ export function periodTotals(p, nights, idx, today = todayISO(), shifts, index) 
     // finished periods: what the exact fixed deductions / non-taxable money add to the nights' estimated shares, so
     // the nights' take-home plus this is the period's take-home to the cent (0 while the period runs)
     adjust: fromCents(adj),
+    // its two parts: the fixed deductions' and the non-taxable money's (Pay periods says which the line is about)
+    adjustFixed: fromCents(adjFixed),
+    adjustNontax: fromCents(adjNontax),
     hrs,
     chk: fromCents(chk),
     kept: fromCents(kept),
