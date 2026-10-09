@@ -15,7 +15,7 @@ All the numbers stay on your phone or computer. Your bar cannot see them. No acc
 - **Non-taxable earnings**: reimbursements and allowances your stub lists as non-taxable are left out of the tax rate; the ones on every check are added to your estimate without tax.
 - **Track accuracy**: At the end of a pay period, enter your actual paycheck and let TipNet learn. Each check you compare brings the next estimate closer.
 - **Finished pay periods keep their numbers**: a raise or a new deduction in Setup only changes the running pay period. To bring a finished one up to date, tap **Update this pay period to today's Setup** under it in Pay periods: TipNet shows the take-home (and check) before and after, asks first, and offers **Undo**.
-- **Nightly reminder**: in Setup, pick a time and the days you work and tap **Add to my calendar**. Your phone's calendar then reminds you each night to log in TipNet (TipNet has no server, so the reminder is a calendar event).
+- **Nightly reminder**: in Setup, pick a time and the nights you work and tap **Add to my calendar**. Your phone's calendar then reminds you after each of those nights to log in TipNet (a time before the Late-nights hour, like 2:00 AM, goes off the next morning) (TipNet has no server, so the reminder is a calendar event).
 - **Install like an app**: Tap "Install to home screen" in your browser. It works on iPhone, Android, Windows, and Mac.
 
 ## How to run TipNet
