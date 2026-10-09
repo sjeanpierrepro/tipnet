@@ -13,7 +13,7 @@ const oneState = (mutate) =>
     S.workplaces[0].name = 'Voodoo Bayou';
     if (mutate) mutate(S);
   });
-/** Two restaurants, both set up: Voodoo Bayou (every two weeks, Bartender $12) and Second Spot (twice a month, Server $8, tips). */
+/** Two restaurants, both set up: Voodoo Bayou (every two weeks, Bartender $12) and Second Spot (twice a month, Server $8). */
 const twoState = (mutate) =>
   oneState((S) => {
     const p = exampleProfile(today);
@@ -22,7 +22,6 @@ const twoState = (mutate) =>
     p.periodEnd = '';
     p.payTypes = [{ id: 'p1', k: 'server', name: 'Server', rate: 8, unit: 'hr', usual: 0 }];
     p.tipout = { on: false, mode: 'pct', value: 0, basis: 'before', from: 'cash' };
-    p.entryMode = 'tips';
     S.workplaces.push({ id: 'w2', name: 'Second Spot', profile: p, calib: [], setupDone: true });
     if (mutate) mutate(S);
   });
@@ -102,12 +101,11 @@ test('setup: the guided flow for a second establishment fills in its own paystub
       'blank rows dropped',
     );
     assert.equal(w.profile.payTypes[0].rate, 8);
-    assert.equal(w.profile.entryMode, 'tips');
     assert.equal(JSON.stringify(S.workplaces[0].profile), first, 'the first establishment is untouched');
     assert.equal(S.settings.guidedDraft, undefined);
     assert.match(page.text(), /Tonight/);
     assert.equal(checked(page, 'Establishment for tonight').textContent, 'Second Spot');
-    assert.match(page.text(), /Tips you made tonight/);
+    assert.ok(page.$('[data-focus-key="night-cc"]'), 'Tonight asks for its tips');
   } finally {
     await page.close();
   }
@@ -212,12 +210,10 @@ test('tonight: one establishment has no switcher; two get a radio group at the t
     assert.equal(a.getAttribute('aria-checked'), 'true');
     assert.equal(a.tabIndex, 0);
     assert.equal(b.tabIndex, -1);
-    assert.match(page.text(), /What you made tonight/, 'Voodoo Bayou types everything');
     assert.match(page.text(), /Bartender/);
     page.click(b);
     assert.equal(page.state().settings.activeWorkplaceId, 'w2');
     assert.equal(checked(page, 'Establishment for tonight').textContent, 'Second Spot');
-    assert.match(page.text(), /Tips you made tonight/, 'Second Spot types tips');
     assert.match(page.text(), /Server/);
     assert.doesNotMatch(page.text(), /Barback tip-out tonight/, 'no tip-out at Second Spot');
     assert.match(page.text(), /\$8\.00\/h/);
@@ -238,7 +234,7 @@ test('tonight: one establishment has no switcher; two get a radio group at the t
 test('tonight: each establishment keeps its own half-typed entry; saving says where; same date at two places is two nights', async () => {
   const page = await boot({ seed: twoState() });
   try {
-    const total = () => key(page, 'night-total');
+    const total = () => key(page, 'night-cc');
     page.type(total(), '400');
     page.type(page.must(page.$('[data-focus-key^="night-pay-"]', page.app), 'hours'), '8');
     page.click(radios(page, 'Establishment for tonight')[1]);
@@ -260,8 +256,8 @@ test('tonight: each establishment keeps its own half-typed entry; saving says wh
     );
     const S = page.state();
     assert.equal(S.nights.length, 2);
-    assert.equal(nightsOf(S, 'w1')[0].total, 400);
-    // tips mode at Second Spot: $150 tips + 5 h x $8
+    assert.equal(nightsOf(S, 'w1')[0].total, 496, '$400 tips + 8 h x $12');
+    // at Second Spot: $150 tips + 5 h x $8
     assert.equal(nightsOf(S, 'w2')[0].total, 190);
     assert.equal(nightsOf(S, 'w2')[0].tips, 150);
     // a second night at Second Spot on the same date asks
@@ -278,7 +274,7 @@ test('tonight: the establishment picked last is the one shown on open', async ()
   const page = await boot({ seed: twoState((S) => (S.settings.activeWorkplaceId = 'w2')) });
   try {
     assert.equal(checked(page, 'Establishment for tonight').textContent, 'Second Spot');
-    assert.match(page.text(), /Tips you made tonight/);
+    assert.match(page.text(), /Server/);
   } finally {
     await page.close();
   }
@@ -308,9 +304,10 @@ test('pay periods: All / one establishment filter (remembered), names under All,
     assert.equal(page.state().settings.periodsFilter, 'w2');
     assert.equal(labels().length, 1);
     assert.ok(!labels()[0].startsWith('Second Spot'), 'one establishment: no name needed');
-    // the editor works inside its restaurant: Second Spot types tips
+    // the editor works inside its restaurant: Second Spot's Server job
     page.click(page.must(page.$('[data-period] button[aria-label^="Edit night"]', page.app), 'edit'));
-    assert.match(page.text(), /Tips you made/);
+    assert.match(page.text(), /Server/);
+    assert.ok(page.$('[data-focus-key="edit-n2-cc"]'), 'its CC tips box');
     // accuracy: the restaurant is picked first
     const wsel = page.$('#cal-workplace');
     assert.ok(wsel);

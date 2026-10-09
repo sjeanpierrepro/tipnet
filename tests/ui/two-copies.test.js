@@ -70,9 +70,9 @@ for (const withData of [false, true]) {
   test('two copies: Tonight save in A after B saved' + when, async () => {
     const page = await boot({ seed: seed() });
     try {
-      page.type(key(page, 'night-total'), '250');
+      page.type(key(page, 'night-cc'), '178'); // + 6 hours at $12: $250
       await otherWindowSaves(page, withData);
-      assert.equal(key(page, 'night-total').value, '250', 'what A typed is still there');
+      assert.equal(key(page, 'night-cc').value, '178', 'what A typed is still there');
       page.type(key(page, 'night-pay-p1'), '6');
       page.click(page.$('form button[type=submit]'));
       await page.settle();
@@ -117,8 +117,9 @@ for (const withData of [false, true]) {
         page.$$('form').find((f) => /Save changes/.test(f.textContent)),
         'night editor still open',
       );
-      const total = page.$$('input', form).find((i) => i.value === '300');
-      page.type(total, '345');
+      // its $228 of tips (cash not entered): all in CC tips; $45 more makes $345 made
+      const total = page.$$('input', form).find((i) => i.value === '228');
+      page.type(total, '273');
       page.click(page.button('Save changes', form));
       await page.settle();
       assert.equal(storage.getState().nights.find((n) => n.id === 'n0').total, 345, 'in the state');

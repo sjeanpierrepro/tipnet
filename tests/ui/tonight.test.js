@@ -16,28 +16,31 @@ for (const [box, what] of [
   [ccInput, 'CC tips'],
   [cashInput, 'Cash tips'],
 ]) {
-  test('tonight: ' + what + ' below 0 shows a message, and the night is not saved until it is fixed', async () => {
-    const page = await boot({ seed: seed() });
-    try {
-      page.type(ccInput(page), '50');
-      page.type(cashInput(page), '50');
-      page.type(hoursInput(page), '6');
-      page.type(box(page), '-5');
-      assert.match(page.text(), new RegExp(what + ' can.t be a negative number\\.'));
-      assert.match(page.$('.result').textContent, /Fix the number marked above/);
-      submit(page);
-      assert.equal(page.state().nights.length, 0);
-      assert.equal(page.doc.activeElement, box(page));
-      page.type(box(page), '5');
-      submit(page);
-      const n = page.state().nights;
-      assert.equal(n.length, 1);
-      assert.equal(n[0].tips, 55);
-      assert.equal(n[0].total, 127, '$55 tips + 6 hours at $12');
-    } finally {
-      await page.close();
-    }
-  });
+  test(
+    'tonight: ' + what + ' below 0 shows a message, and the night is not saved until it is fixed',
+    async () => {
+      const page = await boot({ seed: seed() });
+      try {
+        page.type(ccInput(page), '50');
+        page.type(cashInput(page), '50');
+        page.type(hoursInput(page), '6');
+        page.type(box(page), '-5');
+        assert.match(page.text(), new RegExp(what + ' can.t be a negative number\\.'));
+        assert.match(page.$('.result').textContent, /Fix the number marked above/);
+        submit(page);
+        assert.equal(page.state().nights.length, 0);
+        assert.equal(page.doc.activeElement, box(page));
+        page.type(box(page), '5');
+        submit(page);
+        const n = page.state().nights;
+        assert.equal(n.length, 1);
+        assert.equal(n[0].tips, 55);
+        assert.equal(n[0].total, 127, '$55 tips + 6 hours at $12');
+      } finally {
+        await page.close();
+      }
+    },
+  );
 }
 
 test('tonight: nothing typed is refused and not saved', async () => {
@@ -125,7 +128,10 @@ test('tonight: two boxes, CC tips and Cash tips; the cash hint says the barback 
       page.text(),
       /All your cash tips, before paying the barback\. TipNet takes the barback’s cash out\./,
     );
-    assert.match(page.text(), /Tips only: TipNet adds the pay for the jobs below\. A blank box counts as \$0\./);
+    assert.match(
+      page.text(),
+      /Tips only: TipNet adds the pay for the jobs below\. A blank box counts as \$0\./,
+    );
   } finally {
     await page.close();
   }

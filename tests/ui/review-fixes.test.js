@@ -93,20 +93,20 @@ test('setup: the adjustment is per establishment; another establishment’s edit
   }
 });
 
-test('tonight: a live take-home line right under the tips box follows the typing', async () => {
+test('tonight: a live take-home line right under the tips boxes follows the typing', async () => {
   const page = await boot({
     seed: realState((S) => {
       S.workplaces[0].setupDone = true;
-      S.workplaces[0].profile.entryMode = 'tips';
     }),
   });
   try {
     const quick = page.must(page.$('.quick-net'), 'quick line');
-    const box = page.$('[data-focus-key="night-total"]').closest('.field');
-    assert.equal(box.nextElementSibling, quick, 'right under the tips box');
+    const box = page.$('[data-focus-key="night-cc"]').closest('.stack-sm');
+    assert.ok(box.contains(page.$('[data-focus-key="night-cash"]')), 'the CC tips and Cash tips boxes');
+    assert.equal(box.nextElementSibling, quick, 'right under the tips boxes');
     assert.equal(quick.hidden, true, 'empty before typing');
     assert.equal(quick.getAttribute('aria-live'), null, 'not a second live region');
-    page.type(page.$('[data-focus-key="night-total"]'), '150');
+    page.type(page.$('[data-focus-key="night-cc"]'), '150');
     assert.equal(quick.hidden, false);
     assert.match(quick.textContent, /Add tonight’s hours to see your take-home\./);
     page.type(page.$('[data-focus-key="night-pay-p1"]'), '6');
@@ -126,7 +126,7 @@ test('tonight: "Taxes on cash tips usually come out of the paycheck" is hidden w
     }),
   });
   try {
-    page.type(page.$('[data-focus-key="night-total"]'), '300');
+    page.type(page.$('[data-focus-key="night-cc"]'), '188'); // + $40 cash: $228 of tips
     page.type(page.$('[data-focus-key="night-pay-p1"]'), '6');
     const cash = page.$$('input', page.app).find((i) => /cash/i.test(i.getAttribute('data-focus-key') || ''));
     page.type(page.must(cash, 'cash box'), '40');
@@ -201,7 +201,7 @@ test('update: a half-typed Tonight entry counts as unsaved input', async () => {
   });
   try {
     assert.equal(tonight.hasDraftInput(), false);
-    page.type(page.$('[data-focus-key="night-total"]'), '12');
+    page.type(page.$('[data-focus-key="night-cc"]'), '12');
     assert.equal(tonight.hasDraftInput(), true);
     page.tab('periods'); // still kept while another tab is open
     assert.equal(tonight.hasDraftInput(), true);

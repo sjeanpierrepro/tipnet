@@ -8,6 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as M from '../app/js/math.js';
 import { migrate } from '../app/js/storage.js';
+import { draftFromNight, storedNight, typedNow, editedMoney } from '../app/js/ui/tonight.js';
 import { loadV37, V37 } from './v37.js';
 
 const today = '2026-10-08';
@@ -154,4 +155,79 @@ test('400 random v37 states: the same money in v37 and after the update, and a v
   });
   assert.equal(checked, 400);
   assert.deepEqual(bad, []);
+});
+
+/**
+ * A v37 state as this version loads it (no v37 code needed: the same random states, loaded once v37's own way would
+ * have; migrate reads the v37 shapes directly).
+ */
+const loaded = (raw, change) => {
+  const S = migrate(clone(raw), { today: '2026-09-15' });
+  S.workplaces.forEach((w, i) => {
+    if (change[i].rate != null) w.profile.payTypes[0].rate = change[i].rate;
+  });
+  return migrate(clone(S), { today });
+};
+/** The night editor's save (periods.js build, the money part): its draft stored again, then editedMoney. */
+function editorSave(n, p, edit) {
+  const d = draftFromNight(n, p);
+  const opened = typedNow(d);
+  if (edit) edit(d);
+  const out = { ...storedNight(d, p, n.id, { snap: n.snap }), workplaceId: n.workplaceId };
+  if (n.snap) out.snap = n.snap;
+  // who was tipped out is the night's own (alignNight keeps it; not what this test is about)
+  ['tipouts', 'barback', 'tipoutOn'].forEach((k) => {
+    if (k in n) out[k] = n[k];
+    else delete out[k];
+  });
+  return editedMoney(out, n, d, p, opened);
+}
+const moneyOf = (c) => [c.total, c.tips, c.tipout, c.kept, c.tax, c.net, c.fromCash, c.cashInHand, c.onCheck];
+
+test('400 random v37 states: every night opened in the night editor shows CC = tips - cash and Cash = cash, and keeps its money', () => {
+  const bad = [];
+  let nights = 0,
+    retyped = 0;
+  makeStates(400, 12345).forEach(({ raw, change }, k) => {
+    const S = loaded(raw, change);
+    S.nights.forEach((n) => {
+      const p = S.workplaces.find((w) => w.id === n.workplaceId).profile;
+      const before = moneyOf(M.computeNight(n, p, 10));
+      const tipsC = M.toCents(M.tipsFromTotal(n, p));
+      const cashC = n.cash == null ? 0 : M.toCents(n.cash);
+      const d = draftFromNight(n, p);
+      nights++;
+      // what the boxes show
+      if (n.cash == null ? d.cash !== '' : Number(d.cash) !== n.cash)
+        bad.push(k + ' ' + n.id + ': cash shown');
+      if (M.toCents(Number(d.cc)) !== Math.max(0, tipsC - cashC)) bad.push(k + ' ' + n.id + ': CC shown');
+      // saved as opened (a note or the date changed): the same money, the same stored numbers
+      const same = editorSave(n, p);
+      if (JSON.stringify(moneyOf(M.computeNight(same, p, 10))) !== JSON.stringify(before))
+        bad.push(k + ' ' + n.id + ': saved unchanged');
+      if (same.total !== n.total || same.cash !== n.cash || same.tips !== n.tips)
+        bad.push(k + ' ' + n.id + ': stored numbers');
+      // the same amounts typed again: the same money, wherever the boxes can show the night as it is
+      if (tipsC >= cashC && tipsC >= 0) {
+        retyped++;
+        const again = editorSave(n, p, (x) => {
+          x.cc = String(x.cc);
+          x.cash = x.cash + ' ';
+        });
+        if (JSON.stringify(moneyOf(M.computeNight(again, p, 10))) !== JSON.stringify(before))
+          bad.push(k + ' ' + n.id + ': typed again');
+      }
+      // only the hours changed: the tips and the cash stay as they were
+      const hours = editorSave(n, p, (x) => {
+        x.pay[p.payTypes[0].id] = '3';
+        if (!x.rows.includes(p.payTypes[0].id)) x.rows.unshift(p.payTypes[0].id);
+      });
+      const c = M.computeNight(hours, p, 10);
+      if (hours.cash !== n.cash) bad.push(k + ' ' + n.id + ': hours changed the cash');
+      if (tipsC >= 0 && M.toCents(c.tips) !== tipsC) bad.push(k + ' ' + n.id + ': hours changed the tips');
+    });
+  });
+  assert.ok(nights > 2000, String(nights));
+  assert.ok(retyped > 1000, String(retyped));
+  assert.deepEqual(bad.slice(0, 10), []);
 });

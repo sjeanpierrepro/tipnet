@@ -236,6 +236,7 @@ export function draftFromNight(n, p) {
     cc: String(fromCents(Math.max(0, tipsC - cashC))),
     cash: n.cash == null ? '' : String(n.cash),
     cashUnknown: n.cash == null,
+    cashOver: cashC > Math.max(0, tipsC), // saved with more cash than tips: CC tips shows $0
     pay: {},
     rows: [],
     showOther: false,
@@ -337,6 +338,41 @@ export function liveNight(d, id, p, { snap: lockedWith } = {}) {
   const tot = totalFromTips(night.tips, snap ? { ...night, snap } : night, p);
   if (tot > 0) night.total = String(tot);
   return night;
+}
+/** What the editor compares to tell which boxes were changed (editedMoney): the tips boxes and the hours, as typed. */
+export const typedNow = (d) => ({ tips: JSON.stringify([d.cc, d.cash]), pay: JSON.stringify(d.pay) });
+/**
+ * The money of an edited night (the night editor): out is the night to store (storedNight, with the snapshot it will be
+ * locked with), n the saved night, opened = typedNow(d) when the editor opened. Changes out; returns it.
+ *   - CC tips and Cash tips not changed: its tips and cash stay exactly as stored (also on a night saved with more cash
+ *     than tips, which shows CC tips as $0); with the hours not changed either, its total too (a night typed as one total
+ *     before v38 stays one). Hours changed: the tips stay and the total is the tips + the new pay (a night typed as one
+ *     total gets its tips worked out from it first; one typed below its pay keeps its total).
+ *   - Changed: tips = CC tips + Cash tips as typed, and the total is the tips + the pay at the night's rates.
+ * recalc: "Recalculate with current Setup" (the tips as typed, the pay at today's rates).
+ */
+export function editedMoney(out, n, d, p, opened, recalc = false) {
+  const now = typedNow(d);
+  if (recalc || now.tips !== opened.tips) {
+    out.total = totalFromTips(out.tips, out, p);
+    return out;
+  }
+  out.cash = n.cash == null ? null : num(n.cash);
+  if (now.pay === opened.pay) {
+    out.total = num(n.total);
+    if (hasTips(n)) out.tips = n.tips;
+    else delete out.tips;
+    return out;
+  }
+  const t = hasTips(n) ? n.tips : tipsFromTotal(n, p);
+  if (t >= 0) {
+    out.tips = round2(t);
+    out.total = totalFromTips(out.tips, out, p);
+  } else {
+    out.total = num(n.total);
+    delete out.tips;
+  }
+  return out;
 }
 /** Draft -> night to store (no snapshot; the caller keeps one). Freezes each pay type's amount (0 when not worked). */
 export function storedNight(d, p, id, { snap } = {}) {
@@ -517,7 +553,8 @@ export function mergeNights(a, b, p) {
   Object.keys(b.pay).forEach((k) => {
     pay[k] = Math.round(((pay[k] || 0) + b.pay[k]) * 10000) / 10000;
   });
-  const cash = a.cash == null || b.cash == null ? null : fromCents(toCents(num(a.cash)) + toCents(num(b.cash)));
+  const cash =
+    a.cash == null || b.cash == null ? null : fromCents(toCents(num(a.cash)) + toCents(num(b.cash)));
   // A locked night's added part was worked out with its own rates already (see onto in render), so its total is used as is.
   const tb = a.snap ? num(b.total) : nightTotal(b, p);
   const out = { ...a, total: round2(nightTotal(a, p) + tb), cash, pay };
@@ -635,7 +672,11 @@ export function nightFields(
   const sharedId = uid('tips-hint');
   /** One tips box: {input, node, setError(m, alert)}. alert: what Save refused (role="alert"); else a polite message. */
   const tipsBox = (label, k, hint, get, set) => {
-    const input = bind(moneyInput({ id: uid(k), placeholder: '0', 'data-focus-key': key + '-' + k }), get, set);
+    const input = bind(
+      moneyInput({ id: uid(k), placeholder: '0', 'data-focus-key': key + '-' + k }),
+      get,
+      set,
+    );
     const hintId = input.id + '-hint';
     const err = el('p', { class: 'field-error', hidden: true, 'aria-live': 'polite', id: input.id + '-err' });
     const base = hintId + ' ' + sharedId; // read with the box, after the error when there is one
@@ -653,7 +694,8 @@ export function nightFields(
       err.hidden = !m;
       err.textContent = m || '';
       node.toggleAttribute('data-invalid', !!m);
-      if (m) input.setAttribute('aria-invalid', 'true'); // an empty aria-invalid reads as valid
+      if (m)
+        input.setAttribute('aria-invalid', 'true'); // an empty aria-invalid reads as valid
       else input.removeAttribute('aria-invalid');
       input.setAttribute('aria-describedby', m ? err.id + ' ' + base : base);
     };
@@ -682,9 +724,15 @@ export function nightFields(
       d.cc = v;
     },
   );
-  const cashBox = tipsBox('Cash tips', 'cash', cashHint, () => d.cash, (v) => {
-    d.cash = v;
-  });
+  const cashBox = tipsBox(
+    'Cash tips',
+    'cash',
+    cashHint,
+    () => d.cash,
+    (v) => {
+      d.cash = v;
+    },
+  );
   const offCb = el('input', { type: 'checkbox', id: uid('cop'), 'data-focus-key': key + '-cashoff' });
   offCb.setAttribute('aria-describedby', offCb.id + '-hint');
   offCb.checked = !!d.cashOffPayroll;
@@ -724,6 +772,13 @@ export function nightFields(
           'p',
           { class: 'note', 'data-focus-key': key + '-cash-unknown' },
           'This night was saved without a cash amount, so CC tips shows all its tips. If you enter the cash, take it out of CC tips.',
+        )
+      : null,
+    d.cashOver
+      ? el(
+          'p',
+          { class: 'note', 'data-focus-key': key + '-cash-over' },
+          'This night was saved with more cash than tips, so CC tips shows $0. Check both amounts.',
         )
       : null,
     offField,
@@ -1288,12 +1343,7 @@ function exampleView() {
       'section',
       { class: 'card stack' },
       el('h2', { class: 'card-title' }, 'Example night'),
-      el(
-        'dl',
-        { class: 'breakdown' },
-        typed,
-        bullet('Bartender hours at $12', '8'),
-      ),
+      el('dl', { class: 'breakdown' }, typed, bullet('Bartender hours at $12', '8')),
     ),
     el('h2', { class: 'sr-only' }, 'Example estimate'),
     resultCard(c, exW),

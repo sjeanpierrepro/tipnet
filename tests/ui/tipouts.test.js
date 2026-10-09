@@ -33,12 +33,12 @@ test('tonight: one box per person (ticked), no sales box, result lines', async (
     assert.match(page.$('label[for="' + rn.id + '"]').textContent, /Runner\$12\.50 flat/);
     assert.equal(page.$('[data-focus-key="night-sales"]'), null, 'no sales box');
     assert.doesNotMatch(page.text(), /sales/i);
-    page.type(key(page, 'night-total'), '585');
+    page.type(key(page, 'night-cc'), '279');
     page.type(key(page, 'night-pay-p1'), '8');
     page.type(key(page, 'night-cash'), '210');
     assert.ok(lines(page).includes('Barback (15% of tips) −$73.35'), lines(page).join(' | '));
     assert.ok(lines(page).includes('Runner ($12.50 flat) −$12.50'), lines(page).join(' | '));
-    assert.match(page.text(), /Cash tips collected \(before paying the barback\)/);
+    assert.match(page.text(), /All your cash tips, before paying the barback\./);
     assert.match(page.text(), /Cash you keep\$136\.65/);
     // unticking the runner drops the line
     rn.checked = false;
@@ -62,7 +62,7 @@ test('tonight: one box per person (ticked), no sales box, result lines', async (
 test('tonight: unticked people are saved as such', async () => {
   const page = await boot({ seed: seed() });
   try {
-    page.type(key(page, 'night-total'), '585');
+    page.type(key(page, 'night-cc'), '489');
     page.type(key(page, 'night-pay-p1'), '8');
     const rn = key(page, 'night-tipout-t2');
     rn.checked = false;
@@ -76,7 +76,7 @@ test('tonight: unticked people are saved as such', async () => {
   }
 });
 
-test('tonight: "after tip-out" or tip-outs off shows no boxes; scaled tip-outs say so', async () => {
+test('tonight: an older "after tip-out" setup (loads as off) shows no boxes; scaled tip-outs say so', async () => {
   const page = await boot({ seed: seed(undefined, (S) => (S.workplaces[0].profile.tipout.basis = 'after')) });
   try {
     assert.equal(page.byText('legend', 'Tipped out tonight:'), null);
@@ -86,7 +86,7 @@ test('tonight: "after tip-out" or tip-outs off shows no boxes; scaled tip-outs s
   const flat = { id: 't3', k: 'kitchen', who: 'Kitchen', mode: 'flat', value: 600, from: 'payroll' };
   const p2 = await boot({ seed: seed([BARBACK, flat]) });
   try {
-    p2.type(key(p2, 'night-total'), '585');
+    p2.type(key(p2, 'night-cc'), '489');
     p2.type(key(p2, 'night-pay-p1'), '8');
     assert.match(p2.text(), /Your tip-outs came to more than tonight’s tips, so TipNet scaled each one down/);
   } finally {
@@ -214,7 +214,7 @@ test('pay periods editor: the night’s boxes round-trip; a same-date Add ticks 
     assert.deepEqual(n.tipouts, { t1: true, t2: true });
     // Tonight on the same date: Add puts the two together
     page.tab('tonight');
-    page.type(key(page, 'night-total'), '200');
+    page.type(key(page, 'night-cc'), '176');
     page.type(key(page, 'night-pay-p1'), '2');
     const rt = key(page, 'night-tipout-t2');
     rt.checked = false;

@@ -10,7 +10,7 @@ const seed = () =>
   realState((S) => {
     S.workplaces[0].setupDone = true;
   });
-const totalInput = (page) => page.must(page.$('[data-focus-key="night-total"]'), 'total field');
+const ccInput = (page) => page.must(page.$('[data-focus-key="night-cc"]'), 'CC tips field');
 const hoursInput = (page) => page.must(page.$('[data-focus-key="night-pay-p1"]'), 'hours field');
 const submit = (page) => page.click(page.$('form button[type=submit]'));
 /** Lock as if the current pay period has just ended (the next day after its end). */
@@ -30,7 +30,7 @@ const noStrayKeys = (S) =>
 test('lockFinished stamps nights in place: the same objects and the same array', async () => {
   const page = await boot({ seed: seed() });
   try {
-    page.type(totalInput(page), '100');
+    page.type(ccInput(page), '28'); // + 6 h at $12 = $100
     page.type(hoursInput(page), '6');
     submit(page);
     const S = page.state();
@@ -52,10 +52,10 @@ for (const [btn, total] of [
   test('Tonight same-date question: ' + btn + ' still saves after the period locks', async () => {
     const page = await boot({ seed: seed() });
     try {
-      page.type(totalInput(page), '100');
+      page.type(ccInput(page), '28'); // + 6 h at $12 = $100
       page.type(hoursInput(page), '6');
       submit(page);
-      page.type(totalInput(page), '150');
+      page.type(ccInput(page), '102'); // + 4 h at $12 = $150
       page.type(hoursInput(page), '4');
       submit(page);
       assert.ok(page.$('[data-focus-key="' + btn + '"]'), 'the question is shown');
@@ -76,10 +76,10 @@ for (const [btn, total] of [
 test('Tonight same-date question: a night swapped for a copy (another window) is still found by id', async () => {
   const page = await boot({ seed: seed() });
   try {
-    page.type(totalInput(page), '100');
+    page.type(ccInput(page), '28'); // + 6 h at $12 = $100
     page.type(hoursInput(page), '6');
     submit(page);
-    page.type(totalInput(page), '150');
+    page.type(ccInput(page), '102'); // + 4 h at $12 = $150
     page.type(hoursInput(page), '4');
     submit(page);
     const S = page.state();
@@ -106,10 +106,8 @@ test('Night editor: saving after the period locks updates the night and keeps it
     page.click(page.byLabel('Edit night ' + row.querySelector('.main div').textContent));
     const form = page.must(page.$('section[data-period] form', page.app), 'editor');
     assert.equal(lockNow(page), 1);
-    page.type(
-      page.must(form.querySelector('[data-focus-key$="total"], input[inputmode=decimal]'), 'total'),
-      '320',
-    );
+    // its $228 of tips: $148 CC + $80 cash; $20 more CC tips
+    page.type(page.must(form.querySelector('[data-focus-key$="-cc"]'), 'CC tips'), '168');
     page.click(page.button('Save changes', form));
     const S = page.state();
     assert.equal(S.nights.length, 1);

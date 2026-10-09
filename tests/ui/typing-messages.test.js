@@ -71,8 +71,8 @@ test('Tonight: typing 7:30, $45 and 1,250 key by key raises no message on the wa
     typeKeys(page, key(page, 'night-pay-p1'), '7:30', none('hours'));
     mock.timers.tick(TYPO_PAUSE_MS);
     assert.deepEqual(shown(page), []);
-    typeKeys(page, key(page, 'night-total'), '$45', none('tips'));
-    typeKeys(page, key(page, 'night-total'), '1,250', none('tips'));
+    typeKeys(page, key(page, 'night-cc'), '$45', none('tips'));
+    typeKeys(page, key(page, 'night-cc'), '1,250', none('tips'));
     typeKeys(page, key(page, 'night-cash'), '$1,00', none('cash'));
     mock.timers.tick(TYPO_PAUSE_MS);
     assert.deepEqual(shown(page), []);
@@ -82,7 +82,7 @@ test('Tonight: typing 7:30, $45 and 1,250 key by key raises no message on the wa
 
 test('Tonight: a typo is flagged after a pause in typing, politely and linked to its box; fixing it clears it at once', async () => {
   await withTimers(seed(), async (page) => {
-    const total = key(page, 'night-total');
+    const total = key(page, 'night-cc');
     const hours = key(page, 'night-pay-p1');
     page.type(hours, '7');
     page.type(total, '1.2.3');
@@ -121,7 +121,7 @@ test('Tonight: a typo is flagged after a pause in typing, politely and linked to
 
 test('Tonight: leaving the box shows its typo at once; Save refuses a typo at once, as an alert', async () => {
   await withTimers(seed(), async (page) => {
-    const total = key(page, 'night-total');
+    const total = key(page, 'night-cc');
     const cash = key(page, 'night-cash');
     page.type(key(page, 'night-pay-p1'), '7');
     page.type(cash, '1.2.3');
@@ -151,11 +151,14 @@ test('Tonight: leaving the box shows its typo at once; Save refuses a typo at on
     mock.timers.tick(TYPO_PAUSE_MS);
     assert.match(errOf(page, total).textContent, AMOUNT);
     assert.equal(errOf(page, total).getAttribute('role'), null);
-    // a missing amount on Save is an alert too
+    // nothing typed on Save is an alert too
     page.type(total, '');
+    page.type(cash, '');
+    page.type(key(page, 'night-pay-p1'), '');
     page.click(page.button('Save night'));
     assert.equal(errOf(page, total).getAttribute('role'), 'alert');
-    assert.match(errOf(page, total).textContent, /Enter what you made tonight first\./);
+    assert.match(errOf(page, total).textContent, /Enter your tips or your hours first\./);
+    assert.equal(page.state().nights.length, 0);
   });
 });
 
@@ -176,9 +179,7 @@ test('Pay periods night editor: a typo waits for a pause too', async () => {
     }),
     async (page) => {
       page.tab('periods');
-      page.click(
-        page.$$('button', page.app).find((b) => b.getAttribute('data-focus-key') === 'edit-n1-total'),
-      );
+      page.click(page.$$('button', page.app).find((b) => b.getAttribute('data-focus-key') === 'edit-n1-cc'));
       const hours = key(page, 'edit-n1-pay-p1');
       typeKeys(page, hours, '7:45', () => assert.deepEqual(shown(page), []));
       page.type(hours, '7..5');

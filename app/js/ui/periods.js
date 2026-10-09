@@ -70,6 +70,8 @@ import {
   moneyNum,
   typoProblem,
   tipsProblem,
+  typedNow,
+  editedMoney,
   alignNight,
   peopleOf,
   draftTipouts,
@@ -174,7 +176,7 @@ function editor(S, n) {
   const mine = nightsOf(S, w.id);
   const d = draftFromNight(n, p); // CC tips and Cash tips: the tips inside the stored total (its own rates if locked)
   d.note = n.note || ''; // the editor's own field; draftFromNight knows nothing about notes
-  const typedAtOpen = JSON.stringify([d.cc, d.cash, d.pay]);
+  const opened = typedNow(d); // what was typed when the editor opened (see editedMoney)
   let recalc = false;
   // The estimate follows the typing on screen, but is only spoken after a pause (like Tonight's summary), so a screen
   // reader isn't interrupted on every keystroke.
@@ -272,19 +274,10 @@ function editor(S, n) {
     // recalculation or a move gives it other ones (today's Setup, the period's snapshot, or Setup's when a move unlocks
     // it): the ticks are carried over to them (alignNight). With no boxes on screen the night keeps its own.
     alignNight(out, d, p, n, peopleOf(out, p));
-    // Tips, cash and hours untouched and no recalculation: the stored total, tips and cash stay exactly as they were (a
-    // night typed as one total before v38 stays one).
-    const untouched = !recalc && JSON.stringify([d.cc, d.cash, d.pay]) === typedAtOpen;
-    if (untouched) {
-      out.total = num(n.total);
-      out.cash = n.cash == null ? null : num(n.cash);
-      if (hasTips(n)) out.tips = n.tips;
-      else delete out.tips;
-    } else {
-      // tips = CC tips + Cash tips; the total is the tips + the pay this night is shown with (its snapshot, the new one,
-      // or today's Setup)
-      out.total = totalFromTips(out.tips, out, p);
-    }
+    // Tips and cash not changed: they stay exactly as stored (and the total too while the hours aren't changed); else
+    // tips = CC tips + Cash tips, and the total is the tips + the pay this night is shown with (its snapshot, the new
+    // one, or today's Setup).
+    editedMoney(out, n, d, p, opened, recalc);
     // just locked by the move: like locking, the stored total becomes the typed tips + pay at the rates it is locked with
     if (out.snap && out.snap !== n.snap && hasTips(out)) out.total = totalFromTips(out.tips, out, p);
     return out;

@@ -298,7 +298,7 @@ test('the editor estimate updates as typed but is spoken only after a pause (no 
     const live = page.must(form.querySelector('[role=status][aria-live=polite].sr-only'), 'spoken estimate');
     assert.equal(live.textContent, '', 'nothing spoken on opening');
     const before = shown.textContent;
-    page.type(page.must(form.querySelector('[data-focus-key$="-total"]'), 'total'), '450');
+    page.type(page.must(form.querySelector('[data-focus-key$="-cc"]'), 'CC tips'), '450');
     assert.notEqual(shown.textContent, before, 'the visible estimate follows the typing');
     assert.equal(live.textContent, '', 'not spoken yet');
     // (the harness unrefs timers: an interval keeps the process alive while waiting)
@@ -344,7 +344,8 @@ test('a saved pick two pay periods from the night’s date is kept while the dat
     page.click(page.byLabel('Edit night ' + long(date)));
     assert.equal(weekSel(page).value, far, 'offered and selected on opening');
     assert.equal(note(page).hidden, true, 'no "now counts by its new date": the date did not change');
-    page.type(page.must(page.$('[data-focus-key$="-total"]', page.app), 'total'), '310');
+    // its $228 of tips: $148 CC + $80 cash; $10 more CC tips: $310 with 6 hours at $12
+    page.type(page.must(page.$('[data-focus-key$="-cc"]', page.app), 'CC tips'), '158');
     await save(page);
     assert.equal(ask(page), null, 'the pay period does not change: nothing to confirm');
     assert.equal(night(page).total, 310);
@@ -389,7 +390,7 @@ test('the dropped-pick status line is not rewritten while typing elsewhere', asy
     let records = 0;
     const mo = new page.win.MutationObserver((l) => (records += l.length));
     mo.observe(line, { attributes: true, childList: true, characterData: true, subtree: true });
-    const total = page.must(page.$('[data-focus-key$="-total"]', page.app), 'total');
+    const total = page.must(page.$('[data-focus-key$="-cc"]', page.app), 'CC tips');
     for (const v of ['3', '31', '310']) page.type(total, v);
     await page.settle();
     mo.disconnect();

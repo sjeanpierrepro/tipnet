@@ -101,7 +101,6 @@ test('nontax Tonight: a non-taxable amount is added with no tax and shown as suc
   const page = await boot({
     seed: seed((S) => {
       const p = S.workplaces[0].profile;
-      p.entryMode = 'tips';
       p.payTypes = [
         { id: 'bar', k: 'bartender', name: 'Bartender', unit: 'hr', rate: 12, usual: 0 },
         {
@@ -117,7 +116,7 @@ test('nontax Tonight: a non-taxable amount is added with no tax and shown as suc
     }),
   });
   try {
-    page.type(page.$('[data-focus-key="night-total"]'), '200');
+    page.type(page.$('[data-focus-key="night-cc"]'), '200');
     page.type(page.$('[data-focus-key="night-pay-bar"]'), '5');
     await page.settle();
     const taxRe = /Taxes and % deductions \([^)]*\)\s*−\$([\d.,]+)/;

@@ -42,9 +42,9 @@ const seedWith = (setupList, nights) =>
     S.workplaces[0].profile = { ...clone(oldSetup()), tipouts: setupList.map((x) => ({ ...x })) };
     S.nights = nights;
   });
-/** Type the same night again on Tonight for that date and Save (the same-date question shows). */
+/** Type the same night again on Tonight for that date and Save (the same-date question shows): $204 CC + $200 cash. */
 function retype(page, date) {
-  page.type(key(page, 'night-total'), '500');
+  page.type(key(page, 'night-cc'), '204');
   page.type(key(page, 'night-pay-p1'), '8');
   page.type(key(page, 'night-cash'), '200');
   page.type(key(page, 'night-date'), date);
@@ -56,8 +56,7 @@ const editBtn = (page, id) =>
     page
       .$$('button', page.app)
       .find(
-        (b) =>
-          b.getAttribute('data-focus-key') === 'edit-' + id + '-total' && b.textContent.trim() === 'Edit',
+        (b) => b.getAttribute('data-focus-key') === 'edit-' + id + '-cc' && b.textContent.trim() === 'Edit',
       ),
     'Edit ' + id,
   );
@@ -104,7 +103,7 @@ test('a) Tonight "Replace it" / "Add to that night" carry the choice to the re-c
     assert.equal(nightOf(page, 'n1').tipouts.t1, true);
     assert.equal(money(page, nightOf(page, 'n1')).tipout, 60.6);
     // Replace again with the barback unticked: unticked on the night's own row
-    page.type(key(page, 'night-total'), '500');
+    page.type(key(page, 'night-cc'), '204');
     page.type(key(page, 'night-pay-p1'), '8');
     page.type(key(page, 'night-cash'), '200');
     page.type(key(page, 'night-date'), lockedDate);
@@ -117,7 +116,7 @@ test('a) Tonight "Replace it" / "Add to that night" carry the choice to the re-c
     assert.equal(nightOf(page, 'n1').tipouts.t1, false);
     assert.equal(money(page, nightOf(page, 'n1')).tipout, 0);
     // Add (barback ticked tonight): ticked in either part = ticked; the totals add up
-    page.type(key(page, 'night-total'), '100');
+    page.type(key(page, 'night-cc'), '100');
     page.type(key(page, 'night-pay-p1'), '0');
     page.type(key(page, 'night-date'), lockedDate);
     page.click(page.button('Save night'));
@@ -311,7 +310,7 @@ test('d) Tonight Replace and Add while tip-outs are off keep the night’s ticks
     retype(page, date);
     page.click(page.button('Replace it'));
     assert.deepEqual(nightOf(page, 'n1').tipouts, { t1: true, t2: false });
-    page.type(key(page, 'night-total'), '50');
+    page.type(key(page, 'night-cc'), '38'); // + 1 hour at $12
     page.type(key(page, 'night-pay-p1'), '1');
     page.type(key(page, 'night-date'), date);
     page.click(page.button('Save night'));

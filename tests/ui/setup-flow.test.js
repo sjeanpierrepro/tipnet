@@ -116,7 +116,7 @@ test('guided setup: after Finish, Tonight estimates use the typed numbers', asyn
     page.type(page.$('input[placeholder="e.g. 12"]', page.app), '10');
     page.click(page.button('Finish setup'));
     page.tab('tonight');
-    page.type(page.$('[data-focus-key="night-total"]', page.app), '500');
+    page.type(page.$('[data-focus-key="night-cc"]', page.app), '420');
     page.type(page.$('[data-focus-key="night-pay-p1"]', page.app), '8');
     const hero = page.$('.result .hero').textContent;
     assert.notEqual(hero, example);
@@ -175,7 +175,7 @@ test('guided setup: Skip swaps the example paystub for a blank one, and Tonight 
     assert.equal(page.state().workplaces[0].profile.periodEnd, '');
     assert.equal(page.$('#tabs [aria-selected=true]').dataset.tab, 'tonight');
     assert.ok(page.$('form button[type=submit]', page.app), 'Tonight unlocked');
-    assert.match(page.text(), /Tips you made tonight/);
+    assert.ok(page.$('[data-focus-key="night-cc"]', page.app), 'it asks for the tips');
   } finally {
     await page.close();
   }
@@ -247,7 +247,10 @@ test('restore: reachable from the first-launch Setup (twice), and lands on a wor
       assert.equal(page.state().profileExample, false);
       assert.equal(page.$('#tabs [aria-selected=true]').dataset.tab, 'tonight', 'restored: Tonight');
       assert.ok(page.$('form button[type=submit]', page.app), 'saving works');
-      assert.match(page.text(), /What you made tonight/, 'a restored old code keeps its meaning: totals');
+      assert.ok(
+        page.$('[data-focus-key="night-cc"]', page.app),
+        'CC tips and Cash tips, whatever the old code typed',
+      );
     } finally {
       await page.close();
     }
@@ -306,6 +309,9 @@ test('tonight: only a short summary is in the live region, announced after typin
       ),
     );
     const summary = page.$('.sr-only[aria-live]', page.app);
+    page.type(page.$('[data-focus-key="night-pay-p1"]', page.app), '6');
+    await wait(900);
+    summary.textContent = '';
     page.type(page.$('input[inputmode=decimal]', page.app), '300');
     assert.equal(summary.textContent, '', 'not announced on each keystroke');
     await wait(900);

@@ -381,3 +381,31 @@ test('night editor: a night saved without cash shows Cash blank and all its tips
     await page.close();
   }
 });
+
+test('night editor: a night saved with more cash than tips says so; changing only its hours keeps its tips and cash', async () => {
+  const D = today();
+  const page = await boot({
+    seed: seed((S) => {
+      // $120 made with 8 h x $12 = $96 pay: $24 of tips, but $50 cash (an old import)
+      S.nights = [{ id: 1, date: D, total: 120, cash: 50, pay: { p1: 8 }, barback: false }];
+    }),
+  });
+  try {
+    page.tab('periods');
+    openEditor(page, fmtDate(D));
+    assert.equal(editCc(page, 1).value, '0');
+    assert.equal(editCash(page, 1).value, '50');
+    assert.match(
+      page.must(page.$('[data-focus-key="edit-1-cash-over"]'), 'note').textContent,
+      /saved with more cash than tips, so CC tips shows \$0\. Check both amounts\./,
+    );
+    page.type(page.$('[data-focus-key="edit-1-pay-p1"]'), '7');
+    saveEdit(page);
+    const n = nightOf(page, 1);
+    assert.equal(n.tips, 24, 'its tips, not CC + cash');
+    assert.equal(n.cash, 50);
+    assert.equal(n.total, 108);
+  } finally {
+    await page.close();
+  }
+});

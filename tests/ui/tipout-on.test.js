@@ -17,14 +17,14 @@ const seed = (on, nights = []) =>
     p.periodStart = addDays(today, -3);
     p.periodEnd = addDays(today, 10);
     p.shifts = 10;
-    p.tipout = { on, basis: 'before' };
+    p.tipout = { on };
     p.tipouts = [{ ...BARBACK }];
-    p.entryMode = 'total';
     S.nights = nights;
   });
-// $500 made, 8 hours at $12, $200 cash: $404 tips; the barback's 15% is $60.60 ($360.24 take-home, $410.75 without)
+// $500 made, 8 hours at $12, $200 cash: $404 tips ($204 CC); the barback's 15% is $60.60 ($360.24 take-home, $410.75
+// without)
 function enter(page, date) {
-  page.type(key(page, 'night-total'), '500');
+  page.type(key(page, 'night-cc'), '204');
   page.type(key(page, 'night-pay-p1'), '8');
   page.type(key(page, 'night-cash'), '200');
   if (date) page.type(key(page, 'night-date'), date);
@@ -97,10 +97,12 @@ test('night editor: a night saved with tip-outs off shows it, keeps it, and its 
   const page = await boot({ seed: seed(true, [savedNight('n1', false, { t1: false })]) });
   try {
     page.tab('periods');
-    page.click(page.must(page.$('[data-focus-key="edit-n1-total"]', page.app), 'Edit'));
+    page.click(page.must(page.$('[data-focus-key="edit-n1-cc"]', page.app), 'Edit'));
     assert.equal(page.$('[data-focus-key="edit-n1-tipout-t1"]'), null, 'its own switch: no boxes');
     const line = page.must(page.$('#edit-n1-tipout-on'), 'switch line');
     assert.equal(line.textContent, 'Saved with “I tip out” off, so no tip-outs are taken out of this night.');
+    // $50 of the cash was card tips: the tips stay $404
+    page.type(key(page, 'edit-n1-cc'), '254');
     page.type(key(page, 'edit-n1-cash'), '150');
     const preview = page.text(
       page.must(page.byText('p.hint', 'Estimated take-home for this night'), 'preview'),
@@ -118,7 +120,7 @@ test('night editor: a night saved with tip-outs off shows it, keeps it, and its 
   const page2 = await boot({ seed: seed(false, [savedNight('n1', true)]) });
   try {
     page2.tab('periods');
-    page2.click(page2.must(page2.$('[data-focus-key="edit-n1-total"]', page2.app), 'Edit'));
+    page2.click(page2.must(page2.$('[data-focus-key="edit-n1-cc"]', page2.app), 'Edit'));
     assert.equal(key(page2, 'edit-n1-tipout-t1').checked, true);
     assert.equal(
       page2.$('#edit-n1-tipout-on').textContent,
@@ -152,10 +154,10 @@ test('night editor: no line when the night’s switch is Setup’s; "Recalculate
   });
   try {
     page.tab('periods');
-    page.click(page.must(page.$('[data-focus-key="edit-n2-total"]', page.app), 'Edit n2'));
+    page.click(page.must(page.$('[data-focus-key="edit-n2-cc"]', page.app), 'Edit n2'));
     assert.equal(page.$('#edit-n2-tipout-on'), null, 'the same as Setup: nothing to say');
     page.click(page.button('Cancel'));
-    page.click(page.must(page.$('[data-focus-key="edit-n1-total"]', page.app), 'Edit n1'));
+    page.click(page.must(page.$('[data-focus-key="edit-n1-cc"]', page.app), 'Edit n1'));
     assert.ok(page.$('#edit-n1-tipout-on'));
     assert.equal(page.$('[data-focus-key="edit-n1-tipout-t1"]'), null);
     const cb = page.must(page.$('#edit-n1-recalc'), 'recalc');

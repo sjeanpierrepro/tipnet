@@ -27,19 +27,18 @@ const tipouts = [
   { id: 't1', k: 'barback', who: 'Barback', mode: 'pctTips', value: 15, from: 'cash' },
   { id: 't2', k: 'runner', who: 'Runner', mode: 'flat', value: 12.5, from: 'payroll' },
 ];
-const tonightSeed = (mode = 'total') =>
+const tonightSeed = () =>
   realState((S) => {
     S.workplaces[0].setupDone = true;
-    S.workplaces[0].profile.entryMode = mode;
-    S.workplaces[0].profile.tipout = { on: true, basis: 'before' };
+    S.workplaces[0].profile.tipout = { on: true };
     S.workplaces[0].profile.tipouts = tipouts.map((x) => ({ ...x }));
     S.workplaces[0].profile.payTypes[0].unit = 'hr';
   });
 
-test('Tonight: a typo in the total, hours or cash box blocks Save, shows a message, and is never stored', async () => {
+test('Tonight: a typo in the CC tips, hours or cash box blocks Save, shows a message, and is never stored', async () => {
   const page = await boot({ seed: tonightSeed() });
   try {
-    const total = key(page, 'night-total');
+    const total = key(page, 'night-cc');
     const hours = key(page, 'night-pay-p1');
     const cash = key(page, 'night-cash');
     typeOut(page, hours, '7');
@@ -61,7 +60,8 @@ test('Tonight: a typo in the total, hours or cash box blocks Save, shows a messa
     typeOut(page, total, '1,250.50');
     assert.equal(errOf(page, total), '');
     assert.equal(invalid(total), false);
-    assert.match(page.$('.result').textContent, /Made tonight\$1,250\.50/);
+    assert.match(page.$('.result').textContent, /of which tips\$1,250\.50/);
+    assert.match(page.$('.result').textContent, /Made tonight\$1,334\.50/); // + 7 hours at $12
     // cash
     typeOut(page, cash, '1.2.3');
     assert.match(page.text(), AMOUNT);
@@ -94,7 +94,8 @@ test('Tonight: a typo in the total, hours or cash box blocks Save, shows a messa
     submit(page);
     const n = page.state().nights;
     assert.equal(n.length, 1);
-    assert.equal(n[0].total, 1250.5);
+    assert.equal(n[0].tips, 1290.5);
+    assert.equal(n[0].total, 1380.5);
     assert.equal(n[0].cash, 40);
     assert.equal(n[0].pay.p1, 7.5);
   } finally {
@@ -102,17 +103,16 @@ test('Tonight: a typo in the total, hours or cash box blocks Save, shows a messa
   }
 });
 
-test('Tonight, tips mode: the tips box refuses a typo, and so does an amount in Other pay', async () => {
+test('Tonight: the CC tips box refuses a typo, and so does an amount in Other pay', async () => {
   const page = await boot({
     seed: realState((S) => {
       S.workplaces[0].setupDone = true;
-      S.workplaces[0].profile.entryMode = 'tips';
       S.workplaces[0].profile.tipout.on = false;
       S.workplaces[0].profile.payTypes.push({ id: 'bonus', k: 'bonus', name: 'Bonus', unit: 'amt', rate: 0 });
     }),
   });
   try {
-    const total = key(page, 'night-total');
+    const total = key(page, 'night-cc');
     typeOut(page, key(page, 'night-pay-p1'), '6');
     typeOut(page, total, '1.2.3');
     assert.match(errOf(page, total), AMOUNT);
@@ -149,7 +149,7 @@ test('Pay periods night editor: a typo is refused with a message and the saved n
     page.tab('periods');
     const { fmtDate } = await import('../../app/js/ui/common.js');
     page.click(page.must(page.byLabel('Edit night ' + fmtDate(D)), 'Edit'));
-    const total = key(page, 'edit-1-total');
+    const total = key(page, 'edit-1-cc');
     const cash = key(page, 'edit-1-cash');
     const hours = key(page, 'edit-1-pay-p1');
     typeOut(page, total, '1.2.3');
@@ -172,7 +172,8 @@ test('Pay periods night editor: a typo is refused with a message and the saved n
     typeOut(page, hours, '6.5');
     page.click(page.button('Save changes'));
     const n = page.state().nights[0];
-    assert.deepEqual([n.total, n.cash, n.pay.p1], [320, 60, 6.5]);
+    // $320 CC + $60 cash, 6.5 hours at $12
+    assert.deepEqual([n.tips, n.total, n.cash, n.pay.p1], [380, 458, 60, 6.5]);
   } finally {
     await page.close();
   }
