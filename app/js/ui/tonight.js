@@ -108,8 +108,8 @@ const fmtHrs = (h) => String(Math.round(h * 100) / 100);
 /**
  * {on, list}: the tip-outs a draft is worked out with. The people: the locked night's own (d.tipoutSnap, set by
  * draftFromNight, or a finished period's snapshot on Tonight) or the restaurant's Setup. On or
- * off: the night's own while it is edited (d.tipoutOn, from draftFromNight; "Recalculate with current Setup" drops it),
- * else the snapshot's or Setup's as it is now (what a new night is saved with).
+ * off: the night's own while it is edited (d.tipoutOn, from draftFromNight), else the snapshot's or Setup's as it is
+ * now (what a new night is saved with).
  */
 export const draftSetup = (d, p) => nightTipout({ snap: d && d.tipoutSnap, tipoutOn: d && d.tipoutOn }, p);
 /** The people a draft can tick as tipped out (draftSetup): [] unless tip-outs are on. */
@@ -349,11 +349,10 @@ export const typedNow = (d) => ({ tips: JSON.stringify([d.cc, d.cash]), pay: JSO
  *     before v38 stays one). Hours changed: the tips stay and the total is the tips + the new pay (a night typed as one
  *     total gets its tips worked out from it first; one typed below its pay keeps its total).
  *   - Changed: tips = CC tips + Cash tips as typed, and the total is the tips + the pay at the night's rates.
- * recalc: "Recalculate with current Setup" (the tips as typed, the pay at today's rates).
  */
-export function editedMoney(out, n, d, p, opened, recalc = false) {
+export function editedMoney(out, n, d, p, opened) {
   const now = typedNow(d);
-  if (recalc || now.tips !== opened.tips) {
+  if (now.tips !== opened.tips) {
     out.total = totalFromTips(out.tips, out, p);
     return out;
   }
@@ -399,8 +398,7 @@ export function storedNight(d, p, id, { snap } = {}) {
 /**
  * Who was tipped out on a night about to be stored (out, from storedNight), for the people it will be worked out with
  * (target: its snapshot's people when it is or stays locked, else Setup's), when the boxes on screen are someone else's:
- * Tonight's boxes are always Setup's, the editor's are the night's own until a recalculation or a move changes its
- * snapshot. cur: the saved night it replaces or edits (null for a new night). See alignTicks: the choices on screen are
+ * Tonight's boxes are always Setup's, the editor's are the night's own until a move changes its snapshot. cur: the saved night it replaces or edits (null for a new night). See alignTicks: the choices on screen are
  * carried over to target and the rest of cur's map is kept. No boxes on screen (tip-outs switched off): a new night (or
  * the part added to one) had nobody tipped out, so everyone in target is false (a night saved
  * while tip-outs were off never becomes tipped out); an edited or replaced night keeps what it had (its map and barback),

@@ -14,8 +14,8 @@ import {
   indexNights,
   snapshotFor,
   snapWithPay,
+  periodToSetup,
   periodSnap,
-  periodTerms,
   nightsInPeriod,
   periodRange,
   totalFromTips,
@@ -25,7 +25,6 @@ import {
   tipoutsTonight,
   tipoutSetup,
   nightTipout,
-  alignTicks,
 } from '../math.js';
 import { businessDate, cutoffFromSettings, moneyTypo } from '../inputs.js';
 import {
@@ -74,7 +73,6 @@ import {
   editedMoney,
   alignNight,
   peopleOf,
-  draftTipouts,
 } from './tonight.js';
 
 /** Pay periods shown at first; "Show older" adds this many more each time. */
@@ -86,6 +84,7 @@ let calPeriod = null;
 let calActual = '';
 let calPending = null; // {idx, r, wid}: a comparison waiting for "Apply this adjustment" / "Don't change"
 let calWid = null; // the restaurant "Check my accuracy" is about (picked first when there is more than one)
+let updating = null; // group key of the finished pay period whose "Update this pay period to today's Setup" is asked
 let shown = PAGE;
 // last render: {S, ctxs: Map(restaurant id -> ctx), sections: Map(group key -> section)} so Edit/Cancel/Show older only
 // rebuild what changed. A group is one restaurant's pay period: key "<restaurant id>:<period index>".
@@ -99,6 +98,7 @@ export function reset() {
   calActual = '';
   calPending = null;
   calWid = null;
+  updating = null;
   shown = PAGE;
   view = null;
 }
@@ -177,7 +177,6 @@ function editor(S, n) {
   const d = draftFromNight(n, p); // CC tips and Cash tips: the tips inside the stored total (its own rates if locked)
   d.note = n.note || ''; // the editor's own field; draftFromNight knows nothing about notes
   const opened = typedNow(d); // what was typed when the editor opened (see editedMoney)
-  let recalc = false;
   // The estimate follows the typing on screen, but is only spoken after a pause (like Tonight's summary), so a screen
   // reader isn't interrupted on every keystroke.
   const preview = el('p', { class: 'hint' });
@@ -216,7 +215,10 @@ function editor(S, n) {
       to = nightPeriodIndex(p, night);
     return from === to ? null : { from, to };
   };
-  /** The night as it will be saved. A locked night keeps its Setup numbers unless "Recalculate with current Setup" is ticked. */
+  /**
+   * The night as it will be saved. A locked night keeps its Setup numbers (its pay period's "Update this pay period to
+   * today's Setup" gives every night there today's).
+   */
   const build = () => {
     const out = storedNight(d, p, n.id);
     const note = d.note.trim().slice(0, 500);
@@ -230,54 +232,40 @@ function editor(S, n) {
     // one with today's Setup, as locking would. Into one that has not ended it follows the current Setup (no snapshot).
     const mv = moveOf(out);
     const intoFinished = !!mv && isFinal(p, mv.to, todayISO());
-    const joined =
-      intoFinished && !recalc
-        ? periodSnap(
-            nightsInPeriod(
-              p,
-              nightsOf(S, w.id).filter((x) => x.id !== n.id),
-              mv.to,
-            ),
-          )
-        : null;
+    const joined = intoFinished
+      ? periodSnap(
+          nightsInPeriod(
+            p,
+            nightsOf(S, w.id).filter((x) => x.id !== n.id),
+            mv.to,
+          ),
+        )
+      : null;
     const keepSnap = joined || (mv ? intoFinished && n.snap : n.snap);
-    if (keepSnap && !recalc) {
+    if (keepSnap) {
       // keep amounts for pay types removed from Setup since, so the locked numbers stay whole
       Object.keys(n.pay || {}).forEach((k) => {
         if (!(k in out.pay)) out.pay[k] = n.pay[k];
       });
       out.snap = keepSnap === n.snap ? n.snap : JSON.parse(JSON.stringify(keepSnap));
-      // A night recalculated earlier carries ITS OLD period's fixed deductions and non-taxable money (snap.period).
+      // A night recalculated by v37 or earlier carries ITS OLD period's fixed deductions and non-taxable money
+      // (snap.period).
       // Moved alone into an empty finished period, that period's check is the night's own snapshot: drop them.
       if (mv && out.snap === n.snap && n.snap.period) {
         out.snap = JSON.parse(JSON.stringify(n.snap));
         delete out.snap.period;
       }
-    } else if (mv ? intoFinished : n.snap && recalc) {
-      out.snap = snapshotFor(p, shiftsFor(out));
-      // Recalculated in (or into) a finished pay period that already has a snapshot: the night uses today's Setup,
-      // but the period's check keeps the fixed deductions and non-taxable money it had (periodTerms).
-      const ref = recalc
-        ? periodSnap(
-            nightsInPeriod(
-              p,
-              mv ? nightsOf(S, w.id).filter((x) => x.id !== n.id) : nightsOf(S, w.id),
-              mv ? mv.to : nightPeriodIndex(p, n),
-            ),
-          )
-        : null;
-      if (ref) out.snap.period = periodTerms(ref);
-    }
+    } else if (intoFinished) out.snap = snapshotFor(p, shiftsFor(out)); // into an empty finished pay period
     // Hours at a job added to Setup after the night was locked: that job at its Setup rate, the rate shown (snapWithPay).
     if (out.snap) out.snap = snapWithPay(out.snap, p, out);
-    // Who was tipped out: the boxes are the night's own people (its snapshot's, or Setup's when it isn't locked). A
-    // recalculation or a move gives it other ones (today's Setup, the period's snapshot, or Setup's when a move unlocks
-    // it): the ticks are carried over to them (alignNight). With no boxes on screen the night keeps its own.
+    // Who was tipped out: the boxes are the night's own people (its snapshot's, or Setup's when it isn't locked). A move
+    // can give it other ones (the period's snapshot, today's Setup into an empty finished period, or Setup's when a move
+    // unlocks it): the ticks are carried over to them (alignNight). With no boxes on screen the night keeps its own.
     alignNight(out, d, p, n, peopleOf(out, p));
     // Tips and cash not changed: they stay exactly as stored (and the total too while the hours aren't changed); else
     // tips = CC tips + Cash tips, and the total is the tips + the pay this night is shown with (its snapshot, the new
     // one, or today's Setup).
-    editedMoney(out, n, d, p, opened, recalc);
+    editedMoney(out, n, d, p, opened);
     // just locked by the move: like locking, the stored total becomes the typed tips + pay at the rates it is locked with
     if (out.snap && out.snap !== n.snap && hasTips(out)) out.total = totalFromTips(out.tips, out, p);
     return out;
@@ -293,10 +281,10 @@ function editor(S, n) {
     preview.textContent = 'Estimated take-home for this night: ' + money(c.net) + '.';
     if (quiet !== true) speak();
   };
-  // A locked night shows the rates it keeps, unless "Recalculate with current Setup" is ticked. A job its snapshot doesn't
-  // have (added to Setup since) shows its Setup rate, which the night is then saved with (snapWithPay in build).
+  // A locked night shows the rates it keeps. A job its snapshot doesn't have (added to Setup since) shows its Setup
+  // rate, which the night is then saved with (snapWithPay in build).
   const rateOf = (t) => {
-    if (!n.snap || recalc) return num(t.rate);
+    if (!n.snap) return num(t.rate);
     const s = (n.snap.pay || []).find((x) => String(x.id) === String(t.id));
     return s ? num(s.rate) : num(t.rate);
   };
@@ -383,12 +371,7 @@ function editor(S, n) {
     const today = todayISO();
     return [...new Set([mv.from, mv.to])].sort((a, b) => a - b).filter((k) => isFinal(p, k, today));
   };
-  const compared = (k) => {
-    const rg = periodRange(p, k);
-    return (w.calib || []).some((c) =>
-      c.start && c.end ? c.start === rg.start && c.end === rg.end : c.idx === k,
-    );
-  };
+  const compared = (k) => comparedPeriod(w, k);
   function showAsk(ks) {
     const moveBtn = el(
       'button',
@@ -457,7 +440,7 @@ function editor(S, n) {
       upd();
     },
   };
-  let f = nightFields(p, d, fieldOpts); // drawn again when "Recalculate with current Setup" changes who can be ticked
+  const f = nightFields(p, d, fieldOpts);
   const noteInput = el('input', {
     type: 'text',
     maxlength: '500',
@@ -470,7 +453,7 @@ function editor(S, n) {
   });
   const noteField = field('Note', noteInput, { optional: true });
   // Whether tip-outs were on is the night's own (d.tipoutOn, from draftFromNight): Setup's switch doesn't change it.
-  // One plain line says so when Setup's switch is different now; "Recalculate with current Setup" takes today's.
+  // One plain line says so when Setup's switch is different now.
   const ownOn = d.tipoutOn;
   const switchLine =
     ownOn !== tipoutSetup(p).on
@@ -482,58 +465,17 @@ function editor(S, n) {
             : 'Saved with “I tip out” off, so no tip-outs are taken out of this night.',
         )
       : null;
-  let lockNote = null;
-  if (n.snap) {
-    const cb = el('input', { type: 'checkbox', id: 'edit-' + n.id + '-recalc' });
-    // In a finished pay period, the period's check keeps its fixed deductions whatever this night is recalculated with.
-    const inFinished = isFinal(p, nightPeriodIndex(p, n), todayISO());
-    if (inFinished) cb.setAttribute('aria-describedby', cb.id + '-hint');
-    const recalcHint = inFinished
-      ? el(
-          'p',
-          { class: 'hint', id: cb.id + '-hint', hidden: true },
-          'This night uses today’s Setup; the pay period’s fixed deductions stay as they were.',
-        )
-      : null;
-    cb.addEventListener('change', () => {
-      recalc = cb.checked;
-      if (recalcHint) recalcHint.hidden = !recalc;
-      // The tip-out boxes are the people the night will be worked out with: today's Setup's when recalculated, else
-      // its own snapshot's. The ticks are carried over to them (alignTicks) and the fields are drawn again.
-      const was = draftTipouts(d, p);
-      d.tipoutSnap = recalc ? null : n.snap;
-      // today's "I tip out" too when recalculated, else the night's own again
-      if (recalc) delete d.tipoutOn;
-      else d.tipoutOn = ownOn;
-      if (switchLine) switchLine.hidden = recalc;
-      d.tipouts = alignTicks(d.tipouts, d.tipouts, was, draftTipouts(d, p));
-      const fresh = nightFields(p, d, fieldOpts);
-      f.root.replaceWith(fresh.root);
-      f = fresh;
-      upd();
-    });
-    lockNote = el(
-      'div',
-      { class: 'stack-sm' },
-      el(
+  // A locked night keeps the Setup it was saved with; its whole pay period can be updated to today's (below the period).
+  const lockNote = n.snap
+    ? el(
         'p',
-        { class: 'hint' },
-        'This night keeps the pay rates and deductions it was saved with, so later Setup changes don’t rewrite it.',
-      ),
-      el(
-        'label',
-        { class: 'check', for: cb.id },
-        cb,
-        el(
-          'span',
-          null,
-          'Recalculate with current Setup',
-          el('small', null, 'Uses today’s pay rates, deductions and tip-out for this night.'),
-        ),
-      ),
-      recalcHint,
-    );
-  }
+        { class: 'hint', id: 'edit-' + n.id + '-locked' },
+        'This night keeps the pay rates and deductions it was saved with, so later Setup changes don’t rewrite it.' +
+          (isFinal(p, nightPeriodIndex(p, n), todayISO())
+            ? ' To use today’s Setup, update its pay period with “Update this pay period to today’s Setup”.'
+            : ''),
+      )
+    : null;
   const saveBtn = el(
     'button',
     { type: 'submit', class: 'btn btn-small', 'data-focus-key': editKey(n) },
@@ -700,9 +642,143 @@ function nightRow(S, w, n, shifts) {
   );
 }
 
+/** True when pay period k of restaurant w was compared with a paycheck in "Check my accuracy" (by its dates). */
+function comparedPeriod(w, k) {
+  const rg = periodRange(w.profile, k);
+  return (w.calib || []).some((c) =>
+    c.start && c.end ? c.start === rg.start && c.end === rg.end : c.idx === k,
+  );
+}
+const focusKey = (k) => {
+  const n = [...document.querySelectorAll('[data-focus-key]')].find(
+    (x) => x.getAttribute('data-focus-key') === k,
+  );
+  if (n) n.focus();
+};
+/**
+ * "Update this pay period to today's Setup", under a FINISHED pay period (the running one already follows Setup). It
+ * asks first, showing what changes (take-home, and the check when every night has its cash), then gives every night in
+ * the period a fresh snapshot of today's Setup (math.periodToSetup) and offers Undo, which puts the nights back exactly
+ * as they were. If the period was compared in Check my accuracy, the question says that comparison used the old numbers.
+ */
+function updateControl(S, w, idx, ctx) {
+  const p = w.profile;
+  const key = gkey(w.id, idx);
+  const label = periodLabel(p, idx);
+  const fk = 'update-' + w.id + '-' + idx;
+  if (updating !== key) {
+    const b = el(
+      'button',
+      {
+        type: 'button',
+        class: 'btn btn-secondary btn-small',
+        'data-focus-key': fk,
+        'aria-label': 'Update the pay period ' + label + ' to today’s Setup',
+      },
+      'Update this pay period to today’s Setup',
+    );
+    b.addEventListener('click', () => {
+      updating = key;
+      redrawGroups([key]);
+      focusKey(fk + '-yes');
+      focusKey(fk + '-close');
+    });
+    return el('div', null, b);
+  }
+  const today = ctx.today;
+  const shownR = periodToSetup(p, ctx.nights, idx, today);
+  const sig = (r) => JSON.stringify([r.before, r.after]);
+  const same = JSON.stringify(shownR.after) === JSON.stringify(shownR.before);
+  const close = () => {
+    updating = null;
+    redrawGroups([key]);
+    focusKey(fk);
+  };
+  const lines = [];
+  const buttons = [];
+  if (same) {
+    lines.push(el('p', null, 'This pay period already uses today’s Setup. Nothing to update.'));
+    const ok = el(
+      'button',
+      { type: 'button', class: 'btn btn-secondary btn-small', 'data-focus-key': fk + '-close' },
+      'OK',
+    );
+    ok.addEventListener('click', close);
+    buttons.push(ok);
+  } else {
+    const after = ctx.nights.map((n) => shownR.after.find((x) => x.id === n.id) || n);
+    const t0 = periodTotals(p, ctx.nights, idx, today);
+    const t1 = periodTotals(p, after, idx, today);
+    lines.push(el('p', null, 'Take-home for ' + label + ': ' + money(t0.net) + ' → ' + money(t1.net)));
+    if (t0.allCash && t1.allCash)
+      lines.push(el('p', null, 'On your check: ' + money(t0.chk) + ' → ' + money(t1.chk)));
+    lines.push(
+      el(
+        'p',
+        { class: 'hint' },
+        'Every night in this pay period will use today’s pay rates, deductions and tip-outs. Their tips stay the same.',
+      ),
+    );
+    if (comparedPeriod(w, idx))
+      lines.push(
+        el('p', { class: 'note' }, 'You compared this pay period with your paycheck using the old numbers.'),
+      );
+    const yes = el(
+      'button',
+      { type: 'button', class: 'btn btn-small', 'data-focus-key': fk + '-yes' },
+      'Update pay period',
+    );
+    const no = el(
+      'button',
+      { type: 'button', class: 'btn btn-secondary btn-small', 'data-focus-key': fk + '-no' },
+      'Cancel',
+    );
+    no.addEventListener('click', close);
+    yes.addEventListener('click', () => {
+      // worked out again now: if anything changed since the question was shown (another window, a midnight lock), the
+      // question is shown again with the new numbers instead of storing something else than what was shown
+      const r = periodToSetup(p, nightsOf(S, w.id), idx, todayISO());
+      if (sig(r) !== sig(shownR)) {
+        redrawGroups([key]);
+        focusKey(fk + '-yes');
+        return;
+      }
+      const was = r.before.map((n) => JSON.parse(JSON.stringify(n)));
+      r.after.forEach((n) => {
+        const i = S.nights.findIndex((x) => x.id === n.id);
+        if (i >= 0) S.nights[i] = orderNight(n);
+      });
+      updating = null;
+      if (r.before.some((n) => n.id === editingId)) editingId = null;
+      save();
+      bus.rerender();
+      focusKey('period-' + w.id + '-' + idx);
+      toast('The pay period ' + label + ' now uses today’s Setup.', {
+        undo: () => {
+          // the nights exactly as they were (a night deleted since stays deleted)
+          was.forEach((n) => {
+            const i = S.nights.findIndex((x) => x.id === n.id);
+            if (i >= 0) S.nights[i] = n;
+          });
+          save();
+          bus.rerender();
+        },
+      });
+    });
+    buttons.push(yes, no);
+  }
+  return el(
+    'div',
+    { class: 'note stack-sm', role: 'group', 'aria-label': 'Update this pay period to today’s Setup?' },
+    lines,
+    el('div', { class: 'cluster' }, buttons),
+  );
+}
+
 /**
  * One restaurant's pay period. The shift count for period idx: entered and history counts are the same for every period,
  * so they are worked out once per restaurant (ctx.base). ctx.named: start the label with the restaurant's name (the All list).
+ * A finished pay period can be updated to today's Setup (updateControl).
  */
 function group(S, w, idx, ctx) {
   const p = w.profile,
@@ -735,6 +811,7 @@ function group(S, w, idx, ctx) {
           rows.map((r) => (r.tagName === 'LI' ? el('ul', { class: 'list' }, r) : r)),
         )
       : el('ul', { class: 'list' }, rows),
+    t.exact ? updateControl(S, w, idx, ctx) : null,
   );
   if (view && view.ctxs.get(w.id) === ctx) view.sections.set(gkey(w.id, idx), sec);
   return sec;

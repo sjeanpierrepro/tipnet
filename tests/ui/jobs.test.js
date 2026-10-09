@@ -343,7 +343,7 @@ test('night editor: job rows round-trip any night (several jobs, other pay, a lo
   }
 });
 
-test('night editor: a locked night shows its own rates until "Recalculate with current Setup"', async () => {
+test('night editor: a locked night shows its own rates (no "Recalculate with current Setup")', async () => {
   const page = await boot({
     seed: jobsState((S) => {
       S.nights = [
@@ -375,10 +375,8 @@ test('night editor: a locked night shows its own rates until "Recalculate with c
     const { fmtDate } = await import('../../app/js/ui/common.js');
     page.click(page.byLabel('Edit night ' + fmtDate('2026-01-05')));
     assert.match(page.text(), /\$10\.00\/h → \$80\.00/, 'its own $10 rate');
-    const re = page.$('#edit-3-recalc');
-    re.checked = true;
-    page.change(re);
-    assert.match(page.text(), /\$12\.00\/h → \$96\.00/, "today's rate once recalculating");
+    assert.equal(page.$('#edit-3-recalc'), null);
+    assert.doesNotMatch(page.text(), /Recalculate/);
   } finally {
     await page.close();
   }

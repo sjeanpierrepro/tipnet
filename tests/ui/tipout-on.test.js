@@ -135,7 +135,7 @@ test('night editor: a night saved with tip-outs off shows it, keeps it, and its 
   }
 });
 
-test('night editor: no line when the night’s switch is Setup’s; "Recalculate with current Setup" takes today’s switch', async () => {
+test('night editor: no line when the night’s switch is Setup’s; "Update this pay period" takes today’s switch', async () => {
   // a locked night of a finished pay period, saved with tip-outs off; Setup has them on now
   const p = { ...exampleProfile(today), periodStart: addDays(today, -28), periodEnd: addDays(today, -15) };
   p.tipout = { on: true, basis: 'before' };
@@ -160,12 +160,21 @@ test('night editor: no line when the night’s switch is Setup’s; "Recalculate
     page.click(page.must(page.$('[data-focus-key="edit-n1-cc"]', page.app), 'Edit n1'));
     assert.ok(page.$('#edit-n1-tipout-on'));
     assert.equal(page.$('[data-focus-key="edit-n1-tipout-t1"]'), null);
-    const cb = page.must(page.$('#edit-n1-recalc'), 'recalc');
-    cb.checked = true;
-    page.change(cb);
-    assert.ok(page.$('[data-focus-key="edit-n1-tipout-t1"]'), 'today’s switch: the boxes are back');
-    assert.equal(page.$('#edit-n1-tipout-on').hidden, true);
+    page.click(page.button('Cancel'));
+    // n1's pay period (n2's, yesterday, has ended too)
+    const sec = () => page.$('[data-focus-key="edit-n1-cc"]', page.app).closest('section');
+    page.click(page.button('Update this pay period to today’s Setup', sec()));
+    page.click(page.button('Update pay period', sec()));
+    assert.equal(nightOf(page, 'n1').tipoutOn, true, 'today’s switch');
+    assert.equal(
+      computeNight(nightOf(page, 'n1'), page.state().workplaces[0].profile, 10).tipout,
+      0,
+      'nobody ticked',
+    );
+    page.click(page.must(page.$('[data-focus-key="edit-n1-cc"]', page.app), 'Edit n1'));
+    assert.equal(page.$('#edit-n1-tipout-on'), null, 'the same as Setup now');
     const box = key(page, 'edit-n1-tipout-t1');
+    assert.equal(box.checked, false);
     box.checked = true;
     page.change(box);
     page.click(page.button('Save changes'));

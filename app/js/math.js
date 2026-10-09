@@ -353,6 +353,51 @@ export function lockFinishedNights(profile, nights, today = todayISO()) {
   return { nights: out, stamped };
 }
 /**
+ * "Update this pay period to today's Setup" (Pay periods, a finished pay period): every night in pay period idx gets a
+ * fresh snapshot of today's Setup p (its rates, deductions, and the fixed deductions and non-taxable money of the
+ * period's check: no snap.period any more), today's tip-out people with each night's ticks carried over (alignTicks:
+ * the same id, or the one person of the same kind; nobody new is ticked), and "I tip out" as Setup has it now. A pay
+ * type the night has an amount for that today's Setup no longer has keeps the rate of the night's own snapshot, so
+ * taking a job out of Setup never takes away pay already earned. The tips stay what they were: a night with typed tips
+ * keeps them and its total becomes the tips + the pay at today's rates; a night typed as one total (before v38) gets
+ * its tips worked out from it at its old rates first; one typed below its pay keeps its total. The shift count is the
+ * one locking would use. Pure: {before, after}, the period's nights (oldest first) and their updated copies.
+ */
+export function periodToSetup(p, nights, idx, today = todayISO()) {
+  const index = indexNights(p, nights);
+  const before = nightsInPeriod(p, nights, idx, index);
+  const base = shiftsPerPeriod(p, nights, today, undefined, index);
+  const shifts = base.source === 'default' ? shiftsPerPeriod(p, nights, today, idx, index).n : base.n;
+  const fresh = snapshotFor(p, shifts);
+  const now = tipoutSetup(p);
+  const after = before.map((n) => {
+    const snap = JSON.parse(JSON.stringify(fresh));
+    ((n.snap && n.snap.pay) || []).forEach((t) => {
+      const has = snap.pay.some((x) => String(x.id) === String(t.id));
+      if (has || !n.pay || num(n.pay[t.id]) === 0) return;
+      const { usual, ...kept } = t; // the usual amount only matters for the first pay type
+      snap.pay.push(kept);
+    });
+    const out = { ...n, snap, tipoutOn: now.on };
+    const then = tipoutSetup(n.snap || p).list; // the people it was worked out with
+    if (then.length || now.list.length) {
+      const ticks = nightTicks(n, then);
+      out.tipouts = alignTicks(n.tipouts || ticks, ticks, then, now.list);
+      if (now.list.length) out.barback = now.list.some((r) => out.tipouts[r.id] === true);
+    }
+    if (hasTips(n)) out.total = totalFromTips(n.tips, out, p);
+    else {
+      const t = tipsFromTotal(n, p); // at the rates it was worked out with
+      if (t >= 0) {
+        out.tips = round2(t);
+        out.total = totalFromTips(out.tips, out, p);
+      }
+    }
+    return out;
+  });
+  return { before, after };
+}
+/**
  * The numbers one night is worked out with: its snapshot when locked, else the current Setup; the tip-outs as the night
  * was saved (nightTipout: whether they were on is the night's own).
  */
@@ -389,10 +434,10 @@ export function periodSnap(ns) {
   return null;
 }
 /**
- * {fixed, nontax} a period's check carries per its snapshot s (a periodSnap result). A night recalculated with the
- * current Setup in a finished period keeps the period's own numbers in s.period (see the night editor), so
- * "Recalculate with current Setup" never changes the period's fixed deductions or non-taxable money, whichever
- * night is the newest.
+ * {fixed, nontax} a period's check carries per its snapshot s (a periodSnap result). Up to v37 the night editor could
+ * recalculate one night of a finished period with the Setup of that day ("Recalculate with current Setup"); such a
+ * night keeps the period's own numbers in s.period, so it never changes the period's fixed deductions or non-taxable
+ * money, whichever night is the newest. "Update this pay period to today's Setup" (periodToSetup) replaces them all.
  */
 export function periodTerms(s) {
   const t = s.period || s;

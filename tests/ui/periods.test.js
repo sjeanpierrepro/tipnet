@@ -88,7 +88,7 @@ test('two-tap Delete: the armed state is in the accessible name and announced', 
   }
 });
 
-test('a raise after a finished period leaves it unchanged; the open period follows Setup; the editor can recalculate', async () => {
+test('a raise after a finished period leaves it unchanged; the open period follows Setup; the period can be updated', async () => {
   const page = await boot({ seed: seed(20) });
   try {
     page.tab('periods');
@@ -108,22 +108,19 @@ test('a raise after a finished period leaves it unchanged; the open period follo
     assert.equal(total(1), fin0, 'finished period unchanged');
     assert.notEqual(total(0), cur0, 'open period follows Setup');
 
-    // Editing a locked night keeps its numbers unless "Recalculate with current Setup" is ticked
+    // Editing a locked night keeps its numbers; there is no "Recalculate with current Setup" any more
     const row = sections(page)[1].querySelector('.list-row');
     page.click(page.byLabel('Edit night ' + row.querySelector('.main div').textContent));
     const form = page.$('form', sections(page)[1]);
-    assert.match(form.textContent, /Recalculate with current Setup/);
+    assert.doesNotMatch(form.textContent, /Recalculate/);
+    assert.match(form.textContent, /To use today’s Setup, update its pay period/);
     page.click(page.button('Save changes', form));
     assert.equal(total(1), fin0, 'plain save keeps the lock');
-    page.click(
-      page.byLabel('Edit night ' + sections(page)[1].querySelector('.list-row .main div').textContent),
-    );
-    const form2 = page.$('form', sections(page)[1]);
-    const cb = form2.querySelector('input[type=checkbox][id$="-recalc"]');
-    cb.checked = true;
-    page.change(cb);
-    page.click(page.button('Save changes', form2));
-    assert.notEqual(total(1), fin0, 'recalculated with the raise');
+    // the running pay period has no update button; the finished one does
+    assert.equal(sections(page)[0].querySelector('button[data-focus-key^="update-"]'), null);
+    page.click(page.button('Update this pay period to today’s Setup', sections(page)[1]));
+    page.click(page.button('Update pay period', sections(page)[1]));
+    assert.notEqual(total(1), fin0, 'updated with the raise');
   } finally {
     await page.close();
   }

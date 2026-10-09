@@ -1,6 +1,6 @@
 // Who was tipped out on screen vs the people a night is worked out with: Tonight's Replace / Add onto a locked night after
-// the tip-out people changed in Setup, the night editor's "Recalculate with current Setup" and moves, and edits while
-// tip-outs are switched off or set to "after tip-out".
+// the tip-out people changed in Setup, "Update this pay period to today's Setup", the night editor's moves, and edits
+// while tip-outs are switched off (or were "after tip-out" before v38).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { boot, realState } from './harness.js';
@@ -132,18 +132,16 @@ test('a) Tonight "Replace it" / "Add to that night" carry the choice to the re-c
   }
 });
 
-test('b) night editor "Recalculate with current Setup" after the barback row was re-created: $60.60 stays', async () => {
+test('b) "Update this pay period to today’s Setup" after the barback row was re-created: $60.60 stays', async () => {
   const page = await boot({ seed: seedWith([BARBACK2], [lockedNight()]) });
   try {
     const before = money(page, nightOf(page, 'n1'));
     page.tab('periods');
     page.click(editBtn(page, 'n1'));
     assert.equal(key(page, 'edit-n1-tipout-t1').checked, true, 'the night’s own barback is ticked');
-    const cb = page.must(page.$('#edit-n1-recalc'), 'recalc');
-    cb.checked = true;
-    page.change(cb);
-    assert.match(page.text(), /Estimated take-home for this night: \$360\.24\./);
-    page.click(page.button('Save changes'));
+    page.click(page.button('Cancel'));
+    page.click(page.button('Update this pay period to today’s Setup'));
+    page.click(page.button('Update pay period'));
     const n = nightOf(page, 'n1');
     assert.deepEqual(
       n.snap.tipouts.map((r) => r.id),
@@ -160,7 +158,7 @@ test('b) night editor "Recalculate with current Setup" after the barback row was
   }
 });
 
-test('b) night editor: ticking "Recalculate with current Setup" shows today’s people to tick, and its note only then', async () => {
+test('b) after "Update this pay period", the night editor shows today’s people: the barback’s tick carried over, the runner not ticked', async () => {
   // Setup now: the barback row was added again (t9) and a runner joined; the locked night only knows its barback (t1)
   const page = await boot({ seed: seedWith([BARBACK2, RUNNER], [lockedNight()]) });
   try {
@@ -168,12 +166,10 @@ test('b) night editor: ticking "Recalculate with current Setup" shows today’s 
     page.click(editBtn(page, 'n1'));
     assert.ok(page.$('[data-focus-key="edit-n1-tipout-t1"]'), 'the night’s own barback');
     assert.equal(page.$('[data-focus-key="edit-n1-tipout-t2"]'), null, 'no runner on the locked night');
-    const hint = page.must(page.$('#edit-n1-recalc-hint'), 'hint');
-    assert.equal(hint.hidden, true, 'the "uses today’s Setup" note waits for the box');
-    const cb = page.must(page.$('#edit-n1-recalc'), 'recalc');
-    cb.checked = true;
-    page.change(cb);
-    assert.equal(hint.hidden, false);
+    page.click(page.button('Cancel'));
+    page.click(page.button('Update this pay period to today’s Setup'));
+    page.click(page.button('Update pay period'));
+    page.click(editBtn(page, 'n1'));
     assert.equal(page.$('[data-focus-key="edit-n1-tipout-t1"]'), null, 'the old row is gone');
     assert.equal(key(page, 'edit-n1-tipout-t9').checked, true, 'the barback’s tick carried over');
     assert.equal(key(page, 'edit-n1-tipout-t2').checked, false, 'the runner wasn’t tipped out that night');
@@ -187,14 +183,8 @@ test('b) night editor: ticking "Recalculate with current Setup" shows today’s 
       money(page, n).tipouts.map((l) => l.who),
       ['Barback', 'Runner'],
     );
-    // unticking the box again goes back to the night's own people
+    // opened again: the night's own people, as saved
     page.click(editBtn(page, 'n1'));
-    const cb2 = page.must(page.$('#edit-n1-recalc'), 'recalc');
-    assert.ok(page.$('[data-focus-key="edit-n1-tipout-t9"]'));
-    cb2.checked = true;
-    page.change(cb2);
-    cb2.checked = false;
-    page.change(cb2);
     assert.equal(key(page, 'edit-n1-tipout-t9').checked, true);
     assert.equal(key(page, 'edit-n1-tipout-t2').checked, true);
   } finally {

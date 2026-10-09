@@ -325,14 +325,11 @@ test('night editor: typed tips with cash, locked at its own rate: round-trips un
     assert.equal(n2.tips, 420);
     assert.equal(n2.total, 500, '420 + 8 x $10 (its own rate)');
     assert.equal(n2.snap.pay[0].rate, 10);
-    // Recalculate with current Setup: the tips stay, the pay follows today's $12
-    openEditor(page, fmtDate('2026-01-05'));
-    assert.equal(editCc(page, 2).value, '370');
-    const re = page.$('#edit-2-recalc');
-    re.checked = true;
-    page.change(re);
-    saveEdit(page);
+    // its pay period updated to today's Setup: the tips stay, the pay follows today's $12
+    page.click(page.button('Update this pay period to today’s Setup'));
+    page.click(page.button('Update pay period'));
     n2 = nightOf(page, 2);
+    assert.equal(n2.tips, 420);
     assert.equal(n2.total, 516, '420 + 8 x $12');
     assert.equal(n2.snap.pay[0].rate, 12);
   } finally {

@@ -341,7 +341,8 @@ function cleanSnap(s) {
     ...cleanTipoutSetup(s), // an older snapshot's single tip-out becomes its list of one (or none)
   };
   if (finiteIn(s.nontax, 0.01, 1e7)) out.nontax = s.nontax; // recurring non-taxable money per check
-  // a night recalculated in a finished period: the period's own fixed deductions and non-taxable money (periodTerms)
+  // a night recalculated in a finished period (up to v37): the period's own fixed deductions and non-taxable money
+  // (periodTerms)
   if (isObj(s.period) && finiteIn(s.period.fixed, 0, 1e7))
     out.period = { fixed: s.period.fixed, nontax: finiteIn(s.period.nontax, 0, 1e7) ? s.period.nontax : 0 };
   return out;
