@@ -78,6 +78,7 @@ import { buildIcs, makeUid, timeLabel, nightsLabel, isMorning, DAY_NAMES } from 
 import { redateDraft, dropDraft } from './tonight.js';
 
 let guidedStep = 0;
+let guidedRecheck = false; // Next / Finish sent the person back to a step with a value missing (guidedGap): mark it
 // The restaurant the guided flow is running for (null = none). It stays set once the flow starts, even after the first
 // edit ends example mode, until Finish or Skip.
 let guidedFor = null;
@@ -124,6 +125,7 @@ export function reset() {
   pendingEdits.forEach((f) => f.cancel());
   pendingEdits.clear();
   guidedStep = 0;
+  guidedRecheck = false;
   guidedFor = null;
   gProfile = null;
   noDeductions = false;
@@ -2112,6 +2114,17 @@ function guided(root, ctx) {
       if (i) i.focus();
       return;
     }
+    // Every required value of the steps so far, not only the one on screen: a guided setup saved by an older version
+    // can resume past a step that now asks for more (v37 had no shift count). The person goes to the first one missing.
+    const gap = guidedGap(ctx.p, noDeductions);
+    if (gap >= 0 && (gap < guidedStep || guidedStep === 2)) {
+      guidedStep = gap;
+      guidedRecheck = true;
+      keepGuided(S);
+      bus.rerender();
+      window.scrollTo(0, 0);
+      return;
+    }
     if (guidedStep < 2) {
       guidedStep++;
       keepGuided(S);
@@ -2291,8 +2304,38 @@ function guided(root, ctx) {
       finePrint(),
     ),
   );
+  if (guidedRecheck) {
+    // sent back here by Next / Finish (guidedGap): the missing value is marked and gets the focus
+    guidedRecheck = false;
+    const i = body
+      .filter((c) => !c.validate())
+      .map((c) => c.firstInvalid())
+      .find(Boolean);
+    if (i) i.focus();
+  }
 }
 
+/**
+ * The first guided step (0 pay period and gross, 1 deductions, 2 pay and tip-out) with a required value missing or not
+ * allowed in profile p (the rules Setup's Save uses, draftProblems), else -1. noDed: "My paystub has no deductions".
+ */
+function guidedGap(p, noDed) {
+  const deds = p.deductions || [];
+  let len = 1;
+  if (Number.isFinite(parseISO(p.periodStart)) && p.periodEnd && Number.isFinite(parseISO(p.periodEnd)))
+    len = calendarMode(p) ? 1 : dayDiff(p.periodStart, p.periodEnd) + 1;
+  if (
+    !Number.isFinite(parseISO(p.periodStart)) ||
+    !(len >= 1 && len <= 62) ||
+    !(num(p.gross) > 0) ||
+    !(setupShifts(p) > 0)
+  )
+    return 0;
+  if (deds.some((x) => num(x.amount) < 0) || (!noDed && !deds.some((x) => num(x.amount) > 0))) return 1;
+  const main = (p.payTypes || [])[0];
+  if (!main || (main.unit !== 'amt' && !(num(main.rate) > 0)) || tipoutProblem(p)) return 2;
+  return -1;
+}
 /** What Tonight still needs before it can estimate at this restaurant, in the order of the page ([] once set up). */
 /** draft: a full-page draft ({profile, noDeductions}) to check instead of what is saved. */
 export function stillNeeded(S, w, draft = null) {
