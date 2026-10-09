@@ -481,11 +481,13 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
   const showAutoNote = () => {
     const text = !p.shiftsAuto
       ? ''
-      : avg0 && !(num(p.shifts) > 0)
-        ? 'TipNet filled this in from your past pay periods (their average, ' +
-          avgText(avg0) +
-          '). Type the number of shifts you usually work if it’s different; the nights of this pay period follow it.'
-        : 'TipNet filled this in from your past pay periods. Change it if you usually work a different number; the nights of this pay period follow it.';
+      : p.shiftsAuto === 'default' // no past pay period to go by (pinShifts)
+        ? 'TipNet set this to about 4 shifts a week. Change it to what you usually work; the nights of this pay period follow it.'
+        : avg0 && !(num(p.shifts) > 0)
+          ? 'TipNet filled this in from your past pay periods (their average, ' +
+            avgText(avg0) +
+            '). Type the number of shifts you usually work if it’s different; the nights of this pay period follow it.'
+          : 'TipNet filled this in from your past pay periods. Change it if you usually work a different number; the nights of this pay period follow it.';
     if (autoNote.textContent !== text) autoNote.textContent = text;
     autoNote.hidden = !text;
   };

@@ -510,7 +510,8 @@ function cleanProfile(p, { startFallback }) {
   if (!out.shifts && typeof avg === 'number' && Number.isFinite(avg) && avg > 0 && avg <= 1000)
     out.shiftsAvg = avg;
   // Filled in by TipNet (pinShifts, or Setup's suggestion), not yet confirmed with Save: Setup says so.
-  if ((out.shifts > 0 || out.shiftsAvg > 0) && p.shiftsAuto === true) out.shiftsAuto = true;
+  if ((out.shifts > 0 || out.shiftsAvg > 0) && (p.shiftsAuto === true || p.shiftsAuto === 'default'))
+    out.shiftsAuto = p.shiftsAuto;
   const ro = p.rateOverride;
   out.rateOverride = typeof ro === 'number' && Number.isFinite(ro) && ro >= 0 && ro <= 1 ? ro : null;
   // freq: fixed day counts 7/14/15/30 or the calendar modes 'semimonthly'/'monthly'; anything else falls back to 14.
@@ -555,10 +556,13 @@ export function pinShifts(S, today = todayISO()) {
     const p = w.profile;
     if (setupShifts(p) > 0 || !isWorkplaceSetUp(S, w)) return;
     const mine = S.nightsExample ? [] : S.nights.filter((n) => n.workplaceId === w.id);
-    const n = historyShifts(p, mine, today, periodIndex(p, today)).n;
+    const h = historyShifts(p, mine, today, periodIndex(p, today));
+    const n = h.n;
     if (Number.isInteger(n)) p.shifts = n;
     else p.shiftsAvg = n;
-    p.shiftsAuto = true; // Setup shows where it came from until Save confirms it
+    // Setup shows where it came from until Save confirms it: past pay periods (true), or no past pay period to go by,
+    // so about 4 shifts a week ('default')
+    p.shiftsAuto = h.source === 'default' ? 'default' : true;
     pinned++;
   });
   return pinned;
