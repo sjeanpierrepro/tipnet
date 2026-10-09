@@ -498,6 +498,18 @@ export function hoursProblem(p, d) {
   return { msg: '' };
 }
 export const NOTHING_MSG = 'Enter your tips or your hours first.';
+/**
+ * Something was entered for the night: tips above $0 (CC + Cash), or hours, shifts or an Other pay amount above 0 in a
+ * box on screen. Such a night is saved and previewed even when it comes to $0 (hours at a job with no rate) or its
+ * money is only pay on top of the total (a bonus). With nothing at all, Tonight says NOTHING_MSG.
+ */
+export function anythingEntered(p, d) {
+  if ((tipsCents(d.cc) ?? 0) + (tipsCents(d.cash) ?? 0) > 0) return true;
+  return visibleTypes(p, d).some((t) => {
+    const a = t.unit === 'amt' ? typedAmount(d.pay[t.id]) : hoursOf(d.pay[t.id], unitOf(t));
+    return a != null && a > 0;
+  });
+}
 export const CC_MSG = 'Enter your credit card tips, or 0 if you had none.';
 export const CASH_MSG = 'Enter your cash tips, or 0 if you had none.';
 /**
@@ -539,7 +551,9 @@ export function typoProblem(p, d) {
 }
 /**
  * Everything that blocks saving, in the order the person meets it: {where: 'cc'|'cash'|'hours'|'date', msg, id?} or
- * null. CC tips and Cash tips have to be typed (tipsMissing), and the night has to come to more than $0. today: the business date for tonight (dates may be at most one day after it).
+ * null. CC tips and Cash tips have to be typed (tipsMissing), and something has to be entered (anythingEntered: tips,
+ * hours or Other pay; the night may come to $0). today: the business date for tonight (dates may be at most one day
+ * after it).
  */
 export function entryCheck(p, d, { when = 'tonight', today = todayISO() } = {}) {
   const typo = typoProblem(p, d);
@@ -550,7 +564,7 @@ export function entryCheck(p, d, { when = 'tonight', today = todayISO() } = {}) 
   if (miss != null) return { where: 'hours', msg: 'Enter the hours you worked ' + when + '.', id: miss };
   const bad = hoursProblem(p, d);
   if (bad.msg) return { where: 'hours', msg: bad.msg, id: bad.id };
-  if (!(num(liveNight(d, 'check', p).total) > 0)) return { where: 'cc', msg: NOTHING_MSG };
+  if (!anythingEntered(p, d)) return { where: 'cc', msg: NOTHING_MSG };
   const dp = dateProblem(d.date, today);
   if (dp) return { where: 'date', msg: dp };
   return null;
@@ -1153,19 +1167,20 @@ function bullet(dt, dd, cls) {
 
 /**
  * Result card body. c = computeNight result.
- * hoursMissing: a job row still needs its hours: no numbers then (they would leave the pay out).
+ * hoursMissing: a job row still needs its hours: no numbers then (they would leave the pay out). nothing: nothing was
+ * entered yet (anythingEntered), so there is nothing to work out.
  */
-export function resultCard(c, w, note, hoursMissing = false) {
-  if (!c.total || hoursMissing)
+export function resultCard(c, w, note, hoursMissing = false, nothing = !c.total) {
+  if (nothing || hoursMissing)
     return el(
       'div',
       { class: 'result' },
       el(
         'p',
         { class: 'note' },
-        c.total
-          ? 'Add tonight’s hours to see your take-home.'
-          : 'Enter tonight’s tips above and your take-home appears here.',
+        nothing
+          ? 'Enter tonight’s tips above and your take-home appears here.'
+          : 'Add tonight’s hours to see your take-home.',
       ),
     );
   const cal = w.calib.length ? w.calib[w.calib.length - 1] : null;
@@ -1528,14 +1543,17 @@ export function render(root) {
           '. If some were overtime, add Overtime under Other pay in Setup and log those hours with “+ Add other pay”. TipNet does not work out overtime pay for you.',
       );
     }
-    clear(resultHost).append(resultCard(c, w, ot, hoursMissing));
-    lastSummary = c.total && !hoursMissing ? 'Estimated take-home ' + money(c.net) : '';
-    quick.textContent = !c.total
+    // a night that comes to $0 (a job with no rate) or is only a bonus is worked out too: what matters is that
+    // something was entered (anythingEntered), the rule Save uses
+    const none = !anythingEntered(p, d);
+    clear(resultHost).append(resultCard(c, w, ot, hoursMissing, none));
+    lastSummary = !none && !hoursMissing ? 'Estimated take-home ' + money(c.net) : '';
+    quick.textContent = none
       ? ''
       : hoursMissing
         ? 'Add tonight’s hours to see your take-home.'
         : 'Estimated take-home: ' + money(c.net);
-    quick.hidden = !c.total;
+    quick.hidden = none;
     if (!started) {
       started = true;
       liveSummary.textContent = lastSummary;
