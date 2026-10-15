@@ -968,11 +968,14 @@ function dedCard(ctx) {
   );
   card.validate = () => {
     if (!ctx.guided) return true;
-    const ok = noDed.checked || p.deductions.some((d) => num(d.amount) > 0);
+    const neg = p.deductions.some((d) => num(d.amount) < 0);
+    const ok = !neg && (noDed.checked || p.deductions.some((d) => num(d.amount) > 0));
     dedErr.hidden = ok;
     dedErr.textContent = ok
       ? ''
-      : 'Type the dollar amount for at least one line on your stub, or tick “My paystub has no deductions.”';
+      : neg
+        ? "Amounts can't be negative."
+        : 'Type the dollar amount for at least one line on your stub, or tick “My paystub has no deductions.”';
     return ok;
   };
   card.firstInvalid = () => (dedErr.hidden ? null : rowsHost.querySelector('input[id^="da-"]') || noDed);
@@ -2108,6 +2111,7 @@ function guided(root, ctx) {
           'Back',
         )
       : null;
+  const gapNote = el('p', { class: 'field-error', role: 'alert', hidden: true });
   const next = el('button', { type: 'button', class: 'btn' }, guidedStep === 2 ? 'Finish setup' : 'Next');
   next.addEventListener('click', () => {
     const typo = typoBoxes()[0];
@@ -2123,7 +2127,14 @@ function guided(root, ctx) {
     }
     // Every required value of the steps so far, not only the one on screen: a guided setup saved by an older version
     // can resume past a step that now asks for more (v37 had no shift count). The person goes to the first one missing.
-    const gap = guidedGap(ctx.p, noDeductions);
+    const gap = guidedGap(ctx.p, ctx.blank ? noDeductions : !!(ctx.draft || ctx.w).noDeductions);
+    if (gap === guidedStep) {
+      // this very step still has a value that is not allowed: stay here and say so
+      gapNote.textContent =
+        'Something on this step still needs fixing before you can go on. Check the amounts above.';
+      gapNote.hidden = false;
+      return;
+    }
     if (gap >= 0 && (gap < guidedStep || guidedStep === 2)) {
       guidedStep = gap;
       guidedRecheck = true;
@@ -2305,6 +2316,7 @@ function guided(root, ctx) {
       body,
       ctx.saved,
       ctx.rateNote,
+      gapNote,
       el('div', { class: 'cluster' }, back, next),
       skip,
       cancel ? el('div', null, cancel) : null,
