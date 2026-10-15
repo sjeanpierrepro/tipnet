@@ -71,7 +71,7 @@ You see your estimated take-home, the cash you keep, and what should land on you
 
 ## 5. After a pay period ends (optional)
 
-**Pay periods** > **Check my accuracy**. With two establishments, pick the establishment first. Pick a pay period that has already ended. Enter the **take-home amount on your check** (the amount actually deposited, not gross). Tap **Compare and adjust**.
+**Pay periods** > **Check my accuracy**. With two establishments, pick the establishment first. Pick a pay period that has already ended. Enter the **take-home amount on your check** (the amount actually deposited, not gross). Tap **Compare with my estimate**.
 
 The estimate usually gets closer after a check or two. Changing gross pay or a deduction that changes with your pay in Setup clears this adjustment (Setup says so); fixed amounts and names do not.
 
