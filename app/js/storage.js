@@ -45,6 +45,9 @@ const STATE_KEY = 'state';
  * profile could also say entryMode 'total' (one number typed: tips + pay); that is dropped on loading, and the nights
  * typed that way keep their total (see draftFromNight in ui/tonight.js).
  */
+/** What loading keeps per establishment: pay types (retired ones count) and people tipped out. Setup stops adding there. */
+export const MAX_PAY_TYPES = 30;
+export const MAX_TIPOUTS = 20;
 export const FIRST_WORKPLACE_NAME = 'My establishment';
 /**
  * The names v37 and earlier gave by themselves ("My restaurant", "Restaurant 2") follow the "establishment" wording.
@@ -230,7 +233,7 @@ function cleanPayTypes(list) {
   const seen = new Set();
   const out = (Array.isArray(list) ? list : [])
     .filter(isObj)
-    .slice(0, 30)
+    .slice(0, MAX_PAY_TYPES)
     .map((t, i) => {
       const unit = ['hr', 'shift', 'amt'].includes(t.unit) ? t.unit : 'hr';
       const o = {
@@ -279,7 +282,7 @@ function cleanTipoutSetup(src) {
   const seen = new Set();
   const tipouts = list
     .filter(isObj)
-    .slice(0, 20)
+    .slice(0, MAX_TIPOUTS)
     .map((x, i) => {
       const k = TIPOUT_KEYS.includes(x.k) ? x.k : 'other';
       const preset = TIPOUT_PRESETS.find((pr) => pr.k === k);

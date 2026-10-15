@@ -70,6 +70,8 @@ import {
   newWorkplaceId,
   canAddWorkplace,
   workplaceLimit,
+  MAX_PAY_TYPES,
+  MAX_TIPOUTS,
   lockFinished,
   flush,
 } from '../storage.js';
@@ -1286,6 +1288,7 @@ function payCard(ctx) {
     '+ Add a job',
   );
   addJob.addEventListener('click', () => {
+    if (p.payTypes.length >= MAX_PAY_TYPES) return;
     const id = 'p' + Date.now();
     p.payTypes.push({ id, k: 'otherjob', name: '', rate: 0, unit: 'hr', usual: 0 });
     ctx.touch(false);
@@ -1298,6 +1301,7 @@ function payCard(ctx) {
     '+ Add other pay',
   );
   addOther.addEventListener('click', () => {
+    if (p.payTypes.length >= MAX_PAY_TYPES) return;
     const id = 'p' + Date.now();
     p.payTypes.push(applyPayPreset({ id, rate: 0, usual: 0 }, 'ot', mainRate()));
     ctx.touch(false);
@@ -1305,7 +1309,14 @@ function payCard(ctx) {
     refocus('pk-' + id);
   });
 
+  const payLimit = el('p', { class: 'hint', id: 'pt-limit', hidden: true });
   const draw = () => {
+    // loading keeps 30 pay types (retired ones count), so adding stops there
+    const full = p.payTypes.length >= MAX_PAY_TYPES;
+    addJob.disabled = full;
+    addOther.disabled = full;
+    payLimit.hidden = !full;
+    payLimit.textContent = full ? 'You can have up to ' + MAX_PAY_TYPES + ' jobs and other pay types.' : '';
     clear(jobsHost);
     clear(otherHost);
     rateFields.length = 0;
@@ -1338,6 +1349,7 @@ function payCard(ctx) {
     ),
     otherHost,
     el('div', null, addOther),
+    payLimit,
   );
   card.validate = () => {
     const main = p.payTypes[0];
@@ -1403,6 +1415,7 @@ function tipoutCard(ctx) {
     const n = document.getElementById(id);
     if (n) n.focus();
   };
+  const toLimit = el('p', { class: 'hint', id: 'to-limit', hidden: true });
   const drawRows = () => {
     clear(rowsHost);
     amountFields.length = 0;
@@ -1516,6 +1529,10 @@ function tipoutCard(ctx) {
       );
     });
     if (!p.tipouts.length) rowsHost.append(el('p', { class: 'hint' }, 'Nobody yet.'));
+    const full = p.tipouts.length >= MAX_TIPOUTS;
+    add.disabled = full;
+    toLimit.hidden = !full;
+    toLimit.textContent = full ? 'You can have up to ' + MAX_TIPOUTS + ' people.' : '';
     sync();
   };
   const add = el(
@@ -1524,6 +1541,7 @@ function tipoutCard(ctx) {
     '+ Add someone you tip out',
   );
   add.addEventListener('click', () => {
+    if (p.tipouts.length >= MAX_TIPOUTS) return;
     const r = newTipout(p.tipouts);
     p.tipouts.push(r);
     ctx.touch(false);
@@ -1540,6 +1558,7 @@ function tipoutCard(ctx) {
     ),
     rowsHost,
     el('div', null, add),
+    toLimit,
     listErr,
     el(
       'p',
