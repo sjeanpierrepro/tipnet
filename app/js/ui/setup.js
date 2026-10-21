@@ -77,7 +77,7 @@ import {
   flush,
 } from '../storage.js';
 import { renderBackup, renderInstall, fileSaver } from './backup.js';
-import { installStepKind, installHowTo, promptInstall } from './install.js';
+import { installStepKind, installHowTo, promptInstall, isIos, isAndroid } from './install.js';
 import { buildIcs, makeUid, timeLabel, nightsLabel, isMorning, DAY_NAMES } from '../ics.js';
 import { redateDraft, dropDraft } from './tonight.js';
 
@@ -2132,10 +2132,26 @@ function iosFirstCard() {
   return card;
 }
 
+/** The last step's words: "home screen" on a phone or tablet, plain "install" wording on a computer. */
+function installWords(kind) {
+  return kind === 'android' || isIos() || isAndroid()
+    ? {
+        tab: 'Home screen',
+        title: 'Put TipNet on your home screen',
+        installed: 'Installed. From now on, open TipNet from your home screen.',
+      }
+    : {
+        tab: 'Install app',
+        title: 'Open TipNet like an app',
+        installed: 'Installed. From now on, open TipNet from its own icon on this computer.',
+      };
+}
+
 /** After a finished and saved first setup: offer the install prompt (or the menu steps on Android), then Tonight. */
 function afterSetupStep(root, S) {
   const st = afterSetup;
-  const names = ['Pay period and gross', 'Deductions', 'Pay and tip-out', 'Home screen'];
+  const words = installWords(st.kind);
+  const names = ['Pay period and gross', 'Deductions', 'Pay and tip-out', words.tab];
   const finish = () => {
     S.settings.installStepSeen = true;
     save();
@@ -2146,7 +2162,7 @@ function afterSetupStep(root, S) {
     t();
   };
   const status = el('p', { class: 'note', role: 'status', id: 'install-status', hidden: !st.accepted });
-  if (st.accepted) status.textContent = 'Installed. From now on, open TipNet from your home screen.';
+  if (st.accepted) status.textContent = words.installed;
   const actions = [];
   if (st.accepted) actions.push(el('button', { type: 'button', class: 'btn', onclick: finish }, 'Done'));
   else if (st.kind === 'prompt' && install.deferred) {
@@ -2185,7 +2201,7 @@ function afterSetupStep(root, S) {
       el(
         'section',
         { class: 'card stack' },
-        el('h2', null, 'Put TipNet on your home screen'),
+        el('h2', null, words.title),
         st.accepted
           ? null
           : el('p', { class: 'note' }, 'Add it once so it opens like an app. This is optional.'),
@@ -2212,7 +2228,7 @@ function guided(root, ctx) {
   const pre = homeKind === 'ios' && guidedStep === 0 && !S.settings.guidedDraft;
   const post = homeKind === 'prompt' || homeKind === 'android';
   if (pre) names.unshift('Home screen');
-  else if (post) names.push('Home screen');
+  else if (post) names.push(installWords(homeKind).tab);
   const cur = pre ? 0 : guidedStep;
   const steps = el(
     'ol',

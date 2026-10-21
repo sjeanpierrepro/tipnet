@@ -207,8 +207,9 @@ export function saveBackupFile() {
 
 /* ---------- "Save to iCloud or Google Drive" (the phone's share menu) ---------- */
 export const SHARE_HINT =
-  'Opens your phone’s share menu. Pick Save to Files (iPhone) or Drive (Android) so your backup is safe even if you lose your phone.';
-const SHARE_FAILED = 'That didn’t work. Tap Save a backup file instead.';
+  'Opens your phone’s share menu. Pick Save to Files, then iCloud Drive (iPhone), or Drive (Android), so your backup is safe even if you lose your phone.';
+/** After a share error: point to the download button as it reads in that place. */
+const shareFailed = (button) => 'That didn’t work. Tap ' + button + ' instead.';
 const SHARED = 'Backup file sent. Check that it’s in Files or Drive.';
 /** A .txt File of the backup (Chrome's share list allows .txt, not .json). `at` is the backup time the file carries. */
 function backupShareFile(at) {
@@ -308,7 +309,7 @@ export function nightsBackupCard() {
       toast(SHARED);
       bus.rerender();
     },
-    failed: () => toast(SHARE_FAILED),
+    failed: () => toast(shareFailed('Save backup file')),
   });
   const later = el('button', { type: 'button', class: 'btn-link', id: 'nights-backup-later' }, 'Not now');
   later.addEventListener('click', () => {
@@ -369,7 +370,7 @@ export function backupReminder() {
       toast(SHARED);
       bus.rerender();
     },
-    failed: () => toast(SHARE_FAILED),
+    failed: () => toast(shareFailed('Save a backup file')),
   });
   const later = el('button', { type: 'button', class: 'btn-link', id: 'nudge-later' }, 'Remind me later');
   later.addEventListener('click', () => {
@@ -493,7 +494,7 @@ export function renderBackup(host, { restoreOnly = false } = {}) {
       lastLine.textContent = lastText();
       say(SHARED);
     },
-    failed: () => say(SHARE_FAILED),
+    failed: () => say(shareFailed('Save a backup file')),
   });
   const fileIn = el('input', {
     type: 'file',

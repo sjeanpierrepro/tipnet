@@ -99,7 +99,7 @@ test('iPhone Safari: the step comes first; "Set up here in Safari instead" conti
   }
 });
 
-test('install prompt available: the step comes after step 3 is saved; Install TipNet calls prompt()', async () => {
+test('install prompt available on a computer: the step comes after step 3 is saved; Install TipNet calls prompt()', async () => {
   const page = await boot();
   try {
     let prompted = 0;
@@ -115,26 +115,49 @@ test('install prompt available: the step comes after step 3 is saved; Install Ti
       '1. Pay period and gross',
       '2. Deductions',
       '3. Pay and tip-out',
-      '4. Home screen',
+      '4. Install app',
     ]);
     await finishSetup(page);
     const S = page.state();
     assert.equal(S.workplaces[0].setupDone, true, 'saved before the step');
     assert.equal(S.profileExample, false);
     assert.equal(S.workplaces[0].profile.gross, 900);
-    assert.match(current(page), /^4\. Home screen/);
+    assert.match(current(page), /^4\. Install app/);
     assert.match(page.text(), /Your setup is saved/);
     assert.equal(document.activeElement.tagName, 'H1');
     page.click(page.button('Install TipNet'));
     await page.settle();
     assert.equal(prompted, 1);
-    assert.match(page.text(), /Installed\. From now on, open TipNet from your home screen\./);
+    assert.match(page.text(), /Installed\. From now on, open TipNet from its own icon on this computer\./);
     assert.equal(page.byText('button', 'Install TipNet'), null);
     page.click(page.button('Done'));
     await page.settle();
     assert.equal(page.state().settings.installStepSeen, true);
     assert.equal(page.$('#install-status'), null, 'back on the app');
     assert.equal(page.state().workplaces[0].setupDone, true);
+  } finally {
+    await page.close();
+  }
+});
+
+test('install prompt available on an Android phone: the last step says "Home screen"', async () => {
+  const page = await boot();
+  try {
+    fake(page, ANDROID, false);
+    setInstallPrompt({ prompt: () => {}, userChoice: Promise.resolve({ outcome: 'accepted' }) });
+    await openSetup(page);
+    assert.deepEqual(tabs(page), [
+      '1. Pay period and gross',
+      '2. Deductions',
+      '3. Pay and tip-out',
+      '4. Home screen',
+    ]);
+    await finishSetup(page);
+    assert.match(current(page), /^4\. Home screen/);
+    assert.match(page.text(), /Put TipNet on your home screen/);
+    page.click(page.button('Install TipNet'));
+    await page.settle();
+    assert.match(page.text(), /Installed\. From now on, open TipNet from your home screen\./);
   } finally {
     await page.close();
   }

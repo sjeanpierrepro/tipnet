@@ -89,7 +89,7 @@ test('canShare true: the button shows on the Tonight card and in Setup, with its
     assert.equal(page.$('#bk-share-file').textContent, SHARE);
     assert.match(
       page.text(),
-      /Opens your phone’s share menu\. Pick Save to Files \(iPhone\) or Drive \(Android\)/,
+      /Opens your phone’s share menu\. Pick Save to Files, then iCloud Drive \(iPhone\), or Drive \(Android\), so your backup is safe/,
     );
   } finally {
     await page.close();
@@ -192,7 +192,11 @@ test('another error: a calm line pointing to Save a backup file, nothing counted
     page.click(page.$('#nights-backup-share'));
     await page.settle();
     assert.deepEqual(stateOf(page), before);
-    assert.match(toastText(page), /Tap Save a backup file instead/);
+    assert.match(
+      toastText(page),
+      /That didn’t work\. Tap Save backup file instead\./,
+      'the Tonight card button’s name',
+    );
     page.tab('setup');
     page.click(page.$('#bk-share-file'));
     await page.settle();

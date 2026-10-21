@@ -604,6 +604,7 @@ select {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--muted);
+  overflow-wrap: anywhere; /* four steps on a narrow phone: a long word wraps instead of spilling into the next step */
 }
 .steps li[aria-current='step'] {
   border-top-color: var(--accent);
@@ -832,8 +833,10 @@ h1 {
 }
 
 /* Side-by-side fields: the titles stay at the top of each column, and the boxes start at the same height.
-   Each field becomes an 8-track subgrid; every visible child takes the next track in order (title, box, hints, notes, error),
-   so the box rows line up across the pair. Browsers without subgrid keep the plain stacked fields. */
+   Each field becomes an 8-track subgrid; every visible child takes the next track in the order it appears (title, box,
+   then its hints, error and any notes), so the box rows line up across the pair. Each child keeps its own height (it is not
+   stretched to its track) and the column cannot grow past its half (a long word wraps). Browsers without subgrid keep the
+   plain stacked fields. */
 @supports (grid-template-rows: subgrid) {
   .grid-2 {
     row-gap: 0;
@@ -842,8 +845,12 @@ h1 {
     display: grid;
     grid-row: span 8;
     grid-template-rows: subgrid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 0;
     align-content: start;
+  }
+  .grid-2 > .field > * {
+    align-self: start;
   }
   .grid-2 > .field > :not(:first-child) {
     margin-top: 6px;
