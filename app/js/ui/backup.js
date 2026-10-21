@@ -196,10 +196,10 @@ export const fileSaver = {
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   },
 };
-export const backupFileName = (today = todayISO()) => 'tipnet-backup-' + today + '.json';
-const markBackedUp = () => {
+export const backupFileName = (today = todayISO(), ext = 'json') => 'tipnet-backup-' + today + '.' + ext;
+const markBackedUp = (at = Date.now()) => {
   const st = getState().settings;
-  st.lastBackupAt = Date.now();
+  st.lastBackupAt = at;
   st.nightsSinceBackup = 0; // the "10 nights since your last backup" count starts again
   delete st.backupNightsAt;
   save();
@@ -210,6 +210,71 @@ export function saveBackupFile() {
   // must not say "You've logged 10 nights since your last backup" again.
   markBackedUp();
   fileSaver.save(backupFileName(), backupFileText(getState()));
+}
+
+/* ---------- "Save to iCloud or Google Drive" (the phone's share menu) ---------- */
+export const SHARE_HINT =
+  'Opens your phone’s share menu. Pick Save to Files (iPhone) or Drive (Android) so your backup is safe even if you lose your phone.';
+const SHARE_FAILED = 'That didn’t work. Tap Save a backup file instead.';
+const SHARED = 'Backup shared. Check that it landed in Files or Drive.';
+/** A .txt File of the backup (Chrome's share list allows .txt, not .json). `at` is the backup time the file carries. */
+function backupShareFile(at) {
+  const S = getState();
+  const settings = { ...S.settings, lastBackupAt: at, nightsSinceBackup: 0 }; // the file carries the reset count
+  delete settings.backupNightsAt;
+  return new File([backupFileText({ ...S, settings })], backupFileName(todayISO(), 'txt'), {
+    type: 'text/plain',
+  });
+}
+/** True when this browser can share a backup file. */
+export function canShareBackup() {
+  try {
+    return (
+      typeof navigator !== 'undefined' &&
+      typeof navigator.canShare === 'function' &&
+      typeof navigator.share === 'function' &&
+      navigator.canShare({ files: [backupShareFile(Date.now())] }) === true
+    );
+  } catch (e) {
+    return false;
+  }
+}
+/**
+ * The "Save to iCloud or Google Drive" button, or null when this browser can't share files. share() is called straight
+ * from the click. Only when it resolves is the backup counted (like "Save a backup file"); a cancel changes nothing.
+ * done() runs after a counted share; failed() after any other error.
+ */
+export function shareBackupButton(id, { done, failed }) {
+  if (!canShareBackup()) return null;
+  const btn = el(
+    'button',
+    { type: 'button', class: 'btn btn-secondary btn-small', id },
+    'Save to iCloud or Google Drive',
+  );
+  btn.addEventListener('click', () => {
+    if (btn.disabled) return;
+    const at = Date.now();
+    let p;
+    try {
+      p = Promise.resolve(navigator.share({ files: [backupShareFile(at)], title: 'TipNet backup' }));
+    } catch (e) {
+      p = Promise.reject(e);
+    }
+    btn.disabled = true;
+    p.then(
+      () => {
+        btn.disabled = false;
+        markBackedUp(at);
+        done();
+      },
+      (e) => {
+        btn.disabled = false;
+        if (e && e.name === 'AbortError') return;
+        failed();
+      },
+    );
+  });
+  return btn;
 }
 const FILE_SAVED = 'Backup file saved. Keep a copy somewhere safe, like your email or cloud storage.';
 
@@ -244,6 +309,13 @@ export function nightsBackupCard() {
     toast(FILE_SAVED);
     bus.rerender();
   });
+  const shareBtn = shareBackupButton('nights-backup-share', {
+    done: () => {
+      toast(SHARED);
+      bus.rerender();
+    },
+    failed: () => toast(SHARE_FAILED),
+  });
   const later = el('button', { type: 'button', class: 'btn-link', id: 'nights-backup-later' }, 'Not now');
   later.addEventListener('click', () => {
     const st = getState().settings;
@@ -271,7 +343,7 @@ export function nightsBackupCard() {
           : ' nights and haven’t saved a backup yet.') +
         ' Save a backup so they’re safe if this phone is lost or its data is cleared.',
     ),
-    el('div', { class: 'cluster' }, saveBtn, later),
+    el('div', { class: 'cluster' }, saveBtn, shareBtn, later),
   );
 }
 
@@ -298,6 +370,13 @@ export function backupReminder() {
     toast(FILE_SAVED);
     bus.rerender();
   });
+  const shareBtn = shareBackupButton('nudge-share', {
+    done: () => {
+      toast(SHARED);
+      bus.rerender();
+    },
+    failed: () => toast(SHARE_FAILED),
+  });
   const later = el('button', { type: 'button', class: 'btn-link', id: 'nudge-later' }, 'Remind me later');
   later.addEventListener('click', () => {
     getState().settings.backupNudgeUntil = Date.now() + 30 * DAY;
@@ -313,7 +392,7 @@ export function backupReminder() {
       'Last backup: ' + (last ? fmtShort(todayISO(new Date(last))) : 'never') + '. ',
       'Your nights live only on this device.',
     ),
-    el('div', { class: 'cluster' }, saveBtn, later),
+    el('div', { class: 'cluster' }, saveBtn, shareBtn, later),
   );
 }
 
@@ -415,10 +494,17 @@ export function renderBackup(host, { restoreOnly = false } = {}) {
     fileSaver.save(backupFileName(), backupFileText(getState()));
     say(FILE_SAVED);
   });
+  const shareFile = shareBackupButton('bk-share-file', {
+    done: () => {
+      lastLine.textContent = lastText();
+      say(SHARED);
+    },
+    failed: () => say(SHARE_FAILED),
+  });
   const fileIn = el('input', {
     type: 'file',
     id: 'bk-file',
-    accept: '.json,application/json,text/plain',
+    accept: '.json,.txt,application/json,text/plain',
     hidden: true,
   });
   fileIn.addEventListener('change', async () => {
@@ -508,6 +594,8 @@ export function renderBackup(host, { restoreOnly = false } = {}) {
       ),
       lastLine,
       el('div', { class: 'cluster' }, saveFile, openFile),
+      shareFile && el('div', { class: 'cluster' }, shareFile),
+      shareFile && el('p', { class: 'hint', id: 'bk-share-hint' }, SHARE_HINT),
       fileIn,
       el('div', { class: 'cluster' }, copy, restore),
       el('div', { class: 'field' }, el('label', { for: 'bk-code' }, 'Backup code'), box),
