@@ -36,6 +36,7 @@ const SHELL = [
   'js/ui/periods.js',
   'js/ui/setup.js',
   'js/ui/backup.js',
+  'js/ui/install.js',
   'js/ui/common.js',
   'js/ui/budget.js',
 ];

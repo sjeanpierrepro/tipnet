@@ -58,6 +58,7 @@ import {
   workplaceSwitcher,
   exampleShown,
   debounce,
+  install,
   fmtShort,
 } from './common.js';
 import { cutoffFromSettings, readMoney, moneyTypo, percentTypo, readShiftCount } from '../inputs.js';
@@ -76,10 +77,14 @@ import {
   flush,
 } from '../storage.js';
 import { renderBackup, renderInstall, fileSaver } from './backup.js';
+import { installStepKind, installHowTo, promptInstall } from './install.js';
 import { buildIcs, makeUid, timeLabel, nightsLabel, isMorning, DAY_NAMES } from '../ics.js';
 import { redateDraft, dropDraft } from './tonight.js';
 
 let guidedStep = 0;
+// The "Put TipNet on your home screen" step AFTER a finished first setup (null = not showing): {kind: 'prompt'|'android',
+// accepted, doneToasts}. Setup is already saved when it shows; it only ever ends the flow (memory only, never saved).
+let afterSetup = null;
 let guidedRecheck = false; // Next / Finish sent the person back to a step with a value missing (guidedGap): mark it
 // The restaurant the guided flow is running for (null = none). It stays set once the flow starts, even after the first
 // edit ends example mode, until Finish or Skip.
@@ -127,6 +132,7 @@ export function reset() {
   pendingEdits.forEach((f) => f.cancel());
   pendingEdits.clear();
   guidedStep = 0;
+  afterSetup = null;
   guidedRecheck = false;
   guidedFor = null;
   gProfile = null;
@@ -2091,6 +2097,108 @@ function workplaceCard(ctx) {
   );
 }
 
+/* ============ "Put TipNet on your home screen" step of the first guided setup ============ */
+/** iPhone/iPad Safari, before step 1: the home-screen app keeps its own data, so set up there. Nothing typed yet. */
+function iosFirstCard() {
+  const card = el(
+    'section',
+    { class: 'card stack' },
+    el('h2', null, 'Put TipNet on your home screen first'),
+    el(
+      'p',
+      { class: 'note' },
+      'On iPhone, Safari and the Home Screen icon keep their data apart. What you set up in Safari would not be in the app you open from the icon. So add the icon first, then set up there.',
+    ),
+    installHowTo('ios'),
+    el(
+      'button',
+      {
+        type: 'button',
+        class: 'btn btn-secondary',
+        id: 'install-skip',
+        onclick: () => {
+          const S = getState();
+          S.settings.installStepSeen = true;
+          save();
+          bus.rerender();
+          window.scrollTo(0, 0);
+        },
+      },
+      'Set up here in Safari instead',
+    ),
+  );
+  card.validate = () => true;
+  card.firstInvalid = () => null;
+  return card;
+}
+
+/** After a finished and saved first setup: offer the install prompt (or the menu steps on Android), then Tonight. */
+function afterSetupStep(root, S) {
+  const st = afterSetup;
+  const names = ['Pay period and gross', 'Deductions', 'Pay and tip-out', 'Home screen'];
+  const finish = () => {
+    S.settings.installStepSeen = true;
+    save();
+    const t = st.doneToasts;
+    afterSetup = null;
+    bus.rerender();
+    bus.go('tonight');
+    t();
+  };
+  const status = el('p', { class: 'note', role: 'status', id: 'install-status', hidden: !st.accepted });
+  if (st.accepted) status.textContent = 'Installed. From now on, open TipNet from your home screen.';
+  const actions = [];
+  if (st.accepted) actions.push(el('button', { type: 'button', class: 'btn', onclick: finish }, 'Done'));
+  else if (st.kind === 'prompt' && install.deferred) {
+    actions.push(
+      el(
+        'button',
+        {
+          type: 'button',
+          class: 'btn',
+          id: 'install-now',
+          onclick: async () => {
+            const r = await promptInstall();
+            if (r === 'accepted') st.accepted = true;
+            bus.rerender();
+          },
+        },
+        'Install TipNet',
+      ),
+      el('button', { type: 'button', class: 'btn btn-secondary', onclick: finish }, 'Not now'),
+    );
+  } else actions.push(el('button', { type: 'button', class: 'btn', onclick: finish }, 'Done'));
+  root.append(
+    el(
+      'div',
+      { class: 'stack' },
+      el('h1', { tabindex: '-1' }, 'Set up TipNet'),
+      el('p', { class: 'note' }, 'Your setup is saved.'),
+      el('p', { class: 'hint' }, 'Four short steps. You can change any of it later.'),
+      el(
+        'ol',
+        { class: 'steps', 'aria-label': 'Setup progress' },
+        names.map((n, i) =>
+          el('li', { class: i < 3 ? 'done' : '', 'aria-current': i === 3 ? 'step' : null }, i + 1 + '. ' + n),
+        ),
+      ),
+      el(
+        'section',
+        { class: 'card stack' },
+        el('h2', null, 'Put TipNet on your home screen'),
+        st.accepted
+          ? null
+          : el('p', { class: 'note' }, 'Add it once so it opens like an app. This is optional.'),
+        st.kind === 'android' && !st.accepted ? installHowTo('android') : null,
+        status,
+        el('div', { class: 'cluster' }, actions),
+      ),
+    ),
+  );
+  const h = root.querySelector('h1');
+  if (h) h.focus();
+}
+
 /* ============ guided flow ============ */
 function guided(root, ctx) {
   const S = ctx.S,
@@ -2098,23 +2206,28 @@ function guided(root, ctx) {
   const first = isFirstWorkplace(S, w);
   const many = S.workplaces.length > 1;
   const names = ['Pay period and gross', 'Deductions', 'Pay and tip-out'];
+  // The first setup on this device may get a "home screen" step: first on iPhone/iPad Safari (it keeps separate data from the
+  // home-screen app, so setup belongs there), last where the browser can install (see install.js). Never for a 2nd place.
+  const homeKind = first && !many ? installStepKind(S.settings) : null;
+  const pre = homeKind === 'ios' && guidedStep === 0 && !S.settings.guidedDraft;
+  const post = homeKind === 'prompt' || homeKind === 'android';
+  if (pre) names.unshift('Home screen');
+  else if (post) names.push('Home screen');
+  const cur = pre ? 0 : guidedStep;
   const steps = el(
     'ol',
     { class: 'steps', 'aria-label': 'Setup progress' },
     names.map((n, i) =>
-      el(
-        'li',
-        { class: i < guidedStep ? 'done' : '', 'aria-current': i === guidedStep ? 'step' : null },
-        i + 1 + '. ' + n,
-      ),
+      el('li', { class: i < cur ? 'done' : '', 'aria-current': i === cur ? 'step' : null }, i + 1 + '. ' + n),
     ),
   );
   let body;
-  if (guidedStep === 0) body = [periodCard(ctx)];
+  if (pre) body = [iosFirstCard()];
+  else if (guidedStep === 0) body = [periodCard(ctx)];
   else if (guidedStep === 1) body = [dedCard(ctx)];
   else body = [payCard(ctx), tipoutCard(ctx)];
   const back =
-    guidedStep > 0
+    guidedStep > 0 && !pre
       ? el(
           'button',
           {
@@ -2132,7 +2245,9 @@ function guided(root, ctx) {
       : null;
   const gapNote = el('p', { class: 'field-error', role: 'alert', hidden: true });
   const next = el('button', { type: 'button', class: 'btn' }, guidedStep === 2 ? 'Finish setup' : 'Next');
+  next.hidden = pre;
   next.addEventListener('click', () => {
+    if (pre) return;
     const typo = typoBoxes()[0];
     if (typo) {
       showTypos(); // at once (while typing they wait for a pause)
@@ -2203,12 +2318,22 @@ function guided(root, ctx) {
     guidedFor = null;
     save();
     guidedStep = 0;
+    const doneToasts = () => {
+      toast(
+        (many ? w.name + ' is set up.' : 'Setup saved.') + ' Enter a night to see your estimated take-home.',
+      );
+      if (hadExamples && exampleShown.seen) toast('Example nights cleared.');
+    };
+    if (post) {
+      // everything above is saved already; the home-screen step comes after and cannot change it
+      afterSetup = { kind: homeKind, accepted: false, doneToasts };
+      bus.rerender();
+      window.scrollTo(0, 0);
+      return;
+    }
     bus.rerender();
     bus.go('tonight');
-    toast(
-      (many ? w.name + ' is set up.' : 'Setup saved.') + ' Enter a night to see your estimated take-home.',
-    );
-    if (hadExamples && exampleShown.seen) toast('Example nights cleared.');
+    doneToasts();
   });
   const skip = el(
     'button',
@@ -2330,13 +2455,17 @@ function guided(root, ctx) {
               '.',
       ),
       restoreLink,
-      el('p', { class: 'hint' }, 'Three short steps. You can change any of it later.'),
+      el(
+        'p',
+        { class: 'hint' },
+        (names.length === 4 ? 'Four' : 'Three') + ' short steps. You can change any of it later.',
+      ),
       steps,
       body,
       ctx.saved,
       ctx.rateNote,
       gapNote,
-      el('div', { class: 'cluster' }, back, next),
+      el('div', { class: 'cluster' }, back, pre ? null : next),
       skip,
       cancel ? el('div', null, cancel) : null,
       finePrint(),
@@ -2413,6 +2542,10 @@ export const guidedOnScreen = () => guidedShown;
 export function render(root) {
   guidedShown = false;
   const S0 = getState();
+  if (afterSetup) {
+    guidedShown = true;
+    return afterSetupStep(root, S0);
+  }
   resumeGuided(S0);
   const w = activeWorkplace(S0);
   const first = isFirstWorkplace(S0, w);
