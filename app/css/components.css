@@ -831,6 +831,55 @@ h1 {
   }
 }
 
+/* Side-by-side fields: the titles stay at the top of each column, and the boxes start at the same height.
+   Each field becomes a 4-row subgrid (title, box, hint, error) so the rows line up across the pair.
+   Browsers without subgrid keep the plain stacked fields. */
+@supports (grid-template-rows: subgrid) {
+  .grid-2 {
+    row-gap: 0;
+  }
+  .grid-2 > .field {
+    display: grid;
+    grid-row: span 4;
+    grid-template-rows: subgrid;
+    gap: 0;
+    align-content: start;
+  }
+  .grid-2 > .field > label,
+  .grid-2 > .field > .field-label {
+    grid-row: 1;
+  }
+  .grid-2 > .field > :not(label):not(.field-label):not(.hint):not(.field-error) {
+    grid-row: 2;
+    margin-top: 6px;
+  }
+  .grid-2 > .field > .hint {
+    grid-row: 3;
+    margin-top: 6px;
+  }
+  .grid-2 > .field > .field-error {
+    grid-row: 4;
+    margin-top: 6px;
+  }
+  /* space between rows of fields (was the grid row gap) */
+  .grid-2 > .field:nth-child(n + 3) {
+    margin-top: var(--s-3);
+  }
+  @media (max-width: 400px) {
+    .grid-2 > .field:nth-child(n + 3) {
+      margin-top: var(--s-2);
+    }
+  }
+  @media (max-width: 380px) {
+    .grid-2 > .field:nth-child(n + 2) {
+      margin-top: var(--s-2);
+    }
+    .job-row .grid-2 > .field:nth-child(2) {
+      margin-top: 0;
+    }
+  }
+}
+
 /* ---------- budget ---------- */
 .bar {
   height: 8px;
