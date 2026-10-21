@@ -2,7 +2,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { boot, realState } from './harness.js';
-import { encodeBackup, decodeBackup, flush } from '../../app/js/storage.js';
+import { encodeBackup, decodeBackup, backupFileText, flush } from '../../app/js/storage.js';
+import { restoreFromFileText, undoRestore } from '../../app/js/ui/backup.js';
 import { setInstallPrompt } from '../../app/js/ui/common.js';
 
 const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Safari/604.1';
@@ -261,11 +262,36 @@ test('adding a second establishment: no step, on any device', async () => {
   }
 });
 
-test('installStepSeen survives a backup round trip', () => {
+test('installStepSeen stays on this device: backups never carry it, and a restore keeps this device’s answer', async () => {
   const S = realState((s) => {
     s.settings.installStepSeen = true;
   });
-  assert.equal(decodeBackup(encodeBackup(S)).settings.installStepSeen, true);
-  const T = realState();
-  assert.equal(decodeBackup(encodeBackup(T)).settings.installStepSeen, undefined);
+  assert.equal(decodeBackup(encodeBackup(S)).settings.installStepSeen, undefined);
+  assert.equal('installStepSeen' in JSON.parse(backupFileText(S)).settings, false);
+  // a hand-made backup that says it was seen: still not taken
+  const handMade = JSON.parse(backupFileText(S));
+  handMade.settings.installStepSeen = true;
+  handMade.profileExample = true; // made before setup was finished
+  // a new iPhone in Safari: restoring an old phone's backup (setup not finished) still shows the Safari step
+  let page = await boot();
+  try {
+    fake(page, IPHONE, false);
+    restoreFromFileText(JSON.stringify(handMade));
+    await page.settle();
+    assert.equal(page.state().settings.installStepSeen, undefined);
+    await openSetup(page);
+    assert.ok(page.byText('button', 'Set up here in Safari instead'), 'the Safari step shows');
+  } finally {
+    await page.close();
+  }
+  // this device already answered: a restore (and its Undo) keeps that
+  page = await boot({ seed: realState((s) => (s.settings.installStepSeen = true)) });
+  try {
+    restoreFromFileText(backupFileText(realState()));
+    assert.equal(page.state().settings.installStepSeen, true);
+    assert.equal(undoRestore(), true);
+    assert.equal(page.state().settings.installStepSeen, true);
+  } finally {
+    await page.close();
+  }
 });

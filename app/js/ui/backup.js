@@ -94,6 +94,12 @@ const deviceEntitlement = () => {
   const st = getState();
   return (st && st.settings && st.settings.entitlement) || null;
 };
+/** The Setup "home screen" step answer belongs to this browser (backups never carry it): keep it as it is now. */
+const keepDeviceStep = (target) => {
+  const st = getState();
+  delete target.settings.installStepSeen;
+  if (st && st.settings && st.settings.installStepSeen === true) target.settings.installStepSeen = true;
+};
 
 /**
  * Is there anything here a restore would throw away? A finished restaurant setup, real nights, or budget items.
@@ -124,6 +130,7 @@ export function undoRestore() {
   const ent = deviceEntitlement(); // the license stays as it is now on this device
   delete prev.settings.entitlement;
   if (ent) prev.settings.entitlement = ent;
+  keepDeviceStep(prev);
   setState(prev);
   applyTheme(getState().settings.theme);
   flush();
@@ -140,6 +147,7 @@ function restoreState(next) {
   const ent = deviceEntitlement();
   delete next.settings.entitlement;
   if (ent) next.settings.entitlement = ent;
+  keepDeviceStep(next);
   setState(next);
   const s = getState();
   applyTheme(s.settings.theme);
@@ -201,7 +209,7 @@ export function saveBackupFile() {
 export const SHARE_HINT =
   'Opens your phone’s share menu. Pick Save to Files (iPhone) or Drive (Android) so your backup is safe even if you lose your phone.';
 const SHARE_FAILED = 'That didn’t work. Tap Save a backup file instead.';
-const SHARED = 'Backup shared. Check that it landed in Files or Drive.';
+const SHARED = 'Backup file sent. Check that it’s in Files or Drive.';
 /** A .txt File of the backup (Chrome's share list allows .txt, not .json). `at` is the backup time the file carries. */
 function backupShareFile(at) {
   const S = getState();

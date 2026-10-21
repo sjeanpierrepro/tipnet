@@ -111,7 +111,7 @@ test('share resolves: same bookkeeping as Save backup file; the file equals the 
     assert.equal(s.nightsSinceBackup, 0);
     assert.equal('backupNightsAt' in s, false);
     assert.equal(page.$('#nights-backup'), null, 'the card goes away');
-    assert.match(toastText(page), /Backup shared/);
+    assert.match(toastText(page), /Backup file sent/);
     const shared = JSON.parse(await file.text());
     assert.equal(shared.settings.lastBackupAt, s.lastBackupAt, 'the file carries the stored time');
     assert.equal(shared.settings.nightsSinceBackup, 0);
@@ -137,7 +137,7 @@ test('Setup: share resolves updates Last backup and says so', async () => {
     await page.settle();
     assert.equal(calls.length, 1);
     assert.equal(page.state().settings.nightsSinceBackup, 0);
-    assert.match(page.text(), /Backup shared/);
+    assert.match(page.text(), /Backup file sent/);
   } finally {
     await page.close();
   }
@@ -157,7 +157,7 @@ test('AbortError (cancelled): nothing changes and no message', async () => {
     page.click(page.$('#bk-share-file'));
     await page.settle();
     assert.deepEqual(stateOf(page), before);
-    assert.doesNotMatch(page.text(), /Backup shared|didn’t work/);
+    assert.doesNotMatch(page.text(), /Backup file sent|didn’t work/);
   } finally {
     await page.close();
   }

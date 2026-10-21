@@ -489,7 +489,7 @@ function cleanSettings(x, ids) {
   if (count(s.backupNightsAt)) out.backupNightsAt = s.backupNightsAt;
   out.wordingV38 = true; // set by the first migrate: old default names were renamed then, never again (see renameOldDefault)
   if (s.iosNoteSeen === true) out.iosNoteSeen = true; // the iPhone "Safari may clear data" note was shown once
-  if (s.installStepSeen === true) out.installStepSeen = true; // the Setup "home screen" step was answered (iPhone: set up in Safari anyway, or finished)
+  if (s.installStepSeen === true) out.installStepSeen = true; // the Setup "home screen" step was answered on this device (never taken from a backup)
   // The license entitlement is device-only. decodeBackup strips it before migrate; here we only keep its known plain fields.
   if (isObj(s.entitlement)) {
     const e = {};
@@ -878,12 +878,14 @@ function fromB64(b64) {
 }
 /**
  * What a backup holds: the whole state except device-only settings. The license key stays on this device (a backup
- * code is pasted into notes and chats), and a half-finished guided setup is not worth carrying to another phone.
+ * code is pasted into notes and chats), a half-finished guided setup is not worth carrying to another phone, and the
+ * Setup "home screen" step answer (installStepSeen) belongs to this browser, so a new iPhone still gets its Safari step.
  */
 export function backupData(state) {
   const copy = { ...state, settings: { ...((state && state.settings) || {}) } };
   delete copy.settings.entitlement;
   delete copy.settings.guidedDraft;
+  delete copy.settings.installStepSeen;
   delete copy._savedAt;
   delete copy._writer;
   return copy;
@@ -910,10 +912,12 @@ function fromBackupObject(d) {
   if (d.settings && typeof d.settings === 'object') {
     delete d.settings.entitlement;
     delete d.settings.guidedDraft;
+    delete d.settings.installStepSeen;
   }
   const out = migrate(d);
   delete out.settings.entitlement;
   delete out.settings.guidedDraft;
+  delete out.settings.installStepSeen;
   return out;
 }
 /**
