@@ -826,9 +826,12 @@ h1 {
     gap: var(--s-2);
   }
 }
-@media (max-width: 380px) {
+/* Phones (under 600px wide) stack side-by-side boxes one per line, so a box can never spill into its neighbour
+   (an iPhone date box keeps a built-in minimum width). Tablets and computers keep two columns. */
+@media (max-width: 599.98px) {
   .grid-2 {
     grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--s-2);
   }
 }
 
@@ -864,7 +867,7 @@ h1 {
       margin-top: var(--s-2);
     }
   }
-  @media (max-width: 380px) {
+  @media (max-width: 599.98px) {
     .grid-2 > .field:nth-child(n + 2) {
       margin-top: var(--s-2);
     }
@@ -986,8 +989,8 @@ fieldset.field > legend {
   margin: 0;
   font-variant-numeric: tabular-nums;
 }
-@media (max-width: 380px) {
-  /* keep the job and its hours side by side on small phones: the hours box is short */
+@media (max-width: 599.98px) {
+  /* keep the job and its hours side by side on phones: the hours box is short */
   .job-row .grid-2 {
     grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
   }
