@@ -259,9 +259,10 @@ test('sw: taking over from a version before v38 reloads every open window at its
 
 test('sw: from v38 on, a new version never reloads a window (no forced reload while someone types)', async () => {
   for (const [before, as] of [
-    [['tipnet-v38'], 'tipnet-v39'], // a future v39 taking over from v38
+    [['tipnet-v38'], 'tipnet-v39'], // v39 taking over from v38
     [['tipnet-v39', 'tipnet-v38'], 'tipnet-v40'],
-    [['tipnet-v38'], undefined], // v38 itself: only its own cache
+    [['tipnet-v38'], 'tipnet-v38'], // v38 itself: only its own cache
+    [['tipnet-v39'], undefined], // the shipped version with a v39 cache (its own, or the one it replaces)
     [[], undefined], // first install
     [['tipnet-v41', 'tipnet-v100'], undefined],
     [['other-app', 'tipnet-vX', 'old-tipnet-v1'], undefined], // not TipNet version caches

@@ -54,7 +54,7 @@ If you need to set up a fresh GitHub repository (you should not need this):
 4. Click **Run workflow** (right side) > **Run workflow**.
 5. Wait for the green check (about 1 to 2 minutes).
 
-Your app is live at **https://USERNAME.github.io/tipnet/** (replace USERNAME with your GitHub username). Share this link with staff.
+Your app is live at **https://USERNAME.github.io/tipnet/** (replace USERNAME with your GitHub username). Share this link with staff, or your custom domain once it is set up (TipNet's is https://tipmynet.com).
 
 ---
 
@@ -72,7 +72,16 @@ Drops without an account are temporary. Create a free account and claim the site
 
 - **HTTPS is required** for offline use and install. Both hosts use HTTPS.
 - **Same link after updates.** Staff do not need a new link when you redeploy.
-- **Custom domain** (like `tipnet.your-bar.com`) is supported by both, but you must own the domain.
+- **Custom domain:** TipNet runs at **https://tipmynet.com** (see "Our domain" below).
+
+---
+
+## Our domain (tipmynet.com)
+
+- Bought at Cloudflare (Domain Registration, auto-renew on). DNS is at Cloudflare, every record **DNS only** (grey cloud): four `A` records for `tipmynet.com` (185.199.108.153, 185.199.109.153, 185.199.110.153, 185.199.111.153), four `AAAA` records (2606:50c0:8000::153 to 2606:50c0:8003::153), `CNAME www` to `sjeanpierrepro.github.io`, and the `TXT` record `_github-pages-challenge-sjeanpierrepro` that keeps the domain verified (GitHub profile **Settings > Pages**; don't delete it).
+- In the repository, **Settings > Pages > Custom domain** is `tipmynet.com` with **Enforce HTTPS** on. The old link https://sjeanpierrepro.github.io/tipnet/ redirects to it.
+- Email: **hello@tipmynet.com** is forwarded to tipnet.help@gmail.com by Cloudflare **Email Routing** (its MX, SPF and DKIM records are in the same DNS list; leave them).
+- **Saved data belongs to the web address.** A phone that used the old github.io link keeps its nights there: that old app keeps opening (it is stored on the phone) but no longer gets app updates (only the payments switch in `js/billing-config.js` still reaches it, because the service worker refreshes that one file with a fetch that follows the redirect; keep that in mind when payments go live). To move: in the old app, Setup > Backups > **Save a backup file**; then open **https://tipmynet.com**, install it, and restore that file before entering anything (restoring replaces what is saved there). The same applies if the domain ever changes again.
 
 ---
 
@@ -89,7 +98,7 @@ Open the failed run to see which test failed. Fix it locally (`npm test`), then 
 
 **"404 / Page not found" at the link**
 - Check Settings > Pages says "Your site is live at ...". If not, run the workflow again (Step 4).
-- The link ends in `/tipnet/` and must match the repository name exactly.
+- The link is https://tipmynet.com/ (the old github.io link only redirects there). Without a custom domain, a GitHub Pages link ends in `/tipnet/` and must match the repository name exactly.
 - Wait a minute after a green check; the first publish can lag.
 
 **Staff still see the old version**

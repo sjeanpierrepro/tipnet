@@ -6,7 +6,9 @@ Short guide for bartenders. Works on a phone.
 
 ## 1. Open TipNet
 
-Tap the link your bar gives you. Bookmark it.
+Go to **https://tipmynet.com** (or tap the link your bar gives you). Bookmark it.
+
+**Used TipNet before at the old link (sjeanpierrepro.github.io/tipnet)?** Your nights stay with the old app. Open the old app from your home screen (or open the old link the way you always did), go to Setup > Backups > **Save a backup file** (**Copy backup code** works too). Then open https://tipmynet.com, install it (step 2), and restore that file **before** you enter anything there (restoring replaces what is already saved). After that you can delete the old icon.
 
 ## 2. Add it to your home screen
 

@@ -26,8 +26,9 @@ const seed = (start, nights) =>
     }));
   });
 const sections = (page) => page.$$('section[data-period]', page.app);
+// The label starts with "Oct 3 – ": the trailing " – " keeps "Oct 3" from matching "Oct 17 – Oct 30".
 const sectionOf = (page, start) =>
-  sections(page).find((s) => s.querySelector('.label').textContent.includes(short(start)));
+  sections(page).find((s) => s.querySelector('.label').textContent.includes(short(start) + ' – '));
 const openEdit = (page, date) => page.click(page.byLabel('Edit night ' + long(date)));
 const weekSel = (page) => page.must(page.$('select[id$="-week"]', page.app), 'pay period select');
 

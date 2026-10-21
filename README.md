@@ -21,7 +21,7 @@ All the numbers stay on your phone or computer. Your bar cannot see them. No acc
 ## How to run TipNet
 
 ### On your phone or computer
-Open the link your bar gives you. The first time, you may see a prompt to "Install app" or "Add to home screen"—tap it. After that, open it from your home screen or desktop like any app. It works offline.
+Open **https://tipmynet.com** (or the link your bar gives you). The first time, you may see a prompt to "Install app" or "Add to home screen"—tap it. After that, open it from your home screen or desktop like any app. It works offline.
 
 ### On your own computer (testing or setup)
 You need Node 20.19 or newer 20.x, 22.13 or newer 22.x, or Node 24 or higher (the "engines" line in package.json). In your terminal, from the TipNet folder, first install test dependencies once:

@@ -36,7 +36,7 @@ Edit files in the `tipnet` folder on your computer (any text editor, such as Not
 
 ## Phase 4: Activate your store
 1. In Lemon Squeezy, follow the steps to activate your store: a short questionnaire about your business and customers, and an identity check. Approval usually takes a few business days.
-2. When it asks for your website, use https://sjeanpierrepro.github.io/tipnet/ . Make sure the current version of the app (with the Privacy and Terms pages) is published first.
+2. When it asks for your website, use https://tipmynet.com/ . Make sure the current version of the app (with the Privacy and Terms pages) is published first.
 3. Set up payouts (bank or PayPal) when asked.
 
 ## Phase 5: Go live

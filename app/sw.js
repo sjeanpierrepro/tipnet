@@ -2,7 +2,7 @@
    It does NOT skipWaiting on its own: the page shows "Update available: Refresh" and
    posts {type:'SKIP_WAITING'} (or the string 'SKIP_WAITING') when the user agrees. Only when it takes over from a
    version before v38 does it reload the open windows itself (see activate). */
-const VERSION = 'tipnet-v38';
+const VERSION = 'tipnet-v39';
 
 const SHELL = [
   './',
