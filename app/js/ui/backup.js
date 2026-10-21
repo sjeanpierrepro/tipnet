@@ -11,6 +11,7 @@ import {
   isSetUp,
 } from '../storage.js';
 import { todayISO } from '../math.js';
+import { isStandalone, isIos, promptInstall } from './install.js';
 import { el, toast, arm, bus, getState, applyTheme, install, save, fmtShort } from './common.js';
 
 const DAY = 24 * 3600 * 1000;
@@ -20,27 +21,11 @@ export const iosNote = { shown: false };
 export function renderInstall(host) {
   const native = el('button', { type: 'button', class: 'btn', hidden: true }, 'Install TipNet');
   native.addEventListener('click', async () => {
-    const e = install.deferred;
-    if (!e) return;
-    install.deferred = null;
+    await promptInstall();
     sync();
-    try {
-      e.prompt();
-      await e.userChoice;
-    } catch (err) {
-      /* ignore */
-    }
   });
-  const standalone = (() => {
-    try {
-      return matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-    } catch (e) {
-      return false;
-    }
-  })();
-  const ios =
-    /iphone|ipad|ipod/i.test(navigator.userAgent) ||
-    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const standalone = isStandalone();
+  const ios = isIos();
   // Safari on iPhone/iPad (not the Home Screen app): navigator.standalone is false there, undefined in other browsers.
   const S = getState();
   let evictNote = null;

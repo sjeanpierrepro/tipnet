@@ -12,6 +12,8 @@ Go to **https://tipmynet.com** (or tap the link your bar gives you). Bookmark it
 
 ## 2. Add it to your home screen
 
+The first time you set up, TipNet offers this as one more step: on iPhone it comes first (add the icon, then set up from the icon, since Safari and the icon keep separate data); on Android and computers it comes last, after your setup is saved, and you can tap **Not now**.
+
 - **iPhone (Safari):** Share button > **Add to Home Screen** > **Add**.
 - **Android (Chrome):** Menu (three dots) > **Install app** (or **Add to Home screen**).
 - **Computer (Chrome or Edge):** click the install icon in the address bar.

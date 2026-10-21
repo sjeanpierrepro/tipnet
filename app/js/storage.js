@@ -35,7 +35,7 @@ const STATE_KEY = 'state';
  *               pay schedule, paystub, jobs and tip-outs (profile) and its own "Check my accuracy" history (calib).
  *   nights:     [{..., workplaceId}]  every night belongs to one restaurant.
  *   settings:   {theme:'auto'|'light'|'dark', lastTab, activeWorkplaceId, periodsFilter?, dayCutoffHour?, guidedDraft?,
- *                lastBackupAt?, backupNudgeUntil?, nightsSinceBackup?, backupNightsAt?, iosNoteSeen?, wordingV38?, entitlement?,
+ *                lastBackupAt?, backupNudgeUntil?, nightsSinceBackup?, backupNightsAt?, iosNoteSeen?, installStepSeen?, wordingV38?, entitlement?,
  *                reminder?: {time:'HH:MM', days:[0-6, Monday first], addedAt, uid, seq}}
  *               (shared by every restaurant)
  *   budget:     see budget.js (shared: bills are paid from all money; a goal may name the restaurant it is saved from, fundedBy).
@@ -489,6 +489,7 @@ function cleanSettings(x, ids) {
   if (count(s.backupNightsAt)) out.backupNightsAt = s.backupNightsAt;
   out.wordingV38 = true; // set by the first migrate: old default names were renamed then, never again (see renameOldDefault)
   if (s.iosNoteSeen === true) out.iosNoteSeen = true; // the iPhone "Safari may clear data" note was shown once
+  if (s.installStepSeen === true) out.installStepSeen = true; // the Setup "home screen" step was answered (iPhone: set up in Safari anyway, or finished)
   // The license entitlement is device-only. decodeBackup strips it before migrate; here we only keep its known plain fields.
   if (isObj(s.entitlement)) {
     const e = {};
