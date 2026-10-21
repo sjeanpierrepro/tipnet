@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { boot, realState } from './harness.js';
 import { encodeBackup, decodeBackup, backupFileText, flush } from '../../app/js/storage.js';
 import { restoreFromFileText, undoRestore } from '../../app/js/ui/backup.js';
-import { setInstallPrompt } from '../../app/js/ui/common.js';
+import { setInstallPrompt, restoreRequest } from '../../app/js/ui/common.js';
 
 const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Safari/604.1';
 const ANDROID = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) Chrome/130.0 Mobile Safari/537.36';
@@ -291,6 +291,46 @@ test('installStepSeen stays on this device: backups never carry it, and a restor
     assert.equal(page.state().settings.installStepSeen, true);
     assert.equal(undoRestore(), true);
     assert.equal(page.state().settings.installStepSeen, true);
+  } finally {
+    await page.close();
+  }
+});
+
+test('iPhone Safari: while the home-screen step shows, no restore is offered; it comes back after "Set up here"', async () => {
+  const page = await boot();
+  try {
+    fake(page, IPHONE, false);
+    await openSetup(page);
+    assert.equal(page.$('#restore-link'), null);
+    assert.equal(page.byText('button', 'Moving from another phone? Restore a backup code'), null);
+    assert.match(
+      page.$('#restore-later').textContent,
+      /^Moving from another phone\? Add TipNet to your home screen first, then restore your backup there\.$/,
+    );
+    // a restore asked for elsewhere (the example banner on Tonight) still lands on the step, not on a restore box
+    restoreRequest.open = true;
+    page.tab('tonight');
+    page.tab('setup');
+    await page.settle();
+    assert.equal(page.$('#bk-code'), null);
+    assert.ok(page.byText('button', 'Set up here in Safari instead'));
+    assert.equal(restoreRequest.open, false);
+    page.click(page.button('Set up here in Safari instead'));
+    await page.settle();
+    assert.equal(page.$('#restore-later'), null);
+    assert.ok(page.$('#restore-link'), 'the restore link is back');
+  } finally {
+    await page.close();
+  }
+});
+
+test('not iPhone Safari: the restore link is unchanged', async () => {
+  const page = await boot();
+  try {
+    fake(page, IPHONE, true);
+    await openSetup(page);
+    assert.ok(page.$('#restore-link'));
+    assert.equal(page.$('#restore-later'), null);
   } finally {
     await page.close();
   }

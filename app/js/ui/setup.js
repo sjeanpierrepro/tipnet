@@ -2371,6 +2371,9 @@ function guided(root, ctx) {
     },
     'Skip guided setup and show everything',
   );
+  // iPhone Safari before the home-screen step is answered: a restore here would put the data in Safari, not in the app
+  // opened from the icon, so no restore is offered (the step's own line says to restore from the icon).
+  if (restoreRequest.open && pre) restoreRequest.open = false;
   if (restoreRequest.open) {
     const host = el('div');
     renderBackup(host, { restoreOnly: true });
@@ -2403,8 +2406,13 @@ function guided(root, ctx) {
     return;
   }
   // Restoring a backup replaces everything, so it is offered only on the very first setup.
-  const restoreLink =
-    guidedStep === 0 && first && !many
+  const restoreLink = pre
+    ? el(
+        'p',
+        { class: 'hint', id: 'restore-later' },
+        'Moving from another phone? Add TipNet to your home screen first, then restore your backup there.',
+      )
+    : guidedStep === 0 && first && !many
       ? el(
           'div',
           null,

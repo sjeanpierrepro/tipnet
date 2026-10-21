@@ -16,9 +16,13 @@ const seed = (mutate) =>
     if (mutate) mutate(S);
   });
 /** Makes this page's navigator share-capable (or not), then redraws Tonight. Returns the share() arguments. */
-const stub = (page, { canShare = true, share } = {}) => {
+const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Safari/604.1';
+const ANDROID = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) Chrome/130.0 Mobile Safari/537.36';
+const DESKTOP = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0 Safari/537.36';
+const stub = (page, { canShare = true, share, ua = IPHONE } = {}) => {
   const calls = [];
   const nav = page.win.navigator;
+  Object.defineProperty(nav, 'userAgent', { configurable: true, value: ua });
   Object.defineProperty(nav, 'canShare', {
     configurable: true,
     value: canShare === null ? undefined : (d) => canShare && !!d && Array.isArray(d.files),
@@ -54,6 +58,23 @@ test('canShare missing or false: no share button anywhere', async () => {
     assert.equal(page.$('#bk-share-hint'), null);
     stub(page, { canShare: null });
     assert.equal(page.$('#nights-backup-share'), null);
+  } finally {
+    await page.close();
+  }
+});
+
+test('a computer that can share files: no share button (only Save a backup file)', async () => {
+  const page = await boot({ seed: seed() });
+  try {
+    stub(page, { ua: DESKTOP });
+    assert.ok(page.$('#nights-backup'));
+    assert.equal(page.$('#nights-backup-share'), null);
+    page.tab('setup');
+    assert.equal(page.byText('button', SHARE), null);
+    assert.equal(page.$('#bk-share-hint'), null);
+    assert.ok(page.button('Save a backup file'));
+    stub(page, { ua: ANDROID });
+    assert.ok(page.$('#nights-backup-share'), 'Android shows it');
   } finally {
     await page.close();
   }

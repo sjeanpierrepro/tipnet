@@ -11,7 +11,7 @@ import {
   isSetUp,
 } from '../storage.js';
 import { todayISO } from '../math.js';
-import { isStandalone, isIos, promptInstall } from './install.js';
+import { isStandalone, isIos, isAndroid, promptInstall } from './install.js';
 import { el, toast, arm, bus, getState, applyTheme, install, save, fmtShort } from './common.js';
 
 const DAY = 24 * 3600 * 1000;
@@ -219,11 +219,12 @@ function backupShareFile(at) {
     type: 'text/plain',
   });
 }
-/** True when this browser can share a backup file. */
+/** True on a phone or tablet (iPhone/iPad, Android) whose browser can share a backup file. Computers keep only the download. */
 export function canShareBackup() {
   try {
     return (
       typeof navigator !== 'undefined' &&
+      (isIos() || isAndroid()) &&
       typeof navigator.canShare === 'function' &&
       typeof navigator.share === 'function' &&
       navigator.canShare({ files: [backupShareFile(Date.now())] }) === true
