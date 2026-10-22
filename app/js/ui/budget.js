@@ -41,6 +41,7 @@ import {
 } from '../budget.js';
 import {
   BILLING,
+  providerInfo,
   isUnlocked,
   activateKey,
   revalidate,
@@ -86,8 +87,6 @@ const dayText = (v) => String(v == null ? '' : v).replace(/^(\s*\d+)(?:st|nd|rd|
 const dayTypo = (v) =>
   Number.isNaN(readMoney(dayText(v))) ? 'That isn’t a day. Use a number from 1 to 31.' : '';
 const dayOf = (v) => Math.round(moneyOf(dayText(v)));
-
-const MANAGE_URL = 'https://app.lemonsqueezy.com/my-orders';
 
 /* ---------- screen-local state (cleared by reset) ---------- */
 const addOpen = {}; // which "Add ..." boxes are open, so adding an item keeps its box (and keyboard focus) in place
@@ -407,7 +406,9 @@ function upgradeCard() {
       ? el(
           'p',
           { class: 'hint' },
-          'Opens the payment page in a new tab. Payments are handled by Lemon Squeezy, not by TipNet.',
+          'Opens the payment page in a new tab. Payments are handled by ' +
+            providerInfo(BILLING).name +
+            ', not by TipNet.',
         )
       : el('p', { class: 'hint' }, 'Payments aren’t switched on yet.'),
     form,
@@ -2702,7 +2703,9 @@ export function subscriptionCard() {
       remove.disabled = false;
       removeMsg.textContent =
         r.error +
-        ' Or remove it anyway: the key leaves this device now, but it keeps using one of your subscription’s device slots until you remove the device in Lemon Squeezy (Manage subscription).';
+        ' Or remove it anyway: the key leaves this device now, but it keeps using one of your subscription’s device slots until you remove the device in ' +
+        providerInfo(BILLING).name +
+        ' (Manage subscription).';
       anyway.hidden = false;
     },
   });
@@ -2730,7 +2733,7 @@ export function subscriptionCard() {
         'a',
         {
           class: 'btn btn-secondary btn-small',
-          href: MANAGE_URL,
+          href: providerInfo(BILLING).manageUrl,
           target: '_blank',
           rel: 'noopener noreferrer',
         },

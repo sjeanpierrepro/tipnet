@@ -5,6 +5,8 @@
 // license key and a random device name, never budget or pay data.
 import * as configModule from './billing-config.js';
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * billing-config.js is served from the cache and refreshed in the background (see sw.js), so it and this file can be from
  * different versions. Read the config defensively: missing or extra fields are fine, and a missing export is too.
@@ -19,11 +21,24 @@ export function readConfig(raw) {
     (v) =>
       (typeof v === 'number' || (typeof v === 'string' && v.trim() !== '')) && Number.isFinite(Number(v)),
   );
+  // Polar needs both ids (a key from another Polar organization or benefit must never unlock Budget).
+  const organizationId = str(c.organizationId).trim();
+  const benefitId = str(c.benefitId).trim();
+  const polarOk = UUID.test(organizationId) && UUID.test(benefitId);
+  const provider =
+    c.provider === 'lemonsqueezy' && productIds.length
+      ? 'lemonsqueezy'
+      : c.provider === 'polar' && polarOk
+        ? 'polar'
+        : null; // unknown providers, or missing ids, count as off
   return {
-    provider: c.provider === 'lemonsqueezy' && productIds.length ? c.provider : null, // unknown providers, or no product id, count as off
+    provider,
     prices: { monthly: '$1.99', yearly: '$20', ...obj(c.prices) },
     checkout: { monthly: str(obj(c.checkout).monthly), yearly: str(obj(c.checkout).yearly) },
     productIds,
+    organizationId,
+    benefitId,
+    portalUrl: str(c.portalUrl),
     allowTestMode: c.allowTestMode === true, // only an explicit true; anything else is false
     proxyUrl: str(c.proxyUrl),
   };
@@ -49,6 +64,33 @@ export async function reloadConfig(load = () => import('./billing-config.js?fres
 export const GRACE_MS = 14 * 24 * 3600 * 1000; // offline grace after last successful validation
 export const REVALIDATE_MS = 24 * 3600 * 1000; // at most one silent check per day
 const LS_API = 'https://api.lemonsqueezy.com/v1/licenses';
+const POLAR_API = 'https://api.polar.sh/v1/customer-portal/license-keys';
+const POLAR_PORTAL = 'https://polar.sh/tipnet/portal';
+
+/**
+ * Name and links of the payment provider in use, for wording in the app and on the Privacy and Terms pages.
+ * While payments are off it describes Lemon Squeezy, which is the wording the pages have always had.
+ */
+export function providerInfo(rawConfig = BILLING) {
+  const config = readConfig(rawConfig);
+  if (config.provider === 'polar')
+    return {
+      id: 'polar',
+      name: 'Polar',
+      privacyUrl: 'https://polar.sh/legal/privacy',
+      privacyLabel: 'polar.sh/legal/privacy',
+      manageUrl: config.portalUrl.startsWith('https://') ? config.portalUrl : POLAR_PORTAL,
+      cancelWhere: 'the Polar customer portal',
+    };
+  return {
+    id: 'lemonsqueezy',
+    name: 'Lemon Squeezy',
+    privacyUrl: 'https://www.lemonsqueezy.com/privacy',
+    privacyLabel: 'lemonsqueezy.com/privacy',
+    manageUrl: 'https://app.lemonsqueezy.com/my-orders',
+    cancelWhere: "Lemon Squeezy's My Orders page",
+  };
+}
 
 /* ---------- pure helpers ---------- */
 
@@ -164,6 +206,52 @@ export function parseLemonSqueezy(body, productIds = [], allowTestMode = false) 
   return out;
 }
 
+/**
+ * Turns a Polar customer-portal activate/validate JSON body into the same {ok, status, expiresAt?, instanceId?, error?}
+ * shape as parseLemonSqueezy. Polar answers 200 only for a granted key (a revoked or disabled key is a 404 or 403, see
+ * polarProvider), but a body that says revoked, disabled or expired is refused here too. A granted key is reported as
+ * 'active'. benefitId and organizationId reject keys from another benefit or organization (the app always passes them).
+ * An activate body has the key under license_key and the activation id in id; a validate body is the key itself, with
+ * the activation under activation.
+ */
+export function parsePolar(body, benefitId = '', organizationId = '') {
+  const b = body && typeof body === 'object' ? body : {};
+  const isActivation = !!(b.license_key && typeof b.license_key === 'object');
+  const lk = isActivation ? b.license_key : b;
+  const found = typeof lk.status === 'string' && lk.status !== '';
+  const out = { ok: false, status: found ? lk.status : 'invalid' };
+  if (lk.expires_at) out.expiresAt = lk.expires_at;
+  const inst = isActivation ? b.id : b.activation && b.activation.id;
+  if (inst) out.instanceId = String(inst);
+  const differs = (want, got) => !!want && String(got || '').toLowerCase() !== String(want).toLowerCase();
+  if (found && (differs(benefitId, lk.benefit_id) || differs(organizationId, lk.organization_id))) {
+    return {
+      ok: false,
+      status: 'invalid',
+      error: 'This key is real, but it is for a different product, not TipNet Budget.',
+    };
+  }
+  const end = lk.expires_at ? toMs(lk.expires_at) : null;
+  if (lk.status === 'granted' && end !== null && end <= Date.now()) {
+    out.status = 'expired';
+    out.error = 'This subscription has ended. Renew it to unlock again.';
+    return out;
+  }
+  if (lk.status === 'granted') {
+    out.ok = true;
+    out.status = 'active';
+    return out;
+  }
+  if (lk.status === 'revoked')
+    out.error = 'This subscription has ended or was refunded. Renew it to unlock again.';
+  else if (lk.status === 'disabled') out.error = 'This key was turned off (refunded or cancelled).';
+  else {
+    out.status = 'invalid';
+    out.error = 'That key did not work. Check it and try again.';
+  }
+  return out;
+}
+
 function friendlyError(msg) {
   const m = String(msg || '').toLowerCase();
   if (!m) return 'That key did not work. Check it and try again.';
@@ -237,6 +325,92 @@ export function lemonSqueezyProvider(deps = {}) {
   };
 }
 
+/**
+ * Polar customer-portal license API. Public endpoints that need no token (only the organization id and the key), and they
+ * send access-control-allow-origin: *, so browsers can call them directly. JSON in, JSON out. Polar answers 200 for a
+ * granted key; a revoked, disabled, expired or unknown key (or a removed activation) is a 404 on validate, and a 403 on
+ * activate (which also covers the device limit). 5xx and 429 count as a busy service, like Lemon Squeezy.
+ * deps: { fetch, organizationId, benefitId, proxyUrl }
+ */
+export function polarProvider(deps = {}) {
+  const f = deps.fetch || ((...a) => globalThis.fetch(...a));
+  const organizationId = deps.organizationId || '';
+  const benefitId = deps.benefitId || '';
+  const base = (deps.proxyUrl || POLAR_API).replace(/\/$/, '');
+  const unexpected = {
+    ok: false,
+    status: 'network',
+    error: 'The payment service sent an unexpected reply. Try again later.',
+  };
+  async function call(path, fields) {
+    let res;
+    try {
+      res = await f(`${base}/${path}`, {
+        method: 'POST',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...fields, organization_id: organizationId }),
+      });
+    } catch (e) {
+      return {
+        ok: false,
+        status: 'network',
+        error: 'Could not reach the payment service. Check your connection.',
+        unreachable: true, // no reply at all (offline or blocked), not a busy service
+      };
+    }
+    const code = res && res.status;
+    if (code >= 500 || code === 429)
+      return {
+        ok: false,
+        status: 'network',
+        error: 'The payment service is busy. Try again in a few minutes.',
+      };
+    if (code === 204) return { ok: true, status: 'deactivated' };
+    let body = null;
+    try {
+      body = await res.json();
+    } catch (e) {
+      /* not JSON */
+    }
+    if (!body || typeof body !== 'object') return unexpected;
+    // Definite answers about the key. A 422 means our own request was malformed, which says nothing about the key:
+    // it never locks anyone (on validate) and is just "did not work" on activate.
+    if (code === 404 && path === 'validate')
+      return {
+        ok: false,
+        status: 'invalid',
+        error: 'This key is no longer valid. The subscription may have ended.',
+      };
+    if (code === 404)
+      return { ok: false, status: 'invalid', error: 'That key was not found. Check it and try again.' };
+    if (code === 403)
+      return {
+        ok: false,
+        status: 'invalid',
+        error:
+          'This key can’t be used: its subscription has ended, or it is already on the most devices it allows. Turn it off on another device first.',
+      };
+    if (code === 422) {
+      if (path === 'validate') return unexpected;
+      return { ok: false, status: 'invalid', error: 'That key did not work. Check it and try again.' };
+    }
+    if (!(code >= 200 && code < 300)) return unexpected;
+    // A 200 with no key status is not an answer about the key (never lock on it).
+    const key = body.license_key && typeof body.license_key === 'object' ? body.license_key : body;
+    if (typeof key.status !== 'string' || !key.status) return unexpected;
+    return parsePolar(body, benefitId, organizationId);
+  }
+  return {
+    id: 'polar',
+    activate: (key, instanceName) =>
+      call('activate', { key: String(key || '').trim(), label: instanceName || randomInstanceName() }),
+    validate: (key, instanceId) =>
+      call('validate', { key: String(key || '').trim(), activation_id: instanceId }),
+    deactivate: (key, instanceId) =>
+      call('deactivate', { key: String(key || '').trim(), activation_id: instanceId }),
+  };
+}
+
 /** Provider chosen in billing-config.js, or null while payments are switched off (which includes: no product id filled in). */
 export function getProvider(rawConfig = BILLING, deps = {}) {
   const config = readConfig(rawConfig);
@@ -244,6 +418,14 @@ export function getProvider(rawConfig = BILLING, deps = {}) {
     return lemonSqueezyProvider({
       productIds: config.productIds,
       allowTestMode: config.allowTestMode,
+      proxyUrl: config.proxyUrl,
+      ...deps,
+    });
+  }
+  if (config.provider === 'polar') {
+    return polarProvider({
+      organizationId: config.organizationId,
+      benefitId: config.benefitId,
       proxyUrl: config.proxyUrl,
       ...deps,
     });

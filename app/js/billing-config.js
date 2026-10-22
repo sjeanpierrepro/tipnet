@@ -35,3 +35,22 @@ export const BILLING = {
   // origin to connect-src. See DECISIONS.md (Payments) and git history for a proxy example.
   proxyUrl: '',
 };
+
+/*
+ * SWITCH TO POLAR (only if Lemon Squeezy does not approve the store). This is the ONLY file to edit. Step by step: see
+ * PAYMENTS.md, "Switch to Polar". Replace the BILLING block above with the one below (remove the // at the start of each
+ * line). The ids and checkout links are public, not secrets. Polar's key check is public too: no token, no server.
+ *
+ * export const BILLING = {
+ *   provider: 'polar',
+ *   prices: { monthly: '$1.99', yearly: '$20' },
+ *   checkout: {
+ *     monthly: 'https://buy.polar.sh/polar_cl_aJdygUsBhyW7sa8I25xOkPxhVGuZD1fBaIFeR2CF3Bv',
+ *     yearly: 'https://buy.polar.sh/polar_cl_EDrUG3TiCtUWWfIiwPbPulFbwx3TPThNFH4de1TG1IF',
+ *   },
+ *   organizationId: '21069ded-8117-4125-a4da-1e9c11e82ea8', // required: Polar organization TipNet
+ *   benefitId: 'b74169ed-9c5f-4dab-96c9-d1a9dbacd974', // required: the TIPNET license-key benefit
+ *   portalUrl: 'https://polar.sh/tipnet/portal', // where "Manage subscription" opens
+ *   proxyUrl: '',
+ * };
+ */

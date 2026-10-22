@@ -60,3 +60,16 @@ Edit files in the `tipnet` folder on your computer (any text editor, such as Not
 
 ## Privacy note
 TipNet sends only the license key and a random device name to Lemon Squeezy, and only when someone activates or once a day to recheck. No budget, pay or night data ever leaves the phone. The Privacy page already says this.
+
+## Switch to Polar (only if Lemon Squeezy does not approve the store)
+Polar (polar.sh) is a second payment provider, built and tested but switched off. Your Polar organization (TipNet), the license-key benefit (prefix TIPNET, 3 devices, ends with the subscription) and the two checkout links already exist. Switching is a one-file change:
+1. Open `app/js/billing-config.js`. At the bottom is a commented block "SWITCH TO POLAR".
+2. Replace the whole `export const BILLING = { ... };` block at the top with that block, removing the `// ` or ` * ` comment marks. Keep the ids and the two `https://buy.polar.sh/...` links exactly as written.
+3. Save, then in `app/sw.js` add 1 to the number at the end of the `VERSION` line (optional but makes every installed copy update right away).
+4. Commit and push with GitHub Desktop. The Privacy and Terms pages and the Budget screen then say "Polar" on their own, and "Manage subscription" opens https://polar.sh/tipnet/portal.
+5. Test first on your own computer with a real purchase of your own, or a 100% discount code made in the Polar dashboard: buy, paste the emailed key into Budget, tap "Unlock with key", then "Remove from this device".
+Notes:
+- Polar's account review must be finished before the first payout. Do it early in the Polar dashboard (Finance > Account), or sales will be held.
+- Polar is the merchant of record, like Lemon Squeezy. Customers find their key in the receipt email or in the portal above.
+- To go back to Lemon Squeezy, put the old `BILLING` block back. Keys from one provider never unlock under the other.
+- If a subscription is cancelled or refunded, Polar revokes the key and Budget locks at the next daily check (or after the 14-day offline grace if the phone is offline).

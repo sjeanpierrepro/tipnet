@@ -117,7 +117,7 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  // Only same-origin files are cached; payment provider calls (api.lemonsqueezy.com) pass straight through.
+  // Only same-origin files are cached; payment provider calls (api.lemonsqueezy.com, api.polar.sh) pass straight through.
   if (url.origin !== self.location.origin) return;
 
   // Payment settings: cache first, so the first screen never waits on the network (payments off or not), and
