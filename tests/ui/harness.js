@@ -245,6 +245,8 @@ export function realState(mutate) {
   S.profileExample = false;
   S.nightsExample = false;
   S.nights = [];
+  // the payday is required in Setup now; day after the period end is what an absent one always meant
+  S.workplaces.forEach((w) => (w.profile.payDelay = 1));
   if (mutate) mutate(S);
   return S;
 }

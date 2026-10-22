@@ -36,6 +36,7 @@ test('guided setup step 3: jobs with every job preset, other pay with every othe
   try {
     page.tab('setup');
     page.type(page.$$('input[type=date]', page.app)[0], '2026-09-01');
+    page.type(page.$$('input[type=date]', page.app)[2], '2026-09-20');
     page.type(page.$('input[placeholder="e.g. 2,000"]', page.app), '1500');
     page.type(page.$('input[placeholder="e.g. 10"]', page.app), '10');
     page.click(page.button('Next'));
@@ -397,6 +398,7 @@ test('guided setup keeps what was typed in the saved state (settings.guidedDraft
   try {
     page.tab('setup');
     page.type(page.$$('input[type=date]', page.app)[0], '2026-09-01');
+    page.type(page.$$('input[type=date]', page.app)[2], '2026-09-20');
     page.type(page.$('input[placeholder="e.g. 2,000"]', page.app), '1500');
     page.type(page.$('input[placeholder="e.g. 10"]', page.app), '10');
     page.click(page.button('Next'));

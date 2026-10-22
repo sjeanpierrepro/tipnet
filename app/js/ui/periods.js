@@ -25,10 +25,16 @@ import {
   tipoutsTonight,
   tipoutSetup,
   nightTipout,
+  toCents,
+  fromCents,
 } from '../math.js';
-import { businessDate, cutoffFromSettings, moneyTypo } from '../inputs.js';
+import { businessDate, cutoffFromSettings, moneyTypo, readMoney } from '../inputs.js';
+import { autoGoal } from '../budget.js';
+import { BILLING, isUnlocked } from '../billing.js';
+import { openPreview } from './budget.js';
 import {
   isSetUp,
+  isWorkplaceSetUp,
   workplaceOf,
   findWorkplace,
   nightsOf,
@@ -780,12 +786,27 @@ function updateControl(S, w, idx, ctx) {
  * so they are worked out once per restaurant (ctx.base). ctx.named: start the label with the restaurant's name (the All list).
  * A finished pay period can be updated to today's Setup (updateControl).
  */
-function group(S, w, idx, ctx) {
-  const p = w.profile,
-    today = ctx.today;
+/**
+ * One pay period's numbers, worked out the one way every part of this page uses (the period sections and the cards at
+ * the bottom), so they agree to the cent. {t: periodTotals, shifts: the shift count it was spread over}.
+ */
+function totalsFor(w, idx, ctx) {
+  const p = w.profile;
   const shifts =
-    ctx.base.source === 'default' ? shiftsPerPeriod(p, ctx.nights, today, idx, ctx.index).n : ctx.base.n;
-  const t = periodTotals(p, ctx.nights, idx, today, shifts, ctx.index);
+    ctx.base.source === 'default' ? shiftsPerPeriod(p, ctx.nights, ctx.today, idx, ctx.index).n : ctx.base.n;
+  return { t: periodTotals(p, ctx.nights, idx, ctx.today, shifts, ctx.index), shifts };
+}
+/** The shared look-ups for one establishment's periods (one pass over its nights). */
+function makeCtx(S, w, today, named) {
+  const nights = nightsOf(S, w.id);
+  const index = indexNights(w.profile, nights);
+  const base = shiftsPerPeriod(w.profile, nights, today, undefined, index);
+  return { today, index, base, nights, named };
+}
+
+function group(S, w, idx, ctx) {
+  const p = w.profile;
+  const { t, shifts } = totalsFor(w, idx, ctx);
   const rows = t.ns.map((n) => nightRow(S, w, n, shifts));
   const editingRow = rows.length && t.ns.some((n) => n.id === editingId);
   // A finished check takes its fixed deductions (and non-taxable pay) exactly once, while each night carries an
@@ -1297,11 +1318,9 @@ export function render(root) {
   const ctxs = new Map();
   const items = [];
   shownW.forEach((w) => {
-    const nights = nightsOf(S, w.id);
-    const index = indexNights(w.profile, nights);
-    const base = shiftsPerPeriod(w.profile, nights, today, undefined, index);
-    ctxs.set(w.id, { today, index, base, nights, named: many && pick === 'all' });
-    index.forEach((list, idx) => items.push({ w, idx, end: periodRange(w.profile, idx).end }));
+    const ctx = makeCtx(S, w, today, many && pick === 'all');
+    ctxs.set(w.id, ctx);
+    ctx.index.forEach((list, idx) => items.push({ w, idx, end: periodRange(w.profile, idx).end }));
   });
   // Newest first; the same end date keeps the restaurants in their Setup order.
   const order = new Map(S.workplaces.map((w, i) => [w.id, i]));
@@ -1357,6 +1376,236 @@ export function render(root) {
       exampleBanner(),
       list,
       calibCard(S, today),
+      ...bottomCards(S, today, shownW, ctxs, many && pick === 'all'),
+    ),
+  );
+}
+
+/* ---------- the pay period in progress: "So far this pay period" and the Budget goal ---------- */
+/** Each set-up establishment's pay period in progress, from the same numbers as its section above. */
+function soFarOf(S, list, ctxs, today, named) {
+  return list
+    .filter((w) => isWorkplaceSetUp(S, w))
+    .map((w) => {
+      const ctx = ctxs.get(w.id) || makeCtx(S, w, today, named);
+      const idx = periodIndex(w.profile, today);
+      const { t, shifts } = totalsFor(w, idx, ctx);
+      return { w, idx, t, shifts, nights: t.ns.length, all: ctx.nights };
+    });
+}
+function bottomCards(S, today, shownW, ctxs, named) {
+  const shown = soFarOf(S, shownW, ctxs, today, named);
+  if (!shown.length) return [];
+  const cards = [soFarCard(shown, named)];
+  // The goal looks at every establishment that pays you (Budget's bills are paid from all of them).
+  const goal = goalCard(S, today, soFarOf(S, S.workplaces, ctxs, today, named));
+  if (goal) cards.push(goal);
+  return cards;
+}
+function soRow(label, value, id) {
+  return el('div', { class: 'spread' }, el('dt', null, label), el('dd', { class: 'num', id }, value));
+}
+function soFarCard(lines, named) {
+  const block = (l) =>
+    el(
+      'div',
+      { class: 'stack-sm', 'data-workplace': l.w.id },
+      named ? el('div', { class: 'label' }, l.w.name + ' · ' + periodLabel(l.w.profile, l.idx)) : null,
+      l.nights
+        ? el(
+            'dl',
+            { class: 'stack-sm' },
+            soRow('Estimated take-home so far', money(l.t.net), 'so-far-net-' + l.w.id),
+            soRow('Cash you keep so far', money(l.t.cash), 'so-far-cash-' + l.w.id),
+            soRow('On your check so far', money(l.t.chk), 'so-far-check-' + l.w.id),
+            soRow('Nights logged', String(l.nights), 'so-far-nights-' + l.w.id),
+          )
+        : el('p', { class: 'hint' }, 'No nights logged yet in this pay period.'),
+    );
+  const none = lines.every((l) => !l.nights);
+  return el(
+    'section',
+    { class: 'card stack', id: 'so-far', 'aria-labelledby': 'so-far-h' },
+    el('h2', { id: 'so-far-h' }, 'So far this pay period'),
+    none && !named
+      ? el(
+          'p',
+          { class: 'hint' },
+          'No nights logged yet in this pay period. Your totals show up here once you log one.',
+        )
+      : lines.map(block),
+    el(
+      'p',
+      { class: 'hint' },
+      'Estimated, from the nights you logged. The same numbers as the pay period above.',
+    ),
+  );
+}
+
+/** The Budget goal card: locked for free users, the real one for TipNet Budget; null when it cannot be worked out. */
+function goalCard(S, today, lines) {
+  const heading = 'Budget goal for this pay period';
+  if (!isUnlocked(S.settings.entitlement)) {
+    return el(
+      'section',
+      { class: 'card stack upsell', id: 'goal-card', 'aria-labelledby': 'goal-card-h' },
+      el('h2', { id: 'goal-card-h' }, heading),
+      el(
+        'p',
+        null,
+        'TipNet Budget shows what your bills and savings need before payday, and how close this pay period gets you.',
+      ),
+      BILLING.provider
+        ? null
+        : el(
+            'p',
+            { class: 'hint' },
+            el('strong', null, 'Coming soon. '),
+            'You’ll be able to unlock it here soon.',
+          ),
+      el(
+        'button',
+        {
+          type: 'button',
+          class: 'btn btn-secondary btn-block',
+          id: 'goal-card-see',
+          onclick: () => openPreview(null),
+        },
+        'See what’s inside',
+      ),
+    );
+  }
+  if (!lines.length) return null;
+  const sources = lines.map((l) => ({ id: l.w.id, name: l.w.name, profile: l.w.profile, nights: l.all }));
+  let auto;
+  try {
+    auto = autoGoal(S.budget, sources, today);
+  } catch (e) {
+    return null;
+  }
+  if (!auto || !Number.isFinite(toCents(auto.amount))) return null;
+  const madeC = lines.reduce((s, l) => s + toCents(l.t.net), 0);
+  const remaining = lines.reduce((s, l) => s + Math.max(0, l.shifts - l.nights), 0);
+  const host = el('div', { class: 'stack-sm', 'aria-live': 'polite' });
+  const own = el('input', {
+    type: 'text',
+    inputmode: 'decimal',
+    autocomplete: 'off',
+    spellcheck: 'false',
+    id: 'goal-own',
+    placeholder: 'Amount for this pay period',
+    value: S.budget.ownGoal ? String(S.budget.ownGoal) : '',
+  });
+  const f = field('Use my own goal', own, {
+    optional: true,
+    hint: 'An amount for this pay period. It is used instead of the goal from your budget.',
+  });
+  const back = el(
+    'button',
+    { type: 'button', class: 'btn-link', id: 'goal-back' },
+    'Go back to my budget’s goal',
+  );
+  const draw = () => {
+    const mine = S.budget.ownGoal ? toCents(S.budget.ownGoal) : 0;
+    const goalC = mine || toCents(auto.amount);
+    const kids = [];
+    if (mine)
+      kids.push(
+        el('p', { id: 'goal-line' }, el('strong', null, 'Goal: ' + money(fromCents(mine)) + ' (your own)')),
+      );
+    else {
+      kids.push(
+        el(
+          'p',
+          { id: 'goal-line' },
+          el('strong', null, 'Goal: ' + money(auto.amount) + ' (from your budget)'),
+        ),
+      );
+      kids.push(
+        el(
+          'p',
+          { class: 'hint', id: 'goal-breakdown' },
+          'bills due before payday ' + money(auto.bills) + ' + savings ' + money(auto.goals),
+        ),
+      );
+    }
+    if (goalC > 0) {
+      kids.push(
+        el('p', { id: 'goal-made' }, 'Made so far: ' + money(fromCents(madeC)) + ' (estimated take-home)'),
+      );
+      const diff = goalC - madeC;
+      kids.push(
+        el(
+          'p',
+          { id: 'goal-result' },
+          el(
+            'strong',
+            null,
+            diff > 0 ? 'Short by ' + money(fromCents(diff)) : money(fromCents(-diff)) + ' extra',
+          ),
+        ),
+      );
+      if (diff > 0 && remaining > 0)
+        kids.push(
+          el(
+            'p',
+            { class: 'hint', id: 'goal-pace' },
+            'About ' +
+              money(fromCents(Math.round(diff / remaining))) +
+              ' a night over your next ' +
+              (remaining === 1 ? 'shift' : remaining + ' shifts') +
+              ' (estimate).',
+          ),
+        );
+    } else
+      kids.push(
+        el(
+          'p',
+          { class: 'hint', id: 'goal-none' },
+          'Your budget has no bills or savings due before your next payday. You can type your own goal below.',
+        ),
+      );
+    host.replaceChildren(...kids);
+    back.hidden = !mine;
+  };
+  const commit = () => {
+    if (moneyTypo(own.value)) return; // a typo is never saved; the last goal stays
+    const n = readMoney(own.value);
+    if (n !== null && n < 0) return f.setError('A goal can’t be negative.');
+    if (n === null || n === 0) delete S.budget.ownGoal;
+    else S.budget.ownGoal = fromCents(toCents(n));
+    save();
+    draw();
+  };
+  const later = debounce(commit, 400);
+  back.addEventListener('click', () => {
+    own.value = '';
+    f.setError('');
+    later.cancel();
+    commit();
+    own.focus();
+  });
+  own.addEventListener('input', () => {
+    f.setError('');
+    flagTypo(own, f, moneyTypo, { now: false });
+    later();
+  });
+  own.addEventListener('change', () => {
+    flagTypo(own, f, moneyTypo); // at once when the box is left
+    later.flush();
+  });
+  draw();
+  return el(
+    'section',
+    { class: 'card stack', id: 'goal-card', 'aria-labelledby': 'goal-card-h' },
+    el('h2', { id: 'goal-card-h' }, heading),
+    host,
+    f,
+    back,
+    el(
+      'p',
+      { class: 'hint' },
+      'Estimated. Your budget’s goal is the bills due before payday plus the savings you planned for that time.',
     ),
   );
 }

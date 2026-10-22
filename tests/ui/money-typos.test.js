@@ -222,6 +222,7 @@ test('guided setup: a typo in gross pay, a deduction, the main rate or a tip-out
   try {
     page.tab('setup');
     typeOut(page, page.$$('input[type=date]', page.app)[0], '2026-09-01');
+    typeOut(page, page.$$('input[type=date]', page.app)[2], '2026-09-20');
     const gross = page.$('input[placeholder="e.g. 2,000"]', page.app);
     // step 1: gross pay
     typeOut(page, gross, '1.2.3');

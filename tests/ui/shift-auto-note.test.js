@@ -29,6 +29,7 @@ const v37 = (nights) => {
           payTypes: [{ id: 'p1', k: 'bartender', name: 'Bartender', rate: 12, unit: 'hr', usual: 7 }],
           tipout: { on: false, mode: 'pct', value: 0, basis: 'before', from: 'cash' },
           entryMode: 'tips',
+          payDelay: 1,
         },
       },
     ],

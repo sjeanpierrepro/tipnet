@@ -23,6 +23,7 @@ const wait = (ms) =>
 function finishSetup(page) {
   page.tab('setup');
   page.type(dateInputs(page)[0], '2026-09-01');
+  page.type(dateInputs(page)[2], '2026-09-20');
   page.type(byPh(page, 'e.g. 10'), '10');
   page.type(byPh(page, 'e.g. 2,000'), '2000');
   next(page);

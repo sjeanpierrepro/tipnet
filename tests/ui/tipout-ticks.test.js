@@ -335,6 +335,7 @@ test('e) Setup: Remove the barback, add a barback again and Save: the nights log
         periodStart: cur,
         periodEnd: addDays(cur, 13),
         freq: 14,
+        payDelay: 1,
         tipout: { on: true },
         tipouts: [{ ...BARBACK }],
       };
@@ -383,6 +384,7 @@ test('e) Setup: two barbacks removed and one added: nothing is guessed', async (
         periodStart: cur,
         periodEnd: addDays(cur, 13),
         freq: 14,
+        payDelay: 1,
         tipout: { on: true },
         tipouts: [{ ...BARBACK }, { ...B3 }, { ...RUNNER }],
       };
