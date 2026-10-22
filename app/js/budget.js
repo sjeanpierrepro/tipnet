@@ -346,6 +346,10 @@ export function migrateBudget(x, profile, today = todayISO()) {
   });
   const bal = cleanBalance(x.balance);
   if (bal) out.balance = bal;
+  // "Use my own goal" (Pay periods): an amount per pay period that replaces the goal worked out from bills and savings.
+  // Only a positive amount is kept; clearing it removes the field.
+  const own = cents(x.ownGoal);
+  if (own > 0) out.ownGoal = fromCents(own);
   return out;
 }
 
@@ -1014,6 +1018,21 @@ export function asideRange(possible, needed, known = true, step = ASIDE_STEP) {
 }
 
 /* ---------- safe to spend ---------- */
+/**
+ * The goal for the money coming in before the next payday, worked out the way safeToSpendAll does: the unpaid bills due
+ * before that payday (billsTotal) plus the savings-goal money still to be set aside (goalsTotal). Nothing new is
+ * counted. {bills, goals, amount (both added), payday}.
+ */
+export function autoGoal(budget, sources, today = todayISO()) {
+  const r = safeToSpendAll(budget, sources, today);
+  return {
+    bills: r.billsTotal,
+    goals: r.goalsTotal,
+    amount: fromCents(toCents(r.billsTotal) + toCents(r.goalsTotal)),
+    payday: r.payday,
+  };
+}
+
 /**
  * Money to put toward goals this paycheck (never more than a goal still needs), in cents. Each goal follows its own
  * restaurant (funderOf): its paydays and plan. done: an amount is recorded for that restaurant's current check, so it is no
