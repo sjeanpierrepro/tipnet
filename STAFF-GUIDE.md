@@ -28,7 +28,7 @@ Grab your latest paystub. The first time, TipNet opens in **Setup**. (Moving fro
 - **Pay period started** and **Pay period ended** (the dates on the stub)
 - **Shifts you work in a pay period** (needed: one whole number, like 10 or "10 shifts". Your fixed deductions are split evenly over these shifts, so every night of a pay period carries the same share)
 - **You get paid** (every week, every two weeks, twice a month on calendar halves, every 15 days, once a month on the same day, or every 30 days; twice a month and once a month follow the calendar and set the end date for you)
-- **Payday for this pay period** (optional): the pay date on your stub. Budget uses it to work out how long until you are paid. Leave it blank if you are not sure.
+- **Payday for this pay period**: the pay date on your stub. It is needed, because TipNet and Budget use it to know when your money arrives. If your Setup row says **Add your payday**, open it and pick the date.
 - **Gross pay** (top-line gross, before anything comes out)
 
 **Step 2: Deductions**
@@ -97,6 +97,8 @@ To change it later, add a new one the same way and delete the old reminder in yo
 - **"Update available: Refresh"** means a new version is ready. Close any other TipNet windows or tabs, then tap **Refresh**. If your browser asks "Leave site?", choose **Leave**. Your nights are kept.
 - **It is an estimate,** not an exact paycheck.
 - **Tax questions?** Ask payroll or a tax professional. TipNet is not tax advice.
+
+At the bottom of **Pay periods**, **So far this pay period** adds up the nights you have logged in the pay period in progress (estimated take-home, cash you keep, what is on your check). With TipNet Budget, the **Budget goal** card shows what your bills and savings need before payday and whether you are short or ahead; type an amount under **Use my own goal** to use your own instead, and tap **Go back to my budget's goal** to clear it.
 
 ## 6. Budget (optional, paid)
 The Budget tab shows how much you can spend before your next payday, after bills and savings. With two establishments it counts both paychecks and shows whose check comes next; each goal asks **Save from which paycheck?** Add your bills (name, amount, day of the month), spending categories (like groceries) and goals. A new bill counts from the day you add it; if its due day already passed this month, TipNet asks **Already paid this month?** (ticked unless you untick it). Tick "Paid" when a bill is paid, and use "Log spending" when you buy something. Everything is an estimate. Budget is not part of the free app.
