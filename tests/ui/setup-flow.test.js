@@ -44,6 +44,7 @@ test("guided setup: step 2 needs a deduction amount or the no-deductions box; Fi
     page.tab('setup');
     const [start] = dateInputs(page);
     page.type(start, '2026-09-01');
+    page.type(dateInputs(page)[2], '2026-09-20');
     page.type(page.$('input[placeholder="e.g. 2,000"]', page.app), '1500');
     page.type(page.$('input[placeholder="e.g. 10"]', page.app), '10');
     next(page);
@@ -84,6 +85,7 @@ test('guided setup: "My paystub has no deductions" lets step 2 pass', async () =
   try {
     page.tab('setup');
     page.type(dateInputs(page)[0], '2026-09-01');
+    page.type(dateInputs(page)[2], '2026-09-20');
     page.type(page.$('input[placeholder="e.g. 2,000"]', page.app), '1500');
     page.type(page.$('input[placeholder="e.g. 10"]', page.app), '10');
     next(page);
@@ -111,6 +113,7 @@ test('guided setup: after Finish, Tonight estimates use the typed numbers', asyn
     const example = page.$('.result .hero').textContent;
     page.tab('setup');
     page.type(dateInputs(page)[0], '2026-09-01');
+    page.type(dateInputs(page)[2], '2026-09-20');
     page.type(page.$('input[placeholder="e.g. 2,000"]', page.app), '1000');
     page.type(page.$('input[placeholder="e.g. 10"]', page.app), '10');
     next(page);
@@ -157,6 +160,7 @@ test('guided setup: Skip swaps the example paystub for a blank one, and Tonight 
     assert.equal(page.$('#wp-row-w1').getAttribute('aria-expanded'), 'true', 'open again');
     const [start] = dateInputs(page);
     page.type(start, '2026-01-01');
+    page.type(dateInputs(page)[2], '2026-01-20');
     page.type(page.must(page.$('#pr-p1'), 'main rate'), '12');
     const gross = page.byText('.field', 'Gross pay', page.app).querySelector('input');
     page.type(gross, '1800');
@@ -223,6 +227,7 @@ test('Skip: without a pay period start date TipNet is not set up, Setup asks for
     );
     assert.match(page.text(), /Still needed: your pay period start date/, 'lands on Setup');
     page.type(dateInputs(page)[0], '2026-09-01');
+    page.type(dateInputs(page)[2], '2026-09-20');
     page.type(page.must(page.$('#pr-p1'), 'main rate'), '12');
     page.type(page.byText('.field', 'Gross pay', page.app).querySelector('input'), '1800');
     page.click(page.$('#no-ded'));
@@ -388,6 +393,7 @@ test('guided setup: ticking the tip-out box shows no error until the amount is l
   try {
     page.tab('setup');
     page.type(dateInputs(page)[0], '2026-09-01');
+    page.type(dateInputs(page)[2], '2026-09-20');
     page.type(page.$('input[placeholder="e.g. 2,000"]', page.app), '1500');
     page.type(page.$('input[placeholder="e.g. 10"]', page.app), '10');
     next(page);
@@ -420,6 +426,7 @@ for (const saw of [true, false])
         }
         page.tab('setup');
         page.type(dateInputs(page)[0], '2026-09-01');
+        page.type(dateInputs(page)[2], '2026-09-20');
         page.type(page.$('input[placeholder="e.g. 2,000"]', page.app), '1500');
         page.type(page.$('input[placeholder="e.g. 10"]', page.app), '10');
         next(page);

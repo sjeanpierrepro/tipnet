@@ -227,6 +227,7 @@ test('Setup and guided setup have no entry-mode choice any more', async () => {
   const g = await boot();
   try {
     g.type(g.$$('input[type=date]', g.app)[0], '2026-09-01');
+    g.type(g.$$('input[type=date]', g.app)[2], '2026-09-20');
     g.type(g.$('input[placeholder="e.g. 2,000"]', g.app), '1500');
     g.type(g.$('input[placeholder="e.g. 10"]', g.app), '10');
     g.click(g.button('Next'));

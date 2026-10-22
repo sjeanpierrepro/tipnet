@@ -508,8 +508,7 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
   fShifts.append(autoNote);
   const fFreq = field('You get paid', freq);
   const fDelay = field('Payday for this pay period', delay, {
-    optional: true,
-    hint: 'The pay date printed on your paystub for these dates. Leave blank if you’re not sure.',
+    hint: 'The pay date printed on your paystub for these dates. TipNet needs it to know when your money arrives.',
   });
   const freqNote = el('p', { class: 'hint', hidden: true });
   fFreq.append(freqNote);
@@ -545,7 +544,9 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
       if (!(d >= 0)) de = 'Payday can’t be before the pay period ends.';
       else if (d > 21) de = 'Payday is more than 21 days after the pay period ends. Check the date.';
     }
-    fDelay.setError(de);
+    // required: a blank box says so once it was left (or on Next / Save)
+    if (de) fDelay.setError(de);
+    else ctx.gate(fDelay, delay.value ? '' : PAYDAY_NEEDED);
     // A typo's message is its box's own (guard): after a pause in typing, or at once on Next / Finish (card.validate).
     // a blank box says so once it was left (or on Next / Save); a count that isn't whole says so at once
     if (!shiftsTypo(shifts.value)) {
@@ -631,10 +632,11 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
     ctx.touch(false);
   });
   delay.addEventListener('input', () => {
-    if (!delay.value) delete p.payDelay;
-    else if (p.periodStart) {
+    // out of range or blank: shown as an error, and nothing stays stored that the box does not show
+    delete p.payDelay;
+    if (delay.value && p.periodStart) {
       const d = dayDiff(periodEndOf(), delay.value);
-      if (d >= 0 && d <= 21) p.payDelay = d; // out of range: shown as an error, not saved
+      if (d >= 0 && d <= 21) p.payDelay = d;
     }
     ctx.touch(false);
   });
@@ -644,6 +646,7 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
   });
   [
     [start, fStart],
+    [delay, fDelay],
     [shifts, fShifts],
     [gross, fGross],
   ].forEach(([i, f]) =>
@@ -681,13 +684,15 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
       Number.isFinite(parseISO(start.value)) &&
       moneyOf(gross.value) > 0 &&
       !moneyTypo(gross.value) &&
+      !fDelay.hasAttribute('data-invalid') &&
+      hasPayday(p) &&
       !shiftsTypo(shifts.value) &&
       !shiftsProblem(shifts.value, avg0) &&
       !fEnd.hasAttribute('data-invalid')
     );
   };
   card.firstInvalid = () =>
-    [start, end, shifts, gross].find((i) => i.getAttribute('aria-invalid') === 'true');
+    [start, end, delay, shifts, gross].find((i) => i.getAttribute('aria-invalid') === 'true');
   return card;
 }
 
@@ -2518,6 +2523,7 @@ function guidedGap(p, noDed) {
   if (
     !Number.isFinite(parseISO(p.periodStart)) ||
     !(len >= 1 && len <= 62) ||
+    !hasPayday(p) ||
     !(num(p.gross) > 0) ||
     !(setupShifts(p) > 0)
   )
@@ -2665,6 +2671,7 @@ function draftProblems(S, w, d) {
     if (!(len >= 1)) out.push('The end date has to be on or after the start date.');
     else if (len > 62) out.push('Pay periods are 62 days or shorter. Check the end date.');
   }
+  if (!hasPayday(p)) out.push(PAYDAY_NEEDED);
   if (!(num(p.gross) > 0)) out.push('Enter your gross pay.');
   if (!(setupShifts(p) > 0)) out.push('Enter how many shifts you work in a pay period (a whole number).');
   if ((p.deductions || []).some((x) => num(x.amount) < 0))
@@ -2801,6 +2808,10 @@ const FREQ_SHORT = {
 };
 const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const rateShort = (r) => (Math.round(r * 100) % 100 === 0 ? '$' + Math.round(r) : money(r));
+/** The payday is required: whole days after the pay period end, 0 to 21 (an old save without it keeps working, see budget.js payDelayOf). */
+const hasPayday = (p) => Number.isInteger(p.payDelay) && p.payDelay >= 0 && p.payDelay <= 21;
+const PAYDAY_NEEDED =
+  'Add your payday: the pay date on your paystub for this pay period. TipNet needs it to know when your money arrives.';
 /** One line under the restaurant's name, e.g. "Bartender $12/h · every two weeks · payday Fri". */
 function rowSummary(S, w) {
   if (!isWorkplaceSetUp(S, w)) {
@@ -2823,6 +2834,7 @@ function rowSummary(S, w) {
     );
   }
   parts.push(FREQ_SHORT[p.freq] || 'every ' + num(p.freq) + ' days');
+  if (!hasPayday(p)) parts.push('Add your payday');
   // the payday's weekday, when it is the same every pay period
   if (p.payDelay != null && Number.isFinite(parseISO(p.periodStart))) {
     const d0 = addDays(periodRange(p, 0).end, p.payDelay);

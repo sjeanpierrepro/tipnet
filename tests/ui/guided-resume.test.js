@@ -17,6 +17,7 @@ const v37Draft = (step) => {
       freq: 14,
       periodStart: addDays(todayISO(), -3),
       periodEnd: '',
+      payDelay: 1,
       shifts: 0,
       gross: 1600,
       rateOverride: null,

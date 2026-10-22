@@ -21,6 +21,7 @@ const twoState = (mutate) =>
     p.freq = 'semimonthly';
     p.periodStart = addDays(today, -20);
     p.periodEnd = '';
+    p.payDelay = 1;
     p.payTypes = [{ id: 'p1', k: 'server', name: 'Server', rate: 8, unit: 'hr', usual: 0 }];
     p.tipout = { on: false, mode: 'pct', value: 0, basis: 'before', from: 'cash' };
     S.workplaces.push({ id: 'w2', name: 'Second Spot', profile: p, calib: [], setupDone: true });
@@ -87,6 +88,7 @@ test('setup: the guided flow for a second establishment fills in its own paystub
     page.click(page.button('Start setup'));
     const first = JSON.stringify(page.state().workplaces[0].profile);
     page.type(page.$$('input[type=date]', page.app)[0], '2026-09-01');
+    page.type(page.$$('input[type=date]', page.app)[2], '2026-09-20');
     const freq = page.$('select', page.app);
     freq.value = 'semimonthly';
     page.change(freq);

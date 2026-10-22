@@ -15,6 +15,7 @@ const two = (mutate) =>
     const w2 = JSON.parse(JSON.stringify(S.workplaces[0]));
     w2.id = 'w2';
     w2.name = 'Second Spot';
+    delete S.workplaces[0].profile.payDelay; // an old save without a payday: its row asks for one
     w2.profile.payTypes[0].rate = 15;
     w2.profile.payDelay = 6;
     S.workplaces.push(w2);
@@ -40,7 +41,7 @@ test('setup rows: after setup each establishment is one closed row with a summar
     assert.equal(page.$('#wp-name'), null, 'no editable cards until a row is opened');
     assert.equal(page.$('#draft-save'), null);
     const sum = (id) => page.text(row(page, id).querySelector('.fold-sum'));
-    assert.equal(sum('w1'), 'Bartender $12/h · every two weeks');
+    assert.equal(sum('w1'), 'Bartender $12/h · every two weeks · Add your payday');
     assert.match(sum('w2'), /^Bartender \$15\/h · every two weeks · payday (Mon|Tue|Wed|Thu|Fri|Sat|Sun)$/);
     assert.equal(row(page, 'w1').closest('h2').tagName, 'H2', 'each row is a heading with a button');
     for (const k of ['cutoff', 'theme', 'install', 'backup', 'privacy']) {

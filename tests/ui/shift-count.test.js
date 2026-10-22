@@ -149,6 +149,7 @@ test('guided setup: step 1 needs the shifts you work in a pay period', async () 
   try {
     page.tab('setup');
     page.type(page.$$('input[type=date]', page.app)[0], '2026-09-01');
+    page.type(page.$$('input[type=date]', page.app)[2], '2026-09-20');
     page.type(page.$('input[placeholder="e.g. 2,000"]', page.app), '1500');
     page.click(page.button('Next'));
     assert.doesNotMatch(page.text(), /Add a row for each line in the deductions/, 'still on step 1');

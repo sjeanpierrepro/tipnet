@@ -9,6 +9,7 @@ const stepNow = (page) => {
 };
 const fillStep0 = (page) => {
   page.type(page.$$('input[type=date]', page.app)[0], '2026-09-01');
+  page.type(page.$$('input[type=date]', page.app)[2], '2026-09-20');
   page.type(page.must(page.$('input[placeholder="e.g. 2,000"]', page.app), 'gross'), '900');
   page.type(page.$('input[placeholder="e.g. 10"]', page.app), '10');
 };
