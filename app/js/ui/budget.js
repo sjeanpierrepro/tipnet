@@ -962,7 +962,7 @@ function nextCheckCard(S, r0, src) {
               ' check, ' +
               fmtDate(k.date) +
               ' (' +
-              loggedCheckLine(k.nights, k.state, k.logged).replace(/\.$/, '') +
+              lowerFirst(loggedCheckLine(k.nights, k.state, k.logged)) +
               ')',
             money(k.amount),
           ),
