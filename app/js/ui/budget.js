@@ -1736,9 +1736,12 @@ function asideBreakdown(pa, many = false) {
       money(pa.check),
     ),
   ];
-  if (pa.paycheck != null && pa.cash > 0) {
+  // Its parts, the same as Pay periods shows them; they add up to the take-home above to the cent.
+  if (pa.paycheck != null && (pa.cash > 0 || pa.noCash > 0 || pa.setAside > 0)) {
     rows.push(row('   Check', money(pa.paycheck), 'hint'));
     rows.push(row('   Cash you keep', money(pa.cash), 'hint'));
+    if (pa.noCash > 0) rows.push(row('   Nights with no cash entered', money(pa.noCash), 'hint'));
+    if (pa.setAside > 0) rows.push(row('   Taxes to set aside on cash', '−' + money(pa.setAside), 'hint'));
   }
   if (many) {
     rows.push(row('Your other establishments, logged this pay period', '+' + money(pa.otherChecks)));

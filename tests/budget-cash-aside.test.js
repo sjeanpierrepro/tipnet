@@ -34,7 +34,7 @@ const rentAndFood = () => ({
 
 test('mostly-cash nights: the logged take-home is check + cash kept, not the small check', () => {
   const th = B.loggedTakeHome(P(), cashNights(), TODAY);
-  assert.deepEqual(th, { amount: 2440.5, from: 'logged', check: 240.5, cash: 2200 });
+  assert.deepEqual(th, { amount: 2440.5, from: 'logged', check: 240.5, cash: 2200, noCash: 0, setAside: 0 });
 });
 
 test('mostly-cash nights (review repro): there is real room to put aside', () => {
@@ -103,4 +103,31 @@ test('after payday: future cash tips are not counted, only the check from the lo
         r.after.categoriesTotal,
     ),
   );
+});
+
+test('the take-home split equals Pay periods: check and cash as periodTotals, a no-cash night and taxes on cash shown apart', () => {
+  const p = P();
+  const nights = [
+    { id: 'a', date: '2026-09-22', total: 300, cash: 120, pay: {}, barback: false },
+    { id: 'b', date: '2026-09-23', total: 280, cash: '', pay: {}, barback: false }, // no cash entered
+    { id: 'c', date: '2026-09-24', total: 250, cash: 150, pay: {}, barback: false, cashOffPayroll: true },
+  ];
+  const t = M.periodTotals(p, nights, 0, TODAY);
+  assert.ok(t.setAside > 0, 'the off-payroll night has taxes to set aside');
+  const th = B.loggedTakeHome(p, nights, TODAY);
+  assert.equal(th.check, t.chk, 'Check = On your check so far');
+  assert.equal(th.cash, t.cash, 'Cash you keep = Cash you keep so far');
+  assert.equal(th.setAside, t.setAside);
+  const noCashNight = M.computeNight(nights[1], p, M.shiftsPerPeriod(p, nights, TODAY, 0).n).net;
+  assert.equal(th.noCash, noCashNight, 'the no-cash night is its own line, not counted as cash');
+  // the rows add up to the amount the room math uses, to the cent
+  assert.equal(
+    M.toCents(th.check) + M.toCents(th.cash) + M.toCents(th.noCash) - M.toCents(th.setAside),
+    M.toCents(th.amount),
+  );
+  assert.equal(th.amount, M.round2(t.net - t.setAside));
+  const pa = B.possibleAside(B.emptyBudget(), p, nights, TODAY);
+  assert.equal(pa.cash, t.cash);
+  assert.equal(pa.noCash, th.noCash);
+  assert.equal(pa.setAside, t.setAside);
 });

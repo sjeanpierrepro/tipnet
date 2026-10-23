@@ -109,7 +109,7 @@ test('possibleAside: a finished period is never averaged; with nothing logged in
   assert.equal(pa.checkFrom, null);
   assert.equal(pa.check, 0);
   const th = B.loggedTakeHome(P(), nights(), later);
-  assert.deepEqual(th, { amount: null, from: null, check: null, cash: null });
+  assert.deepEqual(th, { amount: null, from: null, check: null, cash: null, noCash: null, setAside: null });
   // and with no slider range, so the amount is typed
   assert.deepEqual(B.asideRange(pa.possible, 500, pa.known), {
     capped: false,

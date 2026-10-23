@@ -92,6 +92,8 @@ test('goal planning with nothing logged asks for an amount instead of using a ty
     from: null,
     check: null,
     cash: null,
+    noCash: null,
+    setAside: null,
   });
   assert.deepEqual(B.asideRange(pa.possible, 500, pa.known), {
     capped: false,

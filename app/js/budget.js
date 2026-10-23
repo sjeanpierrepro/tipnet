@@ -861,21 +861,28 @@ export const funderOf = (goal, sources, today = todayISO()) =>
 /**
  * What the nights you logged this pay period bring home at one restaurant: the check plus the cash you keep (less the taxes
  * to set aside on cash that skipped payroll). Nothing is scaled up and no past periods are averaged.
- * {amount (null when no night is logged this pay period), from ('logged'|null), check (the check part, or null),
- *  cash (amount - check, never below 0; null when nothing is logged)}.
+ * {amount (null when no night is logged this pay period), from ('logged'|null), and its parts, the same as Pay periods
+ *  shows them (null when nothing is logged): check ("On your check so far"), cash ("Cash you keep so far"),
+ *  noCash (the take-home of nights with no cash entered, which have no check/cash split yet), setAside (the taxes to set
+ *  aside on cash that skipped payroll, taken off)}. amount = check + cash + noCash - setAside, to the cent.
  */
 export function loggedTakeHome(profile, nights, today = todayISO(), index) {
   return takeHomeOf(loggedIncome(profile, nights, today, index || indexNights(profile, nights)));
 }
 /** loggedTakeHome from a loggedIncome() result. */
 function takeHomeOf(inc) {
-  if (!inc.loggedNights) return { amount: null, from: null, check: null, cash: null };
+  if (!inc.loggedNights)
+    return { amount: null, from: null, check: null, cash: null, noCash: null, setAside: null };
   const amount = inc.keptSoFar;
   return {
     amount,
     from: 'logged',
     check: inc.checkSoFar,
-    cash: fromCents(Math.max(0, toCents(amount) - toCents(inc.checkSoFar))),
+    cash: inc.cashSoFar,
+    noCash: fromCents(
+      toCents(amount) + toCents(inc.setAsideSoFar) - toCents(inc.checkSoFar) - toCents(inc.cashSoFar),
+    ),
+    setAside: inc.setAsideSoFar,
   };
 }
 const lenNow = (profile, today) => periodLength(profile, periodIndex(profile, today));
@@ -911,7 +918,7 @@ export const roundUpStep = (v, step = ASIDE_STEP) =>
  * opts.excludeId leaves one goal out (the one being made or edited). opts.index: indexNights() of profile/nights.
  * (The cap uses take-home + other income, not the paycheck alone: cash tips you keep are money you can put aside.)
  * Returns {known (false when TipNet can't tell what this restaurant brings home yet), possible, check (the take-home logged
- *  this pay period: check + cash kept), checkFrom ('logged'|null), paycheck (its check part, or null), cash (its cash part, or null),
+ *  this pay period: check + cash kept), checkFrom ('logged'|null), paycheck, cash, noCash, setAside (its parts, see loggedTakeHome; null when unknown),
  *  otherChecks, otherChecksList:[{id,name,amount,known,logged (as logged, or null),days (its pay period's),shared (amount is logged x periodDays / days)}], other, bills, spending, goals, periodDays, funderId, funderName,
  *  goalList:[{id,name,amount}]}. When not known, possible is 0 and the pieces are still worked out.
  */
@@ -972,6 +979,8 @@ export function possibleAside(budget, profile, nights, today = todayISO(), opts 
     checkFrom: tc.from,
     paycheck: tc.check,
     cash: tc.cash,
+    noCash: tc.noCash,
+    setAside: tc.setAside,
     otherChecks: fromCents(othersC),
     otherChecksList: others.map((o) => ({
       id: o.id,
