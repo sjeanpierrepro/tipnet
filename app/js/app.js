@@ -177,7 +177,7 @@ function render() {
         const nudge = (current === 'tonight' && nightsBackupCard()) || backupReminder();
         if (nudge) root.prepend(nudge);
         // The one-time "hide the explanations?" card waits while a backup card shows (the backup card wins).
-        else if (current === 'tonight' && !setup.guidedOnScreen()) {
+        else if (current === 'tonight') {
           const ask = explainPromptCard();
           if (ask) root.prepend(ask);
         }

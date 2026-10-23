@@ -8,6 +8,7 @@ All the numbers stay on your phone or computer. Your bar cannot see them. No acc
 
 - **Record your shift**: Type your **CC tips** and **Cash tips** (before tip-outs) and your hours; TipNet adds your hourly pay and takes out your tip-outs. Both boxes are needed: type 0 if you had none. Nights saved by earlier versions keep their numbers.
 - **Start with your paystub**: A new install opens in Setup. Tonight and Pay periods show no numbers until setup is done (or a backup is restored), so no estimate is ever based on example taxes. "See an example first" shows made-up numbers, clearly marked.
+- **Hide the explanations**: Once you know your way around, Setup > **Explanations** > **Hide** keeps the screens short. Each how-it-works line leaves a small ⓘ you can tap to read just that one; errors, warnings and all your numbers always stay. After 10 saved nights Tonight offers it once.
 - **Save to iCloud or Google Drive**: Where your phone allows it, a button next to **Save a backup file** opens the share menu so you can keep the backup in iCloud Drive (Save to Files) or Google Drive.
 - **See your split**: Find out instantly how much is cash in hand and how much hits your check.
 - **Set up once**: Tell TipNet about your pay schedule (weekly, every two weeks, twice a month, or monthly), your gross pay, your deductions (taxes, health insurance, etc.) and how many shifts you work in a pay period. Every night follows that Setup; a finished pay period keeps the numbers it was paid with.
