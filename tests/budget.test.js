@@ -334,7 +334,11 @@ test('between period end and payday: the check is the logged nights only, never 
   const u = B.safeToSpend(B.emptyBudget(), p, none, today).after;
   assert.equal(u.checksTotal, 0);
   assert.equal(u.checkNights, 0);
-  assert.equal(B.loggedCheckLine(u.checkNights, u.checkState), 'No nights logged for this check yet.');
+  assert.equal(u.checkLogged, none.filter((n) => M.periodIndex(p, n.date) === 0).length);
+  assert.equal(
+    B.loggedCheckLine(u.checkNights, u.checkState, u.checkLogged),
+    'No cash in hand entered for this check’s nights yet.',
+  );
   assert.equal(u.left, 0);
 });
 

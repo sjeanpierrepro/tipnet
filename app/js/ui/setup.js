@@ -2098,7 +2098,7 @@ function showName(w) {
     hint.textContent =
       'The paystub, jobs and tip-out below are for ' +
       w.name +
-      '. Late nights, appearance and backups are shared by all your establishments.';
+      '. Late nights, appearance, explanations and backups are shared by all your establishments.';
   const rm = document.getElementById('wp-remove');
   if (rm && !rm.hasAttribute('data-armed')) rm.textContent = 'Remove ' + w.name;
 }
