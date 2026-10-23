@@ -841,17 +841,17 @@ function heroCard(S, r0, src) {
 
 /** loggedCheckLine inside a row: lower-case first letter, no closing full stop. */
 const lowerFirst = (s) => s.charAt(0).toLowerCase() + s.slice(1).replace(/\.$/, '');
+/** loggedCheckLine on its own line: capital first letter. */
+const upperFirst = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 /** The next check from each restaurant (not counted in Safe to spend until it arrives). */
 function nextChecksRows(r) {
   return [
     row('Next checks (counted once they arrive, from logged nights)', ''),
-    ...r.sources.map((s) =>
-      row(
-        '   ' + s.name + ', ' + fmtDate(s.payday),
-        money(s.check) + ', ' + lowerFirst(loggedCheckLine(s.checkNights, s.checkState, s.checkLogged)),
-        'hint',
-      ),
-    ),
+    // the amount in the value column; what it is made from on a small line under it
+    ...r.sources.flatMap((s) => [
+      row('   ' + s.name + ', ' + fmtDate(s.payday), money(s.check), 'hint'),
+      row('      ' + upperFirst(loggedCheckLine(s.checkNights, s.checkState, s.checkLogged)), '', 'hint'),
+    ]),
   ];
 }
 function breakdown(S, r, many = false) {
