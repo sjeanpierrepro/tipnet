@@ -27,6 +27,7 @@ import {
   nightTipout,
   toCents,
   fromCents,
+  dayDiff,
 } from '../math.js';
 import { businessDate, cutoffFromSettings, moneyTypo, readMoney } from '../inputs.js';
 import { autoGoal } from '../budget.js';
@@ -1485,7 +1486,11 @@ function goalCard(S, today, lines) {
   }
   if (!auto || !Number.isFinite(toCents(auto.amount))) return null;
   const madeC = lines.reduce((s, l) => s + toCents(l.t.net), 0);
-  const remaining = lines.reduce((s, l) => s + Math.max(0, l.shifts - l.nights), 0);
+  // Shifts still to work: Setup's count minus nights logged, never more than the days left in that pay period.
+  const remaining = lines.reduce((s, l) => {
+    const daysLeft = Math.max(0, dayDiff(today, periodRange(l.w.profile, l.idx).end) + 1);
+    return s + Math.min(daysLeft, Math.max(0, l.shifts - l.nights));
+  }, 0);
   const host = el('div', { class: 'stack-sm', 'aria-live': 'polite' });
   const own = el('input', {
     type: 'text',
@@ -1525,7 +1530,12 @@ function goalCard(S, today, lines) {
         el(
           'p',
           { class: 'hint', id: 'goal-breakdown' },
-          'bills due before payday ' + money(auto.bills) + ' + savings ' + money(auto.goals),
+          'bills due before payday (' +
+            fmtDate(auto.payday) +
+            ') ' +
+            money(auto.bills) +
+            ' + savings ' +
+            money(auto.goals),
         ),
       );
     }

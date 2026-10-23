@@ -121,7 +121,10 @@ test('goal card: automatic goal from bills before payday and savings, short by, 
     page.tab('periods');
     const net = Math.round(periodNums(page.state(), 'w1').net * 100);
     assert.equal(text(page, '#goal-line'), 'Goal: $2,050.00 (from your budget)');
-    assert.equal(text(page, '#goal-breakdown'), 'bills due before payday $2,000.00 + savings $50.00');
+    assert.match(
+      text(page, '#goal-breakdown'),
+      /^bills due before payday \([A-Z][a-z]{2}, [A-Z][a-z]{2} \d+\) \$2,000\.00 \+ savings \$50\.00$/,
+    );
     assert.equal(money(text(page, '#goal-made').replace('Made so far:', '')), net, 'matches the card above');
     assert.equal(text(page, '#goal-result'), 'Short by ' + usd(205000 - net));
     // 10 shifts a pay period, 3 nights logged: 7 left

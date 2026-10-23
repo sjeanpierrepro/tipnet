@@ -484,6 +484,20 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
       ? ''
       : addDays(periodEndOf(), p.payDelay);
   const delay = el('input', { type: 'date', value: paydayValue() });
+  // Stores the date in the payday box when it is in range (0-21 days after the period end); otherwise nothing.
+  const storePayday = () => {
+    delete p.payDelay;
+    if (delay.value && p.periodStart) {
+      const d = dayDiff(periodEndOf(), delay.value);
+      if (d >= 0 && d <= 21) p.payDelay = d;
+    }
+  };
+  // The dates or schedule changed: a stored payday keeps its place after the period end (the box follows it); a date
+  // typed but not stored yet (before the start date, or out of range) stays in the box and is stored once it fits.
+  const syncPayday = () => {
+    if (p.payDelay == null && delay.value) storePayday();
+    else delay.value = paydayValue();
+  };
   const fStart = field('Pay period started', start);
   const fEnd = field('Pay period ended', end, { optional: true });
   const fShifts = field('Shifts you work in a pay period', shifts, {
@@ -580,12 +594,12 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
       p.periodEnd = periodRange(p, 0).end;
       end.value = p.periodEnd;
     }
-    delay.value = paydayValue();
+    syncPayday();
     ctx.touch(false);
   });
   end.addEventListener('input', () => {
     p.periodEnd = Number.isFinite(parseISO(end.value)) ? end.value : '';
-    delay.value = paydayValue();
+    syncPayday();
     ctx.touch(false);
   });
   // Twice a month / once a month follow the calendar: when the user finishes editing, snap the end date to the derived one.
@@ -593,7 +607,7 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
     if (calendarMode(p) && end.value) {
       p.periodEnd = periodRange(p, 0).end;
       end.value = p.periodEnd;
-      delay.value = paydayValue();
+      syncPayday();
       ctx.touch(false);
     }
   });
@@ -628,16 +642,12 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
       p.periodEnd = addDays(p.periodStart, p.freq - 1);
       end.value = p.periodEnd;
     }
-    delay.value = paydayValue();
+    syncPayday();
     ctx.touch(false);
   });
   delay.addEventListener('input', () => {
     // out of range or blank: shown as an error, and nothing stays stored that the box does not show
-    delete p.payDelay;
-    if (delay.value && p.periodStart) {
-      const d = dayDiff(periodEndOf(), delay.value);
-      if (d >= 0 && d <= 21) p.payDelay = d;
-    }
+    storePayday();
     ctx.touch(false);
   });
   onPause(ctx, gross, () => {
@@ -692,7 +702,7 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
     );
   };
   card.firstInvalid = () =>
-    [start, end, delay, shifts, gross].find((i) => i.getAttribute('aria-invalid') === 'true');
+    [start, end, shifts, delay, gross].find((i) => i.getAttribute('aria-invalid') === 'true');
   return card;
 }
 
