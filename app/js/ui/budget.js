@@ -1283,7 +1283,7 @@ function spendingCard(S) {
   return el(
     'section',
     { class: 'card stack' },
-    el('h2', { id: 'budget-spending-heading', tabindex: '-1' }, 'Spending'),
+    el('h2', null, 'Spending'),
     cats.length
       ? el('ul', { class: 'list' }, cats)
       : el(
@@ -2398,7 +2398,7 @@ function goalsCard(S) {
   return el(
     'section',
     { class: 'card stack' },
-    el('h2', { id: 'budget-goals-heading', tabindex: '-1' }, 'Savings goals'),
+    el('h2', null, 'Savings goals'),
     rows.length
       ? el('ul', { class: 'list' }, rows)
       : el(
