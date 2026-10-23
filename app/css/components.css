@@ -317,6 +317,18 @@ textarea {
   color: var(--bad);
   margin: 0;
 }
+/* An amount box with its "a month / a week" choice right next to it (Pay periods, Extra goal). */
+.amount-per {
+  display: flex;
+  gap: 8px;
+}
+.amount-per > input {
+  flex: 1 1 auto;
+}
+.field .amount-per > select {
+  flex: 0 0 auto;
+  width: auto;
+}
 select {
   appearance: none;
   -webkit-appearance: none;

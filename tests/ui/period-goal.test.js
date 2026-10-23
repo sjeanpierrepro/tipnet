@@ -2,7 +2,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { boot, realState } from './harness.js';
-import { addDays, todayISO, periodIndex, periodTotals, snapshotFor } from '../../app/js/math.js';
+import {
+  addDays,
+  dayDiff,
+  todayISO,
+  periodIndex,
+  periodTotals,
+  snapshotFor,
+  computeNight,
+} from '../../app/js/math.js';
 import { encodeBackup, decodeBackup } from '../../app/js/storage.js';
 
 const DEV = 'http://localhost/?unlock=dev';
@@ -115,22 +123,45 @@ test('So far this pay period: no night yet gives a calm line', async () => {
   }
 });
 
-test('goal card: automatic goal from bills before payday and savings, short by, and the per-night line', async () => {
+// The budget's needs in the fixtures: bills $2,000 + $77 a month; the Trip goal $50 a paycheck from a two-week job =
+// $50 x 26 / 12 = $108.33 a month. Needs $2,185.33 a month = $2,185.33 x 12 / 26 = $1,008.61 per two-week pay period.
+const NEEDS_MONTH_C = 200000 + 7700 + Math.round((5000 * 26) / 12);
+const NEEDS_PERIOD_C = Math.round((NEEDS_MONTH_C * 12) / 26);
+const monthOf = (iso) => iso.slice(0, 7);
+const daysLeftInMonth = () => {
+  const next = addDays(today.slice(0, 8) + '01', 32).slice(0, 8) + '01';
+  return dayDiff(today, addDays(next, -1)) + 1;
+};
+const select = (page, sel, value) => {
+  const s = page.must(page.$(sel), sel);
+  s.value = value;
+  page.change(s);
+};
+
+test('goal card: the budget needs a month, converted to the pay period; short by, and the per-night line', async () => {
+  assert.equal(NEEDS_PERIOD_C, 100861);
   const page = await boot({ url: DEV, seed: one(budgeted) });
   try {
     page.tab('periods');
     const net = Math.round(periodNums(page.state(), 'w1').net * 100);
-    assert.equal(text(page, '#goal-line'), 'Goal: $2,050.00 (from your budget)');
-    assert.match(
-      text(page, '#goal-breakdown'),
-      /^bills due before payday \([A-Z][a-z]{2}, [A-Z][a-z]{2} \d+\) \$2,000\.00 \+ savings \$50\.00$/,
+    assert.equal(text(page, '#goal-card-h'), 'Budget goal for this pay period');
+    assert.equal(
+      text(page, '#goal-line'),
+      'Your budget needs ' +
+        usd(NEEDS_MONTH_C) +
+        ' a month = ' +
+        usd(NEEDS_PERIOD_C) +
+        ' per two-week pay period.',
     );
-    assert.equal(money(text(page, '#goal-made').replace('Made so far:', '')), net, 'matches the card above');
-    assert.equal(text(page, '#goal-result'), 'Short by ' + usd(205000 - net));
-    // 10 shifts a pay period, 3 nights logged: 7 left
+    assert.equal(text(page, '#goal-breakdown'), 'bills $2,077.00 a month + savings goals $108.33 a month');
+    assert.equal(text(page, '#goal-made'), 'Made so far ' + usd(net) + ' (estimated take-home)');
+    assert.equal(text(page, '#goal-result'), 'Short by ' + usd(NEEDS_PERIOD_C - net));
+    // 10 shifts a pay period, 3 nights logged: 7 left (9 days left in the period, so the cap does not bind)
     assert.match(
       text(page, '#goal-pace'),
-      new RegExp('^About \\$' + ((205000 - net) / 100 / 7).toFixed(2) + ' a night over your next 7 shifts'),
+      new RegExp(
+        '^About \\$' + ((NEEDS_PERIOD_C - net) / 100 / 7).toFixed(2) + ' a night over your next 7 shifts',
+      ),
     );
   } finally {
     await page.close();
@@ -142,15 +173,19 @@ test('goal card: "$X extra" when made is over the goal, and no per-night line', 
     url: DEV,
     seed: one((S) => {
       budgeted(S);
-      S.budget.bills[0].amount = 10;
+      S.budget.bills = [S.budget.bills[0]];
+      S.budget.bills[0].amount = 26; // $26 a month = $12.00 per two-week pay period
       S.budget.goals = [];
     }),
   });
   try {
     page.tab('periods');
     const net = Math.round(periodNums(page.state(), 'w1').net * 100);
-    assert.equal(text(page, '#goal-line'), 'Goal: $10.00 (from your budget)');
-    assert.equal(text(page, '#goal-result'), '$' + ((net - 1000) / 100).toFixed(2) + ' extra');
+    assert.equal(
+      text(page, '#goal-line'),
+      'Your budget needs $26.00 a month = $12.00 per two-week pay period.',
+    );
+    assert.equal(text(page, '#goal-result'), usd(net - 1200) + ' extra');
     assert.equal(page.$('#goal-pace'), null);
   } finally {
     await page.close();
@@ -177,7 +212,7 @@ test('goal card: short with every shift already worked gives no per-night line',
   }
 });
 
-test('goal card: two establishments add their take-home, as Budget combines paychecks', async () => {
+test('goal card: two establishments on the same schedule add their take-home for the pay period', async () => {
   const page = await boot({
     url: DEV,
     seed: (() => {
@@ -190,7 +225,8 @@ test('goal card: two establishments add their take-home, as Budget combines payc
     page.tab('periods');
     const S = page.state();
     const net = Math.round((periodNums(S, 'w1').net + periodNums(S, 'w2').net) * 100);
-    assert.equal(money(text(page, '#goal-made').replace('Made so far:', '')), net);
+    assert.match(text(page, '#goal-line'), /per two-week pay period\.$/);
+    assert.equal(money(text(page, '#goal-made')), net);
     assert.equal(
       net,
       money(text(page, '#so-far-net-w1')) + money(text(page, '#so-far-net-w2')),
@@ -201,23 +237,110 @@ test('goal card: two establishments add their take-home, as Budget combines payc
   }
 });
 
-test('goal card: "Use my own goal" replaces the automatic goal, is stored in Budget, and going back clears it', async () => {
-  const page = await boot({ url: DEV, seed: one(budgeted) });
+/** w2 paid every week: the two schedules differ, so "All" shows the calendar month. */
+const mixed = () => {
+  const S = two();
+  budgeted(S);
+  const p2 = S.workplaces[1].profile;
+  p2.freq = 7;
+  p2.periodStart = addDays(today, -2);
+  p2.periodEnd = addDays(today, 4);
+  S.budget.goals[0].fundedBy = 'w1'; // saved from the two-week job, so the needs stay the same
+  return S;
+};
+
+test('goal card: "All" with different schedules shows this month, nights dated this month from every establishment', async () => {
+  const page = await boot({ url: DEV, seed: mixed() });
   try {
     page.tab('periods');
+    const S = page.state();
+    const m = monthOf(today);
+    let madeC = 0,
+      remaining = 0;
+    for (const w of S.workplaces) {
+      const mine = S.nights.filter((n) => n.workplaceId === w.id && monthOf(n.date) === m);
+      mine.forEach((n) => (madeC += Math.round(computeNight(n, w.profile, 10).net * 100)));
+      const perMonth = Math.round((10 * (w.profile.freq === 7 ? 52 : 26)) / 12);
+      remaining += Math.min(daysLeftInMonth(), Math.max(0, perMonth - mine.length));
+    }
+    assert.equal(text(page, '#goal-card-h'), 'Budget goal for this month');
+    assert.equal(text(page, '#goal-line'), 'This month: budget needs ' + usd(NEEDS_MONTH_C) + '.');
+    assert.equal(
+      text(page, '#goal-made'),
+      'Made so far ' + usd(madeC) + ' (nights dated this month, all establishments)',
+    );
+    const diff = NEEDS_MONTH_C - madeC;
+    assert.equal(text(page, '#goal-result'), diff > 0 ? 'Short by ' + usd(diff) : usd(-diff) + ' extra');
+    if (diff > 0 && remaining > 0)
+      assert.equal(
+        text(page, '#goal-pace'),
+        'About ' +
+          usd(Math.round(diff / remaining)) +
+          ' a night over your next ' +
+          (remaining === 1 ? 'shift' : remaining + ' shifts') +
+          ' this month (estimate).',
+      );
+    // the filter on one establishment: back to its own pay period
+    page.click(page.byText('button', 'Second Spot', page.$('#periods-filter') || page.app));
+    assert.equal(
+      text(page, '#goal-line'),
+      'Your budget needs ' +
+        usd(NEEDS_MONTH_C) +
+        ' a month = ' +
+        usd(Math.round((NEEDS_MONTH_C * 12) / 52)) +
+        ' per one-week pay period.',
+    );
+    assert.equal(money(text(page, '#goal-made')), Math.round(periodNums(page.state(), 'w2').net * 100));
+  } finally {
+    await page.close();
+  }
+});
+
+test('goal card: the extra goal is added on top, per month or per week, and never changes a Budget number', async () => {
+  const page = await boot({ url: DEV, seed: one(budgeted) });
+  try {
+    page.tab('budget');
+    const budgetBefore = page.text();
+    page.tab('periods');
     const net = Math.round(periodNums(page.state(), 'w1').net * 100);
-    const box = page.must(page.$('#goal-own'), 'own goal box');
-    assert.equal(page.$('#goal-back').hidden, true);
-    page.type(box, '1,000');
+    const box = page.must(page.$('#goal-extra'), 'extra goal box');
+    const per = page.must(page.$('#goal-extra-per'), 'per month / per week');
+    assert.equal(per.tagName, 'SELECT');
+    assert.equal(per.getAttribute('aria-label'), 'Extra goal: per month or per week');
+    assert.equal(per.value, 'month', 'a month by default');
+    assert.equal(page.$('#goal-extra-remove').hidden, true);
+    page.type(box, '200');
     page.change(box);
-    assert.equal(text(page, '#goal-line'), 'Goal: $1,000.00 (your own)');
-    assert.equal(page.$('#goal-breakdown'), null, 'the budget goal is not added on top');
-    assert.equal(text(page, '#goal-result'), 'Short by ' + usd(100000 - net));
-    assert.equal(page.state().budget.ownGoal, 1000);
-    page.click(page.$('#goal-back'));
-    assert.equal(page.state().budget.ownGoal, undefined, 'clearing removes it');
-    assert.equal(text(page, '#goal-line'), 'Goal: $2,050.00 (from your budget)');
-    assert.equal(page.$('#goal-own').value, '');
+    assert.deepEqual(page.state().budget.extraGoal, { amount: 200, per: 'month' });
+    // $200 a month x 12 / 26 = $92.31
+    assert.equal(text(page, '#goal-extra-line'), '+ extra $200.00 a month = $92.31 this pay period');
+    assert.equal(text(page, '#goal-result'), 'Short by ' + usd(NEEDS_PERIOD_C + 9231 - net));
+    // switching the unit keeps the amount: $200 a week x 52 / 26 = $400.00
+    select(page, '#goal-extra-per', 'week');
+    assert.deepEqual(page.state().budget.extraGoal, { amount: 200, per: 'week' });
+    assert.equal(page.$('#goal-extra').value, '200');
+    assert.equal(text(page, '#goal-extra-line'), '+ extra $200.00 a week = $400.00 this pay period');
+    assert.equal(text(page, '#goal-result'), 'Short by ' + usd(NEEDS_PERIOD_C + 40000 - net));
+    page.tab('budget');
+    assert.equal(page.text(), budgetBefore, 'the Budget tab is exactly the same');
+    page.tab('periods');
+    page.click(page.$('#goal-extra-remove'));
+    assert.equal(page.state().budget.extraGoal, undefined, 'removing clears it');
+    assert.equal(page.$('#goal-extra-line'), null);
+    assert.equal(page.$('#goal-extra').value, '');
+  } finally {
+    await page.close();
+  }
+});
+
+test('goal card: the extra goal in the month view is converted to the month', async () => {
+  const S = mixed();
+  S.budget.extraGoal = { amount: 100, per: 'week' };
+  const page = await boot({ url: DEV, seed: S });
+  try {
+    page.tab('periods');
+    // $100 a week x 52 / 12 = $433.33
+    assert.equal(text(page, '#goal-extra-line'), '+ extra $100.00 a week = $433.33 this month');
   } finally {
     await page.close();
   }
@@ -227,29 +350,32 @@ test('goal card: a money typo is refused and never stored', async () => {
   const page = await boot({ url: DEV, seed: one(budgeted) });
   try {
     page.tab('periods');
-    const box = page.must(page.$('#goal-own'), 'own goal box');
+    const box = page.must(page.$('#goal-extra'), 'extra goal box');
     page.type(box, '12abc');
     page.change(box);
-    assert.equal(page.state().budget.ownGoal, undefined);
+    assert.equal(page.state().budget.extraGoal, undefined);
     assert.match(page.text(page.app), /That isn’t an amount/);
-    assert.equal(text(page, '#goal-line'), 'Goal: $2,050.00 (from your budget)');
+    assert.equal(page.$('#goal-extra-line'), null);
   } finally {
     await page.close();
   }
 });
 
-test('goal card: the own goal survives a backup round trip', async () => {
-  const S = one(budgeted);
-  S.budget.ownGoal = 640.5;
-  const back = decodeBackup(encodeBackup(S));
-  assert.equal(back.budget.ownGoal, 640.5);
-  const page = await boot({ url: DEV, seed: back });
-  try {
-    page.tab('periods');
-    assert.equal(text(page, '#goal-line'), 'Goal: $640.50 (your own)');
-    assert.equal(page.$('#goal-own').value, '640.5');
-  } finally {
-    await page.close();
+test('goal card: the extra goal survives a backup round trip, with its unit', async () => {
+  for (const per of ['month', 'week']) {
+    const S = one(budgeted);
+    S.budget.extraGoal = { amount: 640.5, per };
+    const back = decodeBackup(encodeBackup(S));
+    assert.deepEqual(back.budget.extraGoal, { amount: 640.5, per });
+    const page = await boot({ url: DEV, seed: back });
+    try {
+      page.tab('periods');
+      assert.equal(page.$('#goal-extra').value, '640.5');
+      assert.equal(page.$('#goal-extra-per').value, per);
+      assert.match(text(page, '#goal-extra-line'), new RegExp('^\\+ extra \\$640\\.50 a ' + per + ' = '));
+    } finally {
+      await page.close();
+    }
   }
 });
 

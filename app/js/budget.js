@@ -42,6 +42,7 @@ import {
   todayISO,
   indexNights,
   periodLength,
+  calendarMode,
   computeNight,
   periodFixed,
   weekdayMon0,
@@ -346,10 +347,11 @@ export function migrateBudget(x, profile, today = todayISO()) {
   });
   const bal = cleanBalance(x.balance);
   if (bal) out.balance = bal;
-  // "Use my own goal" (Pay periods): an amount per pay period that replaces the goal worked out from bills and savings.
-  // Only a positive amount is kept; clearing it removes the field.
-  const own = cents(x.ownGoal);
-  if (own > 0) out.ownGoal = fromCents(own);
+  // "Extra goal" (Pay periods): {amount, per: 'month' | 'week'}, added on top of the budget's needs on that card only
+  // (no Budget number uses it). Only a positive amount is kept (anything else per counts as a month); clearing it removes it.
+  const eg = x.extraGoal && typeof x.extraGoal === 'object' ? x.extraGoal : null;
+  const extra = eg ? cents(eg.amount) : 0;
+  if (extra > 0) out.extraGoal = { amount: fromCents(extra), per: eg.per === 'week' ? 'week' : 'month' };
   return out;
 }
 
@@ -1018,18 +1020,59 @@ export function asideRange(possible, needed, known = true, step = ASIDE_STEP) {
 }
 
 /* ---------- safe to spend ---------- */
+/* ---------- Pay periods goal card: the budget's steady monthly needs ---------- */
 /**
- * The goal for the money coming in before the next payday, worked out the way safeToSpendAll does: the unpaid bills due
- * before that payday (billsTotal) plus the savings-goal money still to be set aside (goalsTotal). Nothing new is
- * counted. {bills, goals, amount (both added), payday}.
+ * Pay periods in a year for a pay schedule: 52 every week, 26 every two weeks, 24 twice a month, 12 once a month. Any other
+ * length of L days (from the dates or the frequency, as periodLength works it out): 364 / L, the same 52-week year, so
+ * 7 and 14 days give exactly 52 and 26.
  */
-export function autoGoal(budget, sources, today = todayISO()) {
-  const r = safeToSpendAll(budget, sources, today);
+export function periodsPerYear(profile, today = todayISO()) {
+  const mode = calendarMode(profile);
+  if (mode === 'semimonthly') return 24;
+  if (mode === 'monthly') return 12;
+  const len = periodLength(profile, periodIndex(profile, today));
+  return len > 0 ? 364 / len : 26;
+}
+/** A monthly amount (cents) spread evenly over one pay period of the profile: monthly x 12 / periods per year, to the cent. */
+export function perPeriodC(monthlyC, profile, today = todayISO()) {
+  return Math.round((monthlyC * 12) / periodsPerYear(profile, today));
+}
+/** A per-paycheck amount (cents) of the profile as a monthly amount: x periods per year / 12, to the cent. */
+export function monthlyFromPerPeriodC(perC, profile, today = todayISO()) {
+  return Math.round((perC * periodsPerYear(profile, today)) / 12);
+}
+/**
+ * The extra goal ({amount, per: 'month' | 'week'}) in cents: per pay period of the profile (a week x 52 / periods per
+ * year, a month x 12 / periods per year) or, with no profile, per month (a week x 52 / 12). 0 without one.
+ */
+export function extraGoalC(extra, profile = null, today = todayISO()) {
+  const c = extra && typeof extra === 'object' ? cents(extra.amount) : 0;
+  if (!c) return 0;
+  const perYear = extra.per === 'week' ? 52 : 12;
+  return Math.round((c * perYear) / (profile ? periodsPerYear(profile, today) : 12));
+}
+/**
+ * What the budget needs each month, at a steady pace (Pay periods goal card). Bills are monthly (each is due one day a
+ * month), so a bill counts its amount. Each savings goal not bought yet counts what it takes from each paycheck of its own
+ * restaurant (goalPerC: its per-paycheck amount, or a dated plan's, never more than it still needs) x that restaurant's
+ * pay periods per year / 12. Spending categories are not counted. sources: every restaurant (see below).
+ * {bills, goals, amount (both added), goalList:[{id, name, monthly}]}, in dollars.
+ */
+export function monthlyNeeds(budget, sources, today = todayISO()) {
+  const billsC = sumC(budget.bills || [], (b) => cents(b.amount));
+  const goalList = (budget.goals || [])
+    .filter((g) => !g.boughtAt)
+    .map((g) => {
+      const f = funderOf(g, sources, today);
+      const c = f ? monthlyFromPerPeriodC(goalPerC(g, f, today), f.profile, today) : 0;
+      return { id: g.id, name: g.name, monthlyC: c };
+    });
+  const goalsC = sumC(goalList, (g) => g.monthlyC);
   return {
-    bills: r.billsTotal,
-    goals: r.goalsTotal,
-    amount: fromCents(toCents(r.billsTotal) + toCents(r.goalsTotal)),
-    payday: r.payday,
+    bills: fromCents(billsC),
+    goals: fromCents(goalsC),
+    amount: fromCents(billsC + goalsC),
+    goalList: goalList.map((g) => ({ id: g.id, name: g.name, monthly: fromCents(g.monthlyC) })),
   };
 }
 

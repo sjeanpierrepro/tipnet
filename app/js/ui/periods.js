@@ -28,9 +28,11 @@ import {
   toCents,
   fromCents,
   dayDiff,
+  addDays,
+  periodLength,
 } from '../math.js';
 import { businessDate, cutoffFromSettings, moneyTypo, readMoney } from '../inputs.js';
-import { autoGoal } from '../budget.js';
+import { monthlyNeeds, periodsPerYear, perPeriodC, extraGoalC } from '../budget.js';
 import { BILLING, isUnlocked } from '../billing.js';
 import { openPreview, upgradeBtn } from './budget.js';
 import {
@@ -792,10 +794,18 @@ function updateControl(S, w, idx, ctx) {
  * the bottom), so they agree to the cent. {t: periodTotals, shifts: the shift count it was spread over}.
  */
 function totalsFor(w, idx, ctx) {
+  const { shifts } = shiftsOf(w, idx, ctx);
+  return { t: periodTotals(w.profile, ctx.nights, idx, ctx.today, shifts, ctx.index), shifts };
+}
+/** The shift count one pay period's nights are spread over (the same one its section uses). {shifts} */
+function shiftsOf(w, idx, ctx) {
   const p = w.profile;
-  const shifts =
-    ctx.base.source === 'default' ? shiftsPerPeriod(p, ctx.nights, ctx.today, idx, ctx.index).n : ctx.base.n;
-  return { t: periodTotals(p, ctx.nights, idx, ctx.today, shifts, ctx.index), shifts };
+  return {
+    shifts:
+      ctx.base.source === 'default'
+        ? shiftsPerPeriod(p, ctx.nights, ctx.today, idx, ctx.index).n
+        : ctx.base.n,
+  };
 }
 /** The shared look-ups for one establishment's periods (one pass over its nights). */
 function makeCtx(S, w, today, named) {
@@ -1391,15 +1401,16 @@ function soFarOf(S, list, ctxs, today, named) {
       const ctx = ctxs.get(w.id) || makeCtx(S, w, today, named);
       const idx = periodIndex(w.profile, today);
       const { t, shifts } = totalsFor(w, idx, ctx);
-      return { w, idx, t, shifts, nights: t.ns.length, all: ctx.nights };
+      return { w, idx, t, shifts, nights: t.ns.length, all: ctx.nights, ctx };
     });
 }
 function bottomCards(S, today, shownW, ctxs, named) {
   const shown = soFarOf(S, shownW, ctxs, today, named);
   if (!shown.length) return [];
   const cards = [soFarCard(shown, named)];
-  // The goal looks at every establishment that pays you (Budget's bills are paid from all of them).
-  const goal = goalCard(S, today, soFarOf(S, S.workplaces, ctxs, today, named));
+  // The goal compares the establishments shown (the filter) with the whole budget's needs; every establishment is listed so
+  // each savings goal is converted with its own restaurant's pay schedule.
+  const goal = goalCard(S, today, shown, soFarOf(S, S.workplaces, ctxs, today, named));
   if (goal) cards.push(goal);
   return cards;
 }
@@ -1444,7 +1455,7 @@ function soFarCard(lines, named) {
 }
 
 /** The Budget goal card: locked for free users, the real one for TipNet Budget; null when it cannot be worked out. */
-function goalCard(S, today, lines) {
+function goalCard(S, today, shown, all) {
   const heading = 'Budget goal for this pay period';
   if (!isUnlocked(S.settings.entitlement)) {
     return el(
@@ -1454,7 +1465,7 @@ function goalCard(S, today, lines) {
       el(
         'p',
         null,
-        'TipNet Budget shows what your bills and savings need before payday, and how close this pay period gets you.',
+        'TipNet Budget shows what your bills and savings need each month, and how close this pay period gets you.',
       ),
       el(
         'p',
@@ -1487,72 +1498,151 @@ function goalCard(S, today, lines) {
       ),
     );
   }
-  if (!lines.length) return null;
-  const sources = lines.map((l) => ({ id: l.w.id, name: l.w.name, profile: l.w.profile, nights: l.all }));
-  let auto;
+  if (!shown.length) return null;
+  const sources = all.map((l) => ({ id: l.w.id, name: l.w.name, profile: l.w.profile, nights: l.all }));
+  let needs;
   try {
-    auto = autoGoal(S.budget, sources, today);
+    needs = monthlyNeeds(S.budget, sources, today);
   } catch (e) {
     return null;
   }
-  if (!auto || !Number.isFinite(toCents(auto.amount))) return null;
-  const madeC = lines.reduce((s, l) => s + toCents(l.t.net), 0);
-  // Shifts still to work: Setup's count minus nights logged, never more than the days left in that pay period.
-  const remaining = lines.reduce((s, l) => {
-    const daysLeft = Math.max(0, dayDiff(today, periodRange(l.w.profile, l.idx).end) + 1);
-    return s + Math.min(daysLeft, Math.max(0, l.shifts - l.nights));
-  }, 0);
+  const needsMonthC = toCents(needs.amount);
+  if (!Number.isFinite(needsMonthC)) return null;
+  // One pay period when the establishments shown share it (one establishment, the filter on one, or the same schedule);
+  // otherwise the calendar month, so pay periods of different lengths are never mixed.
+  const p0 = shown[0].w.profile;
+  const r0 = periodRange(p0, shown[0].idx);
+  const ppy0 = periodsPerYear(p0, today);
+  const sameWindow = shown.every((l) => {
+    const r = periodRange(l.w.profile, l.idx);
+    return r.start === r0.start && r.end === r0.end && periodsPerYear(l.w.profile, today) === ppy0;
+  });
+  const month = !sameWindow;
+  const monthStart = today.slice(0, 8) + '01';
+  const monthEnd = addDays(addDays(monthStart, 32).slice(0, 8) + '01', -1);
+  // Made so far: this pay period's take-home (the cards above), or the nights dated this month as each night row shows them.
+  let madeC = 0,
+    remaining = 0;
+  if (!month) {
+    madeC = shown.reduce((s, l) => s + toCents(l.t.net), 0);
+    // Shifts still to work: Setup's count minus nights logged, never more than the days left in that pay period.
+    remaining = shown.reduce((s, l) => {
+      const daysLeft = Math.max(0, dayDiff(today, periodRange(l.w.profile, l.idx).end) + 1);
+      return s + Math.min(daysLeft, Math.max(0, l.shifts - l.nights));
+    }, 0);
+  } else {
+    const daysLeft = dayDiff(today, monthEnd) + 1;
+    shown.forEach((l) => {
+      const p = l.w.profile;
+      let count = 0;
+      l.ctx.index.forEach((list, idx) => {
+        const inMonth = list.filter((n) => n.date >= monthStart && n.date <= monthEnd);
+        if (!inMonth.length) return;
+        const { shifts } = shiftsOf(l.w, idx, l.ctx);
+        inMonth.forEach((n) => (madeC += toCents(computeNight(n, p, shifts).net)));
+        count += inMonth.length;
+      });
+      // Setup's shifts a pay period x pay periods a year / 12, less the nights logged this month, at most the days left
+      const perMonth = Math.round((l.ctx.base.n * periodsPerYear(p, today)) / 12);
+      remaining += Math.min(daysLeft, Math.max(0, perMonth - count));
+    });
+  }
+  const periodWord = (ppy) =>
+    ppy === 52
+      ? 'one-week'
+      : ppy === 26
+        ? 'two-week'
+        : ppy === 24
+          ? 'half-month'
+          : ppy === 12
+            ? 'monthly'
+            : periodLength(p0, shown[0].idx) + '-day';
   const host = el('div', { class: 'stack-sm', 'aria-live': 'polite' });
-  const own = el('input', {
+  const eg0 = S.budget.extraGoal;
+  const box = el('input', {
     type: 'text',
     inputmode: 'decimal',
     autocomplete: 'off',
     spellcheck: 'false',
-    id: 'goal-own',
-    placeholder: 'Amount for this pay period',
-    value: S.budget.ownGoal ? String(S.budget.ownGoal) : '',
+    id: 'goal-extra',
+    placeholder: 'e.g. 200',
+    value: eg0 ? String(eg0.amount) : '',
   });
-  const f = field('Use my own goal', own, {
+  const unit = select(
+    [
+      ['month', 'a month'],
+      ['week', 'a week'],
+    ],
+    eg0 && eg0.per === 'week' ? 'week' : 'month',
+    { id: 'goal-extra-per', 'aria-label': 'Extra goal: per month or per week' },
+  );
+  const f = field('Extra goal', box, {
     optional: true,
-    hint: 'An amount for this pay period. It is used instead of the goal from your budget.',
+    hint: 'Added on top of what your budget needs, on this card only. It doesn’t change any Budget number.',
   });
-  const back = el(
+  // the amount box and its "a month / a week" choice side by side, in the field's place for the box
+  const row = el('div', { class: 'amount-per' });
+  box.replaceWith(row);
+  row.append(box, unit);
+  const remove = el(
     'button',
-    { type: 'button', class: 'btn-link', id: 'goal-back' },
-    'Go back to my budget’s goal',
+    { type: 'button', class: 'btn-link', id: 'goal-extra-remove' },
+    'Remove extra goal',
   );
   const draw = () => {
-    const mine = S.budget.ownGoal ? toCents(S.budget.ownGoal) : 0;
-    const goalC = mine || toCents(auto.amount);
+    const eg = S.budget.extraGoal || null;
+    const needC = month ? needsMonthC : perPeriodC(needsMonthC, p0, today);
+    const extraC = month ? extraGoalC(eg) : extraGoalC(eg, p0, today);
+    const goalC = needC + extraC;
     const kids = [];
-    if (mine)
-      kids.push(
-        el('p', { id: 'goal-line' }, el('strong', null, 'Goal: ' + money(fromCents(mine)) + ' (your own)')),
-      );
-    else {
+    kids.push(
+      el(
+        'p',
+        { id: 'goal-line' },
+        el(
+          'strong',
+          null,
+          month
+            ? 'This month: budget needs ' + money(fromCents(needsMonthC)) + '.'
+            : 'Your budget needs ' +
+                money(fromCents(needsMonthC)) +
+                ' a month = ' +
+                money(fromCents(needC)) +
+                ' per ' +
+                periodWord(ppy0) +
+                ' pay period.',
+        ),
+      ),
+    );
+    kids.push(
+      el(
+        'p',
+        { class: 'hint', id: 'goal-breakdown' },
+        'bills ' + money(needs.bills) + ' a month + savings goals ' + money(needs.goals) + ' a month',
+      ),
+    );
+    if (extraC > 0)
       kids.push(
         el(
           'p',
-          { id: 'goal-line' },
-          el('strong', null, 'Goal: ' + money(auto.amount) + ' (from your budget)'),
+          { id: 'goal-extra-line' },
+          '+ extra ' +
+            money(fromCents(toCents(eg.amount))) +
+            (eg.per === 'week' ? ' a week' : ' a month') +
+            ' = ' +
+            money(fromCents(extraC)) +
+            (month ? ' this month' : ' this pay period'),
         ),
       );
-      kids.push(
-        el(
-          'p',
-          { class: 'hint', id: 'goal-breakdown' },
-          'bills due before payday (' +
-            fmtDate(auto.payday) +
-            ') ' +
-            money(auto.bills) +
-            ' + savings ' +
-            money(auto.goals),
-        ),
-      );
-    }
     if (goalC > 0) {
       kids.push(
-        el('p', { id: 'goal-made' }, 'Made so far: ' + money(fromCents(madeC)) + ' (estimated take-home)'),
+        el(
+          'p',
+          { id: 'goal-made' },
+          'Made so far ' +
+            money(fromCents(madeC)) +
+            (month ? ' (nights dated this month, all establishments)' : ' (estimated take-home)'),
+        ),
       );
       const diff = goalC - madeC;
       kids.push(
@@ -1575,6 +1665,7 @@ function goalCard(S, today, lines) {
               money(fromCents(Math.round(diff / remaining))) +
               ' a night over your next ' +
               (remaining === 1 ? 'shift' : remaining + ' shifts') +
+              (month ? ' this month' : '') +
               ' (estimate).',
           ),
         );
@@ -1583,50 +1674,56 @@ function goalCard(S, today, lines) {
         el(
           'p',
           { class: 'hint', id: 'goal-none' },
-          'Your budget has no bills or savings due before your next payday. You can type your own goal below.',
+          'Your budget has no bills or savings goals yet. You can add an extra goal below.',
         ),
       );
     host.replaceChildren(...kids);
-    back.hidden = !mine;
+    remove.hidden = !eg;
   };
   const commit = () => {
-    if (moneyTypo(own.value)) return; // a typo is never saved; the last goal stays
-    const n = readMoney(own.value);
+    if (moneyTypo(box.value)) return; // a typo is never saved; the last goal stays
+    const n = readMoney(box.value);
     if (n !== null && n < 0) return f.setError('A goal can’t be negative.');
-    if (n === null || n === 0) delete S.budget.ownGoal;
-    else S.budget.ownGoal = fromCents(toCents(n));
+    if (n === null || n === 0) delete S.budget.extraGoal;
+    else
+      S.budget.extraGoal = { amount: fromCents(toCents(n)), per: unit.value === 'week' ? 'week' : 'month' };
     save();
     draw();
   };
   const later = debounce(commit, 400);
-  back.addEventListener('click', () => {
-    own.value = '';
+  remove.addEventListener('click', () => {
+    box.value = '';
     f.setError('');
     later.cancel();
     commit();
-    own.focus();
+    box.focus();
   });
-  own.addEventListener('input', () => {
+  box.addEventListener('input', () => {
     f.setError('');
-    flagTypo(own, f, moneyTypo, { now: false });
+    flagTypo(box, f, moneyTypo, { now: false });
     later();
   });
-  own.addEventListener('change', () => {
-    flagTypo(own, f, moneyTypo); // at once when the box is left
+  box.addEventListener('change', () => {
+    flagTypo(box, f, moneyTypo); // at once when the box is left
     later.flush();
+  });
+  // Switching the unit keeps the amount typed and only changes what it is per.
+  unit.addEventListener('change', () => {
+    later.cancel();
+    commit();
   });
   draw();
   return el(
     'section',
     { class: 'card stack', id: 'goal-card', 'aria-labelledby': 'goal-card-h' },
-    el('h2', { id: 'goal-card-h' }, heading),
+    el('h2', { id: 'goal-card-h' }, month ? 'Budget goal for this month' : 'Budget goal for this pay period'),
     host,
     f,
-    back,
+    remove,
     el(
       'p',
       { class: 'hint' },
-      'Estimated. Your budget’s goal is the bills due before payday plus the savings you planned for that time.',
+      'Estimated. What your budget needs is your bills plus the savings planned for your goals, each turned into a monthly amount, then spread evenly over the year.',
     ),
   );
 }
