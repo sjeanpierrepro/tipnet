@@ -73,4 +73,6 @@ Notes:
 - Keep the license-key benefit's device limit ("Limit activations") at 3. Never turn it off or leave it blank: TipNet unlocks a phone by activating the key on it, and Polar only allows activation on keys that have a device limit, so without one nobody could unlock Budget. The limit is also what stops one key being shared on many phones.
 - Polar is the merchant of record, like Lemon Squeezy. Customers find their key in the receipt email or in the portal above.
 - To go back to Lemon Squeezy, put the old `BILLING` block back. Keys from one provider never unlock under the other.
+- Switching providers locks every payer of the other provider: their Budget locks at its next daily check (their key is checked with the new provider, which does not know it). Only switch when nobody pays through the old one yet, or tell those payers first.
+- When you switch, also change the "Last updated" date at the top of `app/privacy.html` and `app/terms.html` to the day you switch, since their provider wording changes.
 - If a subscription is cancelled or refunded, Polar revokes the key and Budget locks at the next daily check (or after the 14-day offline grace if the phone is offline).

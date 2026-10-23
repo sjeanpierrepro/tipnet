@@ -1454,6 +1454,13 @@ function soFarCard(lines, named) {
   );
 }
 
+/** The extra goal typed but not saved yet (its 400 ms pause has not passed): the debounced save, or null. */
+let goalPending = null;
+/** The page is being hidden or closed (app.js, pagehide / visibilitychange): save a typed extra goal now. */
+export function flushEdits() {
+  if (goalPending) goalPending.flush();
+}
+
 /** The Budget goal card: locked for free users, the real one for TipNet Budget; null when it cannot be worked out. */
 function goalCard(S, today, shown, all) {
   const heading = 'Budget goal for this pay period';
@@ -1681,6 +1688,7 @@ function goalCard(S, today, shown, all) {
     remove.hidden = !eg;
   };
   const commit = () => {
+    if (goalPending === later) goalPending = null;
     if (moneyTypo(box.value)) return; // a typo is never saved; the last goal stays
     const n = readMoney(box.value);
     if (n !== null && n < 0) return f.setError('A goal can’t be negative.');
@@ -1701,6 +1709,7 @@ function goalCard(S, today, shown, all) {
   box.addEventListener('input', () => {
     f.setError('');
     flagTypo(box, f, moneyTypo, { now: false });
+    goalPending = later; // saved at once if the page is hidden or closed first (flushEdits)
     later();
   });
   box.addEventListener('change', () => {

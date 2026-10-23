@@ -363,11 +363,13 @@ async function boot() {
   });
   window.addEventListener('pagehide', () => {
     setup.flushEdits();
+    periods.flushEdits(); // an extra goal typed on Pay periods, still in its pause
     storage.flush();
   });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
       setup.flushEdits();
+      periods.flushEdits();
       storage.flush();
     } else if (storage.lockFinished()) render(); // back after a period boundary: lock it, then redraw
   });

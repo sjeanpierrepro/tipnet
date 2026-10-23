@@ -139,6 +139,9 @@ test('polarProvider validate: ok, revoked (404 or body), wrong benefit', async (
 test('polarProvider activate errors: not found, not permitted (revoked or device limit), bad request', async () => {
   const nf = await mk(reply(404, { error: 'ResourceNotFound', detail: 'Not found' })).activate('K');
   assert.match(nf.error, /not found/);
+  const odd = await mk(reply(404, { detail: 'Not Found' })).activate('K');
+  assert.equal(odd.ok, false);
+  assert.equal(odd.status, 'network', 'an odd 404 is a service problem, not "key not found"');
   const lim = await mk(reply(403, { error: 'NotPermitted', detail: 'x' })).activate('K');
   assert.equal(lim.ok, false);
   assert.match(lim.error, /most devices/);
@@ -181,6 +184,11 @@ test('network failure, 5xx, 429 and odd replies never lock a paying user (the 14
     reply(200, { unrelated: true }),
     reply(422, { detail: [] }),
     async () => ({ status: 200, json: async () => Promise.reject(new Error('not json')) }),
+    // a 404 that is not Polar's license-key not-found answer says nothing about the key
+    reply(404, { detail: 'Not Found' }), // a route that moved or is gone
+    reply(404, {}),
+    reply(404, { error: 'SomethingElse', detail: 'x' }),
+    async () => ({ status: 404, json: async () => Promise.reject(new Error('an HTML page')) }),
   ];
   for (const f of cases) {
     const p = mk(f);

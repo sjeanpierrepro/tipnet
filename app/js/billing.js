@@ -372,6 +372,9 @@ export function polarProvider(deps = {}) {
     if (!body || typeof body !== 'object') return unexpected;
     // Definite answers about the key. A 422 means our own request was malformed, which says nothing about the key:
     // it never locks anyone (on validate) and is just "did not work" on activate.
+    // A 404 is an answer about the key only in Polar's own not-found shape ({"error":"ResourceNotFound"}); any other
+    // 404 (a moved endpoint, a proxy or CDN page) says nothing about the key, so it never locks: the grace applies.
+    if (code === 404 && body.error !== 'ResourceNotFound') return unexpected;
     if (code === 404 && path === 'validate')
       return {
         ok: false,

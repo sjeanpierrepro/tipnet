@@ -73,7 +73,8 @@ test('monthly needs: bills a month + each savings goal at its own job’s pace',
   b.goals = [
     { id: 'g1', name: 'Trip', target: 1000, saved: 0, perPaycheck: 40, fundedBy: 'w' }, // weekly: 40 x 52 / 12
     { id: 'g2', name: 'Car', target: 500, saved: 0, perPaycheck: 50, fundedBy: 'b' }, // every two weeks: 50 x 26 / 12
-    { id: 'g3', name: 'Almost', target: 100, saved: 90, perPaycheck: 40, fundedBy: 'b' }, // only $10 left: 10 x 26 / 12
+    // only $10 left: the month counts $10.00, never 10 x 26 / 12 = $21.67 (it finishes within the month)
+    { id: 'g3', name: 'Almost', target: 100, saved: 90, perPaycheck: 40, fundedBy: 'b' },
     { id: 'g4', name: 'Bought', target: 100, saved: 0, perPaycheck: 40, boughtAt: '2026-10-01' },
     { id: 'g5', name: 'No pace', target: 100, saved: 0, perPaycheck: 0 },
   ];
@@ -84,12 +85,21 @@ test('monthly needs: bills a month + each savings goal at its own job’s pace',
     [
       ['g1', 173.33],
       ['g2', 108.33],
-      ['g3', 21.67],
+      ['g3', 10],
       ['g5', 0],
     ],
   );
-  assert.equal(n.goals, 303.33);
-  assert.equal(n.amount, 1568.83);
+  assert.equal(n.goals, 291.66);
+  assert.equal(n.amount, 1557.16);
+});
+
+test('monthly needs: $10 left at $40 a week counts $10.00 a month, not $43.33; per pay period follows', () => {
+  const b = emptyBudget();
+  b.goals = [{ id: 'g', name: 'Almost', target: 100, saved: 90, perPaycheck: 40, fundedBy: 'w' }];
+  const n = monthlyNeeds(b, [src('w', weekly)], TODAY);
+  assert.equal(n.goals, 10);
+  assert.equal(n.amount, 10);
+  assert.equal(perPeriodC(1000, weekly, TODAY), 231, '$10.00 x 12 / 52 = $2.31 a week');
 });
 
 test('extra goal storage: amount and unit kept, anything odd cleaned or dropped', () => {

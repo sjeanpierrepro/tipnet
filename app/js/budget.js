@@ -1055,7 +1055,8 @@ export function extraGoalC(extra, profile = null, today = todayISO()) {
  * What the budget needs each month, at a steady pace (Pay periods goal card). Bills are monthly (each is due one day a
  * month), so a bill counts its amount. Each savings goal not bought yet counts what it takes from each paycheck of its own
  * restaurant (goalPerC: its per-paycheck amount, or a dated plan's, never more than it still needs) x that restaurant's
- * pay periods per year / 12. Spending categories are not counted. sources: every restaurant (see below).
+ * pay periods per year / 12, and that monthly amount is never more than the goal still needs (a goal that finishes within
+ * the month counts only what is left). Spending categories are not counted. sources: every restaurant (see below).
  * {bills, goals, amount (both added), goalList:[{id, name, monthly}]}, in dollars.
  */
 export function monthlyNeeds(budget, sources, today = todayISO()) {
@@ -1064,7 +1065,8 @@ export function monthlyNeeds(budget, sources, today = todayISO()) {
     .filter((g) => !g.boughtAt)
     .map((g) => {
       const f = funderOf(g, sources, today);
-      const c = f ? monthlyFromPerPeriodC(goalPerC(g, f, today), f.profile, today) : 0;
+      const leftC = Math.max(0, cents(g.target) - cents(g.saved));
+      const c = f ? Math.min(monthlyFromPerPeriodC(goalPerC(g, f, today), f.profile, today), leftC) : 0;
       return { id: g.id, name: g.name, monthlyC: c };
     });
   const goalsC = sumC(goalList, (g) => g.monthlyC);

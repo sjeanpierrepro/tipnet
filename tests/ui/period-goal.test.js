@@ -406,3 +406,62 @@ test('goal card: nothing shown when it cannot be worked out (not set up yet)', a
     await page.close();
   }
 });
+
+/** A goal with $10 left, saved $40 a week: the month counts $10.00 (it finishes within the month), never $43.33. */
+const almostWeekly = (S, funder) => {
+  S.budget.goals = [{ id: 'g1', name: 'Almost', target: 100, saved: 90, perPaycheck: 40, fundedBy: funder }];
+};
+
+test('goal card: a goal that finishes within the month counts only what is left (pay period view)', async () => {
+  const page = await boot({
+    url: DEV,
+    seed: one((S) => {
+      budgeted(S);
+      const p = S.workplaces[0].profile;
+      Object.assign(p, { freq: 7, periodStart: addDays(today, -2), periodEnd: addDays(today, 4) });
+      almostWeekly(S, 'w1');
+    }),
+  });
+  try {
+    page.tab('periods');
+    // ($2,077.00 + $10.00) x 12 / 52 = $481.62
+    assert.equal(
+      text(page, '#goal-line'),
+      'Your budget needs $2,087.00 a month = $481.62 per one-week pay period.',
+    );
+    assert.equal(text(page, '#goal-breakdown'), 'bills $2,077.00 a month + savings goals $10.00 a month');
+  } finally {
+    await page.close();
+  }
+});
+
+test('goal card: a goal that finishes within the month counts only what is left (month view)', async () => {
+  const S = mixed();
+  almostWeekly(S, 'w2');
+  const page = await boot({ url: DEV, seed: S });
+  try {
+    page.tab('periods');
+    assert.equal(text(page, '#goal-line'), 'This month: budget needs $2,087.00.');
+  } finally {
+    await page.close();
+  }
+});
+
+test('goal card: an extra goal still in its pause is saved when the page is hidden or closed', async () => {
+  for (const how of ['pagehide', 'hidden']) {
+    const page = await boot({ url: DEV, seed: one(budgeted) });
+    try {
+      page.tab('periods');
+      page.type(page.must(page.$('#goal-extra'), 'extra goal box'), '75');
+      assert.equal(page.state().budget.extraGoal, undefined, 'still in its 400 ms pause');
+      if (how === 'pagehide') page.win.dispatchEvent(new page.win.Event('pagehide'));
+      else {
+        Object.defineProperty(page.doc, 'visibilityState', { value: 'hidden', configurable: true });
+        page.doc.dispatchEvent(new page.win.Event('visibilitychange'));
+      }
+      assert.deepEqual(page.state().budget.extraGoal, { amount: 75, per: 'month' }, how);
+    } finally {
+      await page.close();
+    }
+  }
+});
