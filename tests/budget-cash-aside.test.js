@@ -51,7 +51,7 @@ test('mostly-cash nights (review repro): there is real room to put aside', () =>
     capped: true,
     max: 1750,
     start: 1750,
-    disabled: false,
+    short: false,
   });
 });
 

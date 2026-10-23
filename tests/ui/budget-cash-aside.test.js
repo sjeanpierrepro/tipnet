@@ -1,4 +1,4 @@
-// Budget "Room to put aside" with mostly-cash nights, and a goal when the budget leaves nothing.
+// Budget "Room to put aside" with mostly-cash nights, and a goal when the logged pay does not cover the bills yet.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { boot, realState } from './harness.js';
@@ -74,22 +74,33 @@ test('after payday counts only the check from the logged nights, no future cash'
   }
 });
 
-test('nothing left to put aside: a goal can still be added at $0 a paycheck, and the form says why', async () => {
+test('logged pay that does not cover the bills yet: no slider, the amount is typed with no cap, and Budget shows the true result', async () => {
   const page = await boot({ url: DEV, seed: seed({ rent: 9000 }) });
   try {
     page.tab('budget');
     page.type(key(page, 'ef-goal-new-name'), 'Rainy day');
-    page.type(key(page, 'ef-goal-new-cost'), '500');
+    page.type(key(page, 'ef-goal-new-cost'), '5000');
+    const S = page.state();
+    assert.equal(possibleAside(S.budget, S.workplaces[0].profile, S.nights, todayISO()).possible, 0);
     const t = page.text(goalForm(page));
-    assert.match(t, /Your budget doesn’t leave anything to put aside/);
-    assert.match(t, /You can still add this goal at \$0 a paycheck and save when you can/);
-    assert.equal(key(page, 'ef-goal-new-slider').disabled, true, 'the slider stays capped');
+    assert.match(
+      t,
+      /Your logged pay so far doesn’t cover this pay period’s bills, spending and other goals yet, so TipNet can’t suggest an amount\. Type the amount you want to put aside\./,
+    );
+    assert.doesNotMatch(t, /Your budget doesn’t leave anything/);
+    assert.ok(key(page, 'ef-goal-new-slider').closest('[hidden]'), 'no slider');
+    assert.equal(key(page, 'ef-goal-new-per').disabled, false);
+    page.type(key(page, 'ef-goal-new-per'), '300');
+    assert.equal(key(page, 'ef-goal-new-per').value, '300', 'not capped');
+    assert.match(page.text(goalForm(page)), /\$300 a paycheck → about 17 paychecks/);
     page.click(page.button('Add goal', goalForm(page)));
     const g = page.state().budget.goals.find((x) => x.name === 'Rainy day');
-    assert.ok(g, 'goal saved at $0');
-    assert.equal(g.perPaycheck, 0);
-    assert.match(page.text(page.$('#toast')), /Saving when you can\./);
-    assert.match(page.text(), /Saving when you can: no set amount a paycheck yet\./);
+    assert.ok(g, 'goal saved');
+    assert.equal(g.perPaycheck, 300, 'saved as typed, not clamped to the room');
+    // Budget shows what is stored: the full $300 comes out after payday, and what is left can be below zero
+    const after = page.text(page.byText('section', 'After payday ('));
+    assert.match(after, /Savings goals−\$300\.00/);
+    assert.match(after, /What is left−\$/);
   } finally {
     await page.close();
   }

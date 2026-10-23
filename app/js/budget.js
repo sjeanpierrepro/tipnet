@@ -995,15 +995,17 @@ export function possibleAside(budget, profile, nights, today = todayISO(), opts 
 /**
  * The put-aside slider for one goal (owner rule: it only goes as high as the budget leaves).
  * max: what is possible each paycheck, rounded down to the $5 step. start: max, or less when a smaller amount finishes the
- * goal in one paycheck (that amount rounded up to the step, never above max). capped: false when income is not known yet
- * (then there is no slider; the amount is typed and marked an estimate). disabled: known, but nothing is left to put aside.
+ * goal in one paycheck (that amount rounded up to the step, never above max). capped: false when there is nothing to
+ * suggest from: then there is no slider and the amount is typed, with no cap. short: that is because the take-home logged
+ * so far does not cover the pay period's bills, spending and other goals yet (owner decision: let them type it), not
+ * because nothing is logged.
  */
 export function asideRange(possible, needed, known = true, step = ASIDE_STEP) {
-  if (!known) return { capped: false, max: null, start: null, disabled: false };
-  const max = roundDownStep(Math.max(0, num(possible)), step);
+  const max = known ? roundDownStep(Math.max(0, num(possible)), step) : 0;
+  if (!(max > 0)) return { capped: false, max: null, start: null, short: !!known };
   const one = roundUpStep(Math.max(0, num(needed)), step);
   const start = one > 0 ? Math.min(max, one) : max;
-  return { capped: true, max, start, disabled: max <= 0 };
+  return { capped: true, max, start, short: false };
 }
 
 /* ---------- safe to spend ---------- */

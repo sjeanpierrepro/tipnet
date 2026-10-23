@@ -97,7 +97,7 @@ test('goal planning with nothing logged asks for an amount instead of using a ty
     capped: false,
     max: null,
     start: null,
-    disabled: false,
+    short: false,
   });
   // once a night is logged this period, the suggestion comes from it alone
   const some = B.possibleAside(empty(), p, three(), TODAY);

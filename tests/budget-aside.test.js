@@ -115,7 +115,7 @@ test('possibleAside: a finished period is never averaged; with nothing logged in
     capped: false,
     max: null,
     start: null,
-    disabled: false,
+    short: false,
   });
 });
 
@@ -128,13 +128,13 @@ test('roundDownStep, roundUpStep and asideRange (the slider only goes as high as
   assert.equal(B.roundUpStep(100), 100);
   assert.equal(B.roundUpStep(0.01), 5);
   // max = what is possible, rounded down to $5; start = max, or less when a smaller amount finishes the goal in one paycheck
-  assert.deepEqual(B.asideRange(152.5, 900), { capped: true, max: 150, start: 150, disabled: false });
-  assert.deepEqual(B.asideRange(152.5, 42), { capped: true, max: 150, start: 45, disabled: false });
-  assert.deepEqual(B.asideRange(152.5, 0), { capped: true, max: 150, start: 150, disabled: false });
-  // nothing left: the slider is off
-  assert.deepEqual(B.asideRange(3, 500), { capped: true, max: 0, start: 0, disabled: true });
-  // income unknown: no cap and no slider (the amount is typed and marked an estimate)
-  assert.deepEqual(B.asideRange(0, 12000, false), { capped: false, max: null, start: null, disabled: false });
+  assert.deepEqual(B.asideRange(152.5, 900), { capped: true, max: 150, start: 150, short: false });
+  assert.deepEqual(B.asideRange(152.5, 42), { capped: true, max: 150, start: 45, short: false });
+  assert.deepEqual(B.asideRange(152.5, 0), { capped: true, max: 150, start: 150, short: false });
+  // logged, but nothing left: no slider, the amount is typed with no cap (owner decision: let them type it)
+  assert.deepEqual(B.asideRange(3, 500), { capped: false, max: null, start: null, short: true });
+  // nothing logged: no cap and no slider either (the amount is typed)
+  assert.deepEqual(B.asideRange(0, 12000, false), { capped: false, max: null, start: null, short: false });
 });
 
 test('live ready-by date follows the pay schedule: weekly, biweekly, semimonthly', () => {

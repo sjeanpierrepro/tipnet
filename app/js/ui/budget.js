@@ -1779,24 +1779,13 @@ function asideBreakdown(pa, many = false) {
   return rows;
 }
 
-/** Scroll to a Budget card's heading and put keyboard focus on it (from "lower a spending category or another goal"). */
-function goToCard(id) {
-  const h = document.getElementById(id);
-  if (!h) return;
-  try {
-    h.scrollIntoView({ block: 'start' });
-  } catch (e) {
-    /* ignore */
-  }
-  h.focus();
-}
-
 /**
  * The form for a savings goal (kind 'goal') or a big-purchase plan (kind 'plan'). With an item it edits that one.
  * Name, cost, already saved, and (with more than one restaurant) which restaurant's paychecks it is saved from. Then TipNet
  * shows what is safe to put aside from each of those paychecks, and a slider (linked to a money field) sets how much; it
  * only goes as high as the budget leaves (owner rule). The number of paychecks and the ready-by date follow it live.
- * Until TipNet knows what a check is, there is no slider: the amount is typed and marked an estimate.
+ * With nothing logged this pay period, or logged take-home that does not cover its bills, spending and other goals yet
+ * (owner decision: let them type it), there is no slider: the amount is typed, with no cap.
  * A plan can instead be set by a date (that path may need more than the budget leaves; it says so).
  */
 function goalForm(item, kind = 'plan') {
@@ -1962,7 +1951,7 @@ function goalForm(item, kind = 'plan') {
     const rg = rangeNow();
     fDate.hidden = mode !== 'date';
     fPer.hidden = mode !== 'fixed';
-    // No slider until TipNet knows what a check is: the amount is typed (an estimate, no cap).
+    // No slider when there is nothing to suggest from (nothing logged, or not enough yet): the amount is typed, no cap.
     fSlider.hidden = mode !== 'fixed' || !rg.capped;
     possibleBox.hidden = live.hidden = extra.hidden = capNote.hidden = mode !== 'fixed';
     preview.hidden = mode !== 'date';
@@ -1988,7 +1977,7 @@ function goalForm(item, kind = 'plan') {
       preview.append(
         ...planLines(plan, tc).map((t, i) => el('p', i === 0 ? { class: 'num' } : { class: 'hint' }, t)),
       );
-      if (pa.known && !plan.ready && !plan.noPaychecks && plan.perPaycheck > rg.max)
+      if (rg.capped && !plan.ready && !plan.noPaychecks && plan.perPaycheck > rg.max)
         preview.append(
           el(
             'p',
@@ -2000,7 +1989,6 @@ function goalForm(item, kind = 'plan') {
         );
       return;
     }
-    slider.disabled = perCheck.disabled = rg.capped && rg.disabled;
     if (!(d.target > 0)) {
       possibleBox.append(
         el('p', { class: 'hint' }, 'Enter what you need and TipNet will show what is safe to put aside.'),
@@ -2009,7 +1997,19 @@ function goalForm(item, kind = 'plan') {
       slider.value = String(Math.min(Number(slider.max), Math.max(0, moneyOf(perCheck.value))));
       return;
     }
-    if (!rg.capped) {
+    if (rg.short) {
+      // Logged, but not enough yet to cover the pay period: the same typed amount as with nothing logged (no slider, no cap).
+      possibleBox.append(
+        el(
+          'p',
+          { class: 'hint' },
+          'Your logged pay so far' +
+            (many ? ' at ' + funder.name : '') +
+            ' doesn’t cover this pay period’s bills, spending and other goals yet, so TipNet can’t suggest an amount. Type the amount you want to put aside.',
+        ),
+        howLink(),
+      );
+    } else if (!rg.capped) {
       possibleBox.append(
         el(
           'p',
@@ -2020,35 +2020,6 @@ function goalForm(item, kind = 'plan') {
             noun +
             '.',
         ),
-      );
-    } else if (rg.disabled) {
-      const toSpend = el(
-        'button',
-        { type: 'button', class: 'btn-link', onclick: () => goToCard('budget-spending-heading') },
-        'Edit spending',
-      );
-      const toGoals = el(
-        'button',
-        { type: 'button', class: 'btn-link', onclick: () => goToCard('budget-goals-heading') },
-        'Edit your other goals',
-      );
-      possibleBox.append(
-        el(
-          'p',
-          { class: 'note' },
-          'Your budget doesn’t leave anything to put aside from each ' +
-            (many ? funder.name + ' ' : '') +
-            'paycheck right now: bills, spending and your other goals use all the take-home you have logged this pay period. Logging more nights, or lowering a spending category or another goal, makes room.',
-        ),
-        el(
-          'p',
-          { class: 'hint' },
-          'You can still add this ' +
-            noun +
-            ' at $0 a paycheck and save when you can: whatever you put toward it is recorded, and you can pick an amount later.',
-        ),
-        el('div', { class: 'cluster' }, toSpend, toGoals),
-        howLink(),
       );
     } else {
       possibleBox.append(
@@ -2066,13 +2037,12 @@ function goalForm(item, kind = 'plan') {
     }
     // Until the person picks an amount, it starts at what is safe, or less when that finishes the goal in one paycheck.
     if (!touched && rg.capped) perCheck.value = rg.start > 0 ? String(rg.start) : '';
-    const per = rg.capped && rg.disabled ? 0 : clampTyped();
+    const per = clampTyped();
     if (rg.capped) {
       slider.max = String(Math.max(ASIDE_STEP, rg.max));
       slider.value = String(Math.min(rg.max, per));
       slider.setAttribute('aria-valuetext', moneyShort(Math.min(rg.max, per)) + ' a paycheck');
     }
-    if (rg.capped && rg.disabled) return;
     const p = purchasePlan({ ...d, perPaycheck: per }, funder.profile, today);
     if (p.ready) live.textContent = 'You already have enough saved for this.';
     else if (!(per > 0))
@@ -2175,7 +2145,6 @@ function goalForm(item, kind = 'plan') {
     e.preventDefault();
     if (mode === 'fixed') clampTyped();
     const d = draft();
-    const rg = rangeNow();
     let bad = false;
     const check = (f, msg) => {
       f.setError(msg);
@@ -2187,13 +2156,11 @@ function goalForm(item, kind = 'plan') {
     check(fDate, mode === 'date' && !(d.targetDate > today) ? 'Pick a date after today.' : '');
     check(
       fPer,
-      // With no room in the budget, a $0-a-paycheck goal ("save when you can") is allowed; the form says why.
+      // a typed amount above zero, the same with or without a slider
       mode !== 'fixed'
         ? ''
         : moneyTypo(perCheck.value) ||
-            (d.perPaycheck > 0 || d.target - d.saved <= 0 || (rg.capped && rg.disabled)
-              ? ''
-              : 'Enter an amount above zero.'),
+            (d.perPaycheck > 0 || d.target - d.saved <= 0 ? '' : 'Enter an amount above zero.'),
     );
     if (bad) {
       const first = form.querySelector('[aria-invalid]');

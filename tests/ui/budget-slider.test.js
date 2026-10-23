@@ -169,7 +169,7 @@ test('slider: moving it updates the money field and the live paychecks; typing m
   }
 });
 
-test('slider: when the budget leaves nothing, the slider and field are off and it says how to make room', async () => {
+test('slider: when the logged pay does not cover the bills yet, there is no slider and the amount is typed with no cap', async () => {
   const bills = [{ id: 'b1', name: 'Rent', amount: 5000, dueDay: 1 }];
   const page = await boot({ url: DEV, seed: seed({ bills }) });
   try {
@@ -178,21 +178,27 @@ test('slider: when the budget leaves nothing, the slider and field are off and i
     fill(page, 'ef-plan-new-cost', '900');
     assert.equal(possibleOf(page).possible, 0);
     const t = page.text(planForm(page));
-    assert.match(t, /Your budget doesn’t leave anything to put aside from each paycheck right now/);
-    assert.match(t, /Logging more nights, or lowering a spending category or another goal, makes room\./);
-    assert.ok(page.byText('button', 'Edit spending', planForm(page)));
-    assert.ok(page.byText('button', 'Edit your other goals', planForm(page)));
-    assert.equal(key(page, 'ef-plan-new-slider').disabled, true);
-    assert.equal(key(page, 'ef-plan-new-per').disabled, true);
-    // "Edit spending" takes keyboard focus to the Spending card
-    page.click(page.byText('button', 'Edit spending', planForm(page)));
-    assert.equal(page.doc.activeElement.id, 'budget-spending-heading');
-    // the date path still shows what is needed, and says it is more than the budget leaves
+    assert.match(
+      t,
+      /Your logged pay so far doesn’t cover this pay period’s bills, spending and other goals yet/,
+    );
+    assert.match(t, /Type the amount you want to put aside\./);
+    assert.ok(key(page, 'ef-plan-new-slider').closest('[hidden]'), 'no slider');
+    assert.equal(key(page, 'ef-plan-new-per').disabled, false);
+    fill(page, 'ef-plan-new-per', '450');
+    assert.equal(key(page, 'ef-plan-new-per').value, '450', 'not capped');
+    assert.doesNotMatch(page.text(planForm(page)), CAP);
+    // the date path shows what is needed, with no "up to $0" cap note
     page.click(page.byLabel('Need it by a certain date?'));
     fill(page, 'ef-plan-new-date', addDays(todayISO(), 90));
     const d = page.text(planForm(page));
     assert.match(d, /About \$[\d,.]+ a paycheck for \d+ paychecks/);
-    assert.match(d, /That’s more than your budget leaves each paycheck \(up to \$0\)/);
+    assert.doesNotMatch(d, /up to \$0/);
+    // back to an amount a paycheck: saved as typed
+    page.click(page.byText('button', 'Choose an amount a paycheck instead', planForm(page)));
+    fill(page, 'ef-plan-new-per', '450');
+    page.click(page.button('Make this plan', planForm(page)));
+    assert.equal(page.state().budget.goals.find((x) => x.name === 'New phone').perPaycheck, 450);
   } finally {
     await page.close();
   }
