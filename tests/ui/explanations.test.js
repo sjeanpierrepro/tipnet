@@ -171,6 +171,19 @@ test('hidden: errors, warnings, notes that need action and money stay on screen'
     );
     // money caveats never hide: the one-rate line, and the hint under Gross pay
     assert.ok(shown(page, page.must(page.$('#result-one-rate'), 'one-rate line')));
+    // money-entry instructions never hide: with tip-outs set, the tips are entered before tipping out
+    [
+      /Credit card tips, before tip-outs\./,
+      /All your cash tips, before paying/,
+      /Tips only: TipNet adds the pay/,
+    ].forEach((re) => {
+      const n = page.must(
+        page.$$('p.hint', page.app).find((p) => re.test(p.textContent)),
+        String(re),
+      );
+      assert.ok(shown(page, n), 'Tonight: ' + re);
+      assert.equal(n.closest('[data-explain]'), null, 'not an explanation: ' + re);
+    });
     // Setup: the low-gross note and the capped-rate warning
     page.openSetup();
     const gross = page.byText('.field', 'Gross pay', page.app).querySelector('input');
@@ -187,6 +200,19 @@ test('hidden: errors, warnings, notes that need action and money stay on screen'
     const grossHint = page.byText('p.hint', 'top-line gross pay figure', page.app);
     assert.ok(grossHint && shown(page, grossHint), 'the Gross pay caveat');
     assert.equal(grossHint.closest('[data-explain]'), null);
+    // Setup's money-entry instructions: per pay period, not year-to-date; tips are entered before tipping out
+    [
+      /not year-to-date/,
+      /dollar amount for that pay period/,
+      /On Tonight you enter your tips before tipping out/,
+    ].forEach((re) => {
+      const n = page.must(
+        page.$$('p', page.app).find((p) => re.test(p.textContent)),
+        String(re),
+      );
+      assert.equal(n.closest('[data-explain]'), null, 'not an explanation: ' + re);
+      assert.ok(n.closest('.fold-body[hidden]') || shown(page, n), 'Setup: ' + re);
+    });
     // no error, warning or live region sits inside an explanation, anywhere on the page
     const bad = page.$$(
       '[data-explain] .field-error, [data-explain] [role=alert], [data-explain] [role=status], [data-explain] [aria-live], .field-error[data-explain], [role=status][data-explain], [aria-live][data-explain]',

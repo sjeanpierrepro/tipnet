@@ -673,12 +673,11 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
     'section',
     { class: 'card stack' },
     el('h2', null, title),
-    explain(
-      el(
-        'p',
-        { class: 'note' },
-        'Use one recent paystub. Enter the numbers for that pay period, not year-to-date. Your numbers stay on this device.',
-      ),
+    // a money-entry instruction: always on screen, also with Explanations hidden
+    el(
+      'p',
+      { class: 'note' },
+      'Use one recent paystub. Enter the numbers for that pay period, not year-to-date. Your numbers stay on this device.',
     ),
     el('div', { class: 'grid-2' }, fStart, fEnd),
     el('div', { class: 'grid-2' }, fShifts, fFreq),
@@ -976,12 +975,11 @@ function dedCard(ctx) {
     'section',
     { class: 'card stack' },
     el('h2', null, 'Deductions'),
-    explain(
-      el(
-        'p',
-        { class: 'note' },
-        'Add a row for each line in the deductions part of your stub, using the dollar amount for that pay period. Pick whether it changes with your pay, like taxes, or stays the same every check, like health insurance.',
-      ),
+    // a money-entry instruction: always on screen, also with Explanations hidden
+    el(
+      'p',
+      { class: 'note' },
+      'Add a row for each line in the deductions part of your stub, using the dollar amount for that pay period. Pick whether it changes with your pay, like taxes, or stays the same every check, like health insurance.',
     ),
     rowsHost,
     el('div', { class: 'cluster' }, add, fica),
@@ -1587,12 +1585,11 @@ function tipoutCard(ctx) {
   const fields = el(
     'div',
     { class: 'stack' },
-    explain(
-      el(
-        'p',
-        { class: 'hint', id: 'to-how-note' },
-        'On Tonight you enter your tips before tipping out, and TipNet takes the tip-outs below out.',
-      ),
+    // a money-entry instruction: always on screen, also with Explanations hidden
+    el(
+      'p',
+      { class: 'hint', id: 'to-how-note' },
+      'On Tonight you enter your tips before tipping out, and TipNet takes the tip-outs below out.',
     ),
     rowsHost,
     el('div', null, add),

@@ -726,7 +726,10 @@ export function nightFields(
       { class: 'field' },
       el('label', { for: input.id }, label),
       big ? el('div', { class: 'money' }, el('span', { 'aria-hidden': 'true' }, '$'), input) : input,
-      explain(el('p', { class: 'hint', id: hintId }, hint)),
+      // with tip-outs set, "before tip-outs" is a money-entry instruction: always on screen, also with Explanations hidden
+      people.length
+        ? el('p', { class: 'hint', id: hintId }, hint)
+        : explain(el('p', { class: 'hint', id: hintId }, hint)),
       err,
     );
     const setError = (m, alert = false) => {
@@ -840,12 +843,11 @@ export function nightFields(
     'div',
     { class: 'stack-sm' },
     el('div', { class: 'grid-2' }, ccBox.node, cashBox.node),
-    explain(
-      el(
-        'p',
-        { class: 'hint', id: sharedId },
-        'Tips only: TipNet adds the pay for the jobs below. Type 0 in a box if you had none.',
-      ),
+    // a money-entry instruction: always on screen, also with Explanations hidden
+    el(
+      'p',
+      { class: 'hint', id: sharedId },
+      'Tips only: TipNet adds the pay for the jobs below. Type 0 in a box if you had none.',
     ),
     // a night saved without a cash amount: its tips are all in CC tips until its cash is typed
     unknownNote,
