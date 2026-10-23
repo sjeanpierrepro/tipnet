@@ -849,7 +849,7 @@ function nextChecksRows(r) {
     // the amount in the value column; what it is made from on a small line under it
     ...r.sources.flatMap((s) => [
       row('   ' + s.name + ', ' + fmtDate(s.payday), money(s.check), 'hint'),
-      row('      ' + upperFirst(loggedCheckLine(s.checkNights, s.checkState, s.checkLogged)), '', 'hint'),
+      row(upperFirst(loggedCheckLine(s.checkNights, s.checkState, s.checkLogged)), '', 'hint sub-line'),
     ]),
   ];
 }
