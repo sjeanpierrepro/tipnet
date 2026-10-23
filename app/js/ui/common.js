@@ -78,7 +78,7 @@ export function field(label, input, { hint, optional, keepHint } = {}) {
   if (hint) {
     // keepHint: the line is a value (a rate), not an explanation, so it never hides
     const p = el('p', { class: 'hint', id: input.id + '-hint' }, hint);
-    kids.push(keepHint ? p : explain(p));
+    kids.push(keepHint ? p : explain(p, typeof label === 'string' ? label : null));
     base.push(input.id + '-hint');
   }
   const describe = (ids) => {
@@ -585,7 +585,7 @@ export function save() {
  * <html data-explanations="hide">. The button opens that one paragraph until the screen is redrawn or it is tapped again.
  * Never use it for an error, a warning, a note that asks for action, a money label or value, or a live result.
  */
-export function explain(node) {
+export function explain(node, about) {
   node.setAttribute('data-explain', '');
   if (!node.id) node.id = uid('explain');
   const btn = el(
@@ -593,7 +593,7 @@ export function explain(node) {
     {
       type: 'button',
       class: 'explain-btn',
-      'aria-label': 'Show explanation',
+      'aria-label': about ? 'Show explanation: ' + about : 'Show explanation', // about: the field it explains
       'aria-expanded': 'false',
       'aria-controls': node.id, // the paragraph it opens
     },

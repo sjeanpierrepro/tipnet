@@ -729,7 +729,7 @@ export function nightFields(
       // with tip-outs set, "before tip-outs" is a money-entry instruction: always on screen, also with Explanations hidden
       people.length
         ? el('p', { class: 'hint', id: hintId }, hint)
-        : explain(el('p', { class: 'hint', id: hintId }, hint)),
+        : explain(el('p', { class: 'hint', id: hintId }, hint), label),
       err,
     );
     const setError = (m, alert = false) => {

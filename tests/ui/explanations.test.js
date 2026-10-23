@@ -110,7 +110,7 @@ test('hidden: hint paragraphs go and leave an ⓘ button that reveals just that 
     assert.equal(btns.length, now.length, 'one ⓘ for each');
     btns.forEach((b) => {
       assert.equal(b.textContent, 'ⓘ');
-      assert.equal(b.getAttribute('aria-label'), 'Show explanation');
+      assert.match(b.getAttribute('aria-label'), /^Show explanation(: .+)?$/);
       assert.equal(b.getAttribute('aria-expanded'), 'false');
       assert.equal(b.getAttribute('type'), 'button');
       assert.ok(b.closest('.fold-body[hidden]') || shown(page, b));
@@ -118,6 +118,10 @@ test('hidden: hint paragraphs go and leave an ⓘ button that reveals just that 
     // the field hint under the shift count (a field(..., { hint }) hint)
     const gross = hintOf(page, /How many shifts you usually work/);
     const btn = gross.parentElement.querySelector('.explain-btn');
+    // a field's ⓘ is named after that field, so each one is told apart
+    assert.equal(btn.getAttribute('aria-label'), 'Show explanation: Shifts you work in a pay period');
+    const named = btns.map((b) => b.getAttribute('aria-label')).filter((n) => n !== 'Show explanation');
+    assert.ok(named.length >= 3, 'field ⓘ buttons carry their field name: ' + named.length);
     page.click(btn);
     assert.equal(btn.getAttribute('aria-expanded'), 'true');
     assert.ok(shown(page, gross), 'revealed');
