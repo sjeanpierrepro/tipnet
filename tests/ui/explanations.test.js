@@ -115,8 +115,8 @@ test('hidden: hint paragraphs go and leave an ⓘ button that reveals just that 
       assert.equal(b.getAttribute('type'), 'button');
       assert.ok(b.closest('.fold-body[hidden]') || shown(page, b));
     });
-    // the field hint under "Gross pay" (a field(..., { hint }) hint)
-    const gross = hintOf(page, /top-line gross pay figure/);
+    // the field hint under the shift count (a field(..., { hint }) hint)
+    const gross = hintOf(page, /How many shifts you usually work/);
     const btn = gross.parentElement.querySelector('.explain-btn');
     page.click(btn);
     assert.equal(btn.getAttribute('aria-expanded'), 'true');
@@ -164,12 +164,13 @@ test('hidden: errors, warnings, notes that need action and money stay on screen'
     assert.match(page.text(result), /\$/);
     assert.equal(result.querySelector('.hero').closest('[data-explain]'), null);
     page.$$('.result .note').forEach((n) => assert.ok(shown(page, n), 'result note: ' + n.textContent));
-    assert.ok(
-      page
-        .$$('.result [data-explain]')
-        .every((n) => /Estimates use one tax rate|Taxes on cash tips/.test(n.textContent)),
-      'only the long how-it-works lines in the result hide',
+    assert.equal(
+      page.$$('.result [data-explain]').length,
+      0,
+      'nothing in the result hides (tax caveats included)',
     );
+    // money caveats never hide: the one-rate line, and the hint under Gross pay
+    assert.ok(shown(page, page.must(page.$('#result-one-rate'), 'one-rate line')));
     // Setup: the low-gross note and the capped-rate warning
     page.openSetup();
     const gross = page.byText('.field', 'Gross pay', page.app).querySelector('input');
@@ -183,6 +184,9 @@ test('hidden: errors, warnings, notes that need action and money stay on screen'
     const rate = page.must(page.$('#rate-check'), 'rate check');
     assert.match(rate.textContent, /100%/);
     assert.ok(shown(page, rate));
+    const grossHint = page.byText('p.hint', 'top-line gross pay figure', page.app);
+    assert.ok(grossHint && shown(page, grossHint), 'the Gross pay caveat');
+    assert.equal(grossHint.closest('[data-explain]'), null);
     // no error, warning or live region sits inside an explanation, anywhere on the page
     const bad = page.$$(
       '[data-explain] .field-error, [data-explain] [role=alert], [data-explain] [role=status], [data-explain] [aria-live], .field-error[data-explain], [role=status][data-explain], [aria-live][data-explain]',

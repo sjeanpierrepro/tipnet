@@ -1449,12 +1449,10 @@ function soFarCard(lines, named) {
           'No nights logged yet in this pay period. Your totals show up here once you log one.',
         )
       : lines.map(block),
-    explain(
-      el(
-        'p',
-        { class: 'hint' },
-        'Estimated, from the nights you logged. The same numbers as the pay period above.',
-      ),
+    el(
+      'p',
+      { class: 'hint' },
+      'Estimated, from the nights you logged. The same numbers as the pay period above.',
     ),
   );
 }
@@ -1590,6 +1588,7 @@ function goalCard(S, today, shown, all) {
   );
   const f = field('Extra goal', box, {
     optional: true,
+    keepHint: true, // a money caveat (which numbers it changes): never hidden
     hint: 'Added on top of what your budget needs, on this card only. It doesn’t change any Budget number.',
   });
   // the amount box and its "a month / a week" choice side by side, in the field's place for the box
@@ -1734,12 +1733,10 @@ function goalCard(S, today, shown, all) {
     host,
     f,
     remove,
-    explain(
-      el(
-        'p',
-        { class: 'hint' },
-        'Estimated. What your budget needs is your bills plus the savings planned for your goals, each turned into a monthly amount, then spread evenly over the year.',
-      ),
+    el(
+      'p',
+      { class: 'hint' },
+      'Estimated. What your budget needs is your bills plus the savings planned for your goals, each turned into a monthly amount, then spread evenly over the year.',
     ),
   );
 }

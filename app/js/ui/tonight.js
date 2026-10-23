@@ -829,12 +829,10 @@ export function nightFields(
       offCb,
       el('span', null, 'Cash tips weren’t run through payroll tonight'),
     ),
-    explain(
-      el(
-        'p',
-        { class: 'hint', id: offCb.id + '-hint' },
-        'Tick this if no tax was taken out of tonight’s cash, so your check is bigger. The IRS still counts all tips as income, so TipNet shows what to set aside.',
-      ),
+    el(
+      'p',
+      { class: 'hint', id: offCb.id + '-hint' },
+      'Tick this if no tax was taken out of tonight’s cash, so your check is bigger. The IRS still counts all tips as income, so TipNet shows what to set aside.',
     ),
   );
   offField.hidden = true; // only once a cash amount is typed
@@ -1305,12 +1303,10 @@ export function resultCard(c, w, note, hoursMissing = false, nothing = !c.total)
     } else if (!c.cashOffPayroll) {
       // Not said when tonight's cash wasn't run through payroll: then no tax on it comes out of the check.
       kids.push(
-        explain(
-          el(
-            'p',
-            { class: 'hint' },
-            'Taxes on cash tips usually come out of the paycheck, which is why a check can look small.',
-          ),
+        el(
+          'p',
+          { class: 'hint' },
+          'Taxes on cash tips usually come out of the paycheck, which is why a check can look small.',
         ),
       );
     }
@@ -1333,12 +1329,10 @@ export function resultCard(c, w, note, hoursMissing = false, nothing = !c.total)
     );
   kids.push(el('p', { class: 'note' }, tip));
   kids.push(
-    explain(
-      el(
-        'p',
-        { class: 'hint', id: 'result-one-rate' },
-        'Estimates use one tax rate from your paystub; very big or small weeks can be withheld differently. “Check my accuracy” after payday keeps it close.',
-      ),
+    el(
+      'p',
+      { class: 'hint', id: 'result-one-rate' },
+      'Estimates use one tax rate from your paystub; very big or small weeks can be withheld differently. “Check my accuracy” after payday keeps it close.',
     ),
   );
   if (note) kids.push(note);

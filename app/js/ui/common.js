@@ -587,9 +587,16 @@ export function save() {
  */
 export function explain(node) {
   node.setAttribute('data-explain', '');
+  if (!node.id) node.id = uid('explain');
   const btn = el(
     'button',
-    { type: 'button', class: 'explain-btn', 'aria-label': 'Show explanation', 'aria-expanded': 'false' },
+    {
+      type: 'button',
+      class: 'explain-btn',
+      'aria-label': 'Show explanation',
+      'aria-expanded': 'false',
+      'aria-controls': node.id, // the paragraph it opens
+    },
     'ⓘ',
   );
   const host = el('div', { class: 'explain-host' }, btn, node);

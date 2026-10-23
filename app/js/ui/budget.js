@@ -813,6 +813,7 @@ function heroCard(S, r0, src) {
   };
   const cashF = field('Money you have right now (bank + cash)', cashIn, {
     optional: true,
+    keepHint: true, // says what is used when it is left blank (a money caveat): never hidden
     hint: 'Saved on this device with the time you entered it, so it is still here next visit. Update it when you check your bank. If you leave it blank, TipNet uses your cash tips from this pay period, minus spending you logged.',
   });
   const box = el('div', { class: 'card stack-sm' }, cashF);
@@ -1948,7 +1949,7 @@ function goalForm(item, kind = 'plan') {
       null,
       el('summary', { class: 'btn-link' }, 'How we worked this out'),
       el('dl', { class: 'breakdown', style: 'padding-top:var(--s-2)' }, ...asideBreakdown(pa, many)),
-      explain(el('p', { class: 'hint' }, 'All figures are estimates.')),
+      el('p', { class: 'hint' }, 'All figures are estimates.'), // a money caveat: never hidden
     );
   const refresh = () => {
     const d = draft();

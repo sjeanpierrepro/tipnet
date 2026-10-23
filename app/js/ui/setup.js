@@ -529,6 +529,7 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
   const freqNote = el('p', { class: 'hint', hidden: true });
   fFreq.append(freqNote);
   const fGross = field('Gross pay', gross, {
+    keepHint: true, // guards against the most common paystub mistake (a money caveat): never hidden
     hint: 'The top-line gross pay figure, before any deductions. Not “taxable wages.”',
   });
   // A calm check, never a block: a gross this small is usually a typo (or a short first check).

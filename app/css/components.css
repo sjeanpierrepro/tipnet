@@ -272,7 +272,7 @@ html[data-explanations='hide'] .explain-host {
 html[data-explanations='hide'] .explain-btn {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start; /* the ⓘ lines up with the text edge; the tap target still reaches 32px */
   min-width: 32px;
   min-height: 32px;
   margin: -8px 0; /* a 32px tap target that takes up one line of height */
@@ -1044,8 +1044,9 @@ fieldset.field > legend {
   }
 }
 
-/* ---------- "Last backup" reminder (Tonight and Setup) ---------- */
-.backup-nudge {
+/* ---------- "Last backup" reminder (Tonight and Setup), and the one-time "hide the explanations?" card ---------- */
+.backup-nudge,
+#explain-prompt {
   margin-bottom: var(--s-3);
 }
 /* restaurant switcher (Tonight, Setup, Pay periods): one button per restaurant, the picked one filled. Long names end in "…". */
