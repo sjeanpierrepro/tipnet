@@ -79,7 +79,8 @@ test('several establishments: a mostly-cash second job counts its cash too, as l
   const tB = B.loggedTakeHome(second, sNights, TODAY);
   assert.ok(tB.cash > tB.check, 'the second job is mostly cash');
   const pa = B.possibleAside(rentAndFood(), null, null, TODAY, { sources, funderId: 'A' });
-  assert.equal(pa.otherChecks, tB.amount); // as logged in its current pay period, not scaled to the other one's days
+  // as logged in its current pay period (15 days), shared over Main's 14 days, never scaled up
+  assert.equal(pa.otherChecks, Math.round((M.toCents(tB.amount) * 14) / 15) / 100);
   // From the second job: its own take-home (check + cash) caps what one of its checks can put aside, not its small check.
   const pb = B.possibleAside(rentAndFood(), null, null, TODAY, { sources, funderId: 'B' });
   assert.equal(pb.check, tB.amount);

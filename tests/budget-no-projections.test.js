@@ -126,10 +126,31 @@ test('two establishments: each check comes from its own logged nights, none is g
   assert.equal(bySource.B.check, 0);
   assert.equal(bySource.B.checkNights, 0);
   assert.equal(r.after.checksTotal, M.round2(r.after.checks.reduce((s, k) => s + k.amount, 0)));
-  // the room to put aside counts the other establishment as logged, never scaled to the other pay period's days
+  // the room to put aside counts the other establishment as logged, never scaled up; its 15-day pay period's money is
+  // shared over Main's 14 days, so it is not counted again at each of Main's paychecks
   sources[1].nights = [night('s1', '2026-09-26', 200, 50)];
   const room = B.possibleAside(empty(), null, null, TODAY, { sources, funderId: 'A' });
-  assert.equal(room.otherChecks, B.loggedTakeHome(pb, sources[1].nights, TODAY).amount);
+  const logged = B.loggedTakeHome(pb, sources[1].nights, TODAY).amount;
+  assert.equal(room.otherChecksList[0].logged, logged);
+  assert.equal(room.otherChecksList[0].shared, true);
+  assert.equal(room.otherChecks, Math.round((M.toCents(logged) * 14) / 15) / 100);
+  // from Second (15 days) instead: Main's 14 days are shorter, so they count exactly as logged
+  const fromB = B.possibleAside(empty(), null, null, TODAY, { sources, funderId: 'B' });
+  assert.equal(fromB.otherChecks, B.loggedTakeHome(pa, three(), TODAY).amount);
+  assert.equal(fromB.otherChecksList[0].shared, false);
+});
+
+test('a weekly paycheck never counts a two-week pay period of logged money at every payday', () => {
+  const two = { ...P(), id: 'A' }; // every two weeks, 09-21..10-04
+  const wk = { ...P(), freq: 7, periodStart: '2026-09-28', id: 'W' }; // weekly, 09-28..10-04
+  const sources = [
+    { id: 'A', name: 'Main', profile: two, nights: three() },
+    { id: 'W', name: 'Weekly', profile: wk, nights: [night('w1', '2026-09-29', 250, 60)] },
+  ];
+  const room = B.possibleAside(empty(), null, null, TODAY, { sources, funderId: 'W' });
+  assert.equal(room.periodDays, 7);
+  const logged = B.loggedTakeHome(two, three(), TODAY).amount;
+  assert.equal(room.otherChecks, Math.round(M.toCents(logged) / 2) / 100, 'half of the 14 days logged');
 });
 
 test('old saves load unchanged: no stored budget field is added, dropped or reinterpreted', () => {
@@ -192,7 +213,7 @@ test('nights with no cash entered are named, so the line never reads as fewer ni
   assert.equal(r.after.checkLogged, 4);
   assert.equal(
     B.loggedCheckLine(r.after.checkNights, r.after.checkState, r.after.checkLogged),
-    'from 3 nights logged so far (1 more with no cash in hand entered)',
+    'from 3 nights logged so far; 1 more has no cash in hand entered',
   );
   const only = B.safeToSpend(empty(), p, [night('d', '2026-09-27', 300, '')], TODAY, { cashOnHand: 100 });
   assert.equal(only.after.checksTotal, 0);

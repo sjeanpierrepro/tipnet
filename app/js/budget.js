@@ -478,7 +478,9 @@ export function loggedCheckLine(nights, state, logged = nights) {
         (nights === 1 ? ' night' : ' nights') +
         ' logged' +
         (state === 'running' ? ' so far' : '');
-  return noCash > 0 ? base + ' (' + noCash + ' more with no cash in hand entered)' : base;
+  return noCash > 0
+    ? base + '; ' + noCash + ' more ' + (noCash === 1 ? 'has' : 'have') + ' no cash in hand entered'
+    : base;
 }
 
 /**
@@ -898,7 +900,8 @@ export const roundUpStep = (v, step = ASIDE_STEP) =>
  * What there is room to put aside from each paycheck of one restaurant, from the budget. In dollars, over
  * that restaurant's pay period (periodDays):
  *   its take-home logged this pay period (check + cash you keep; see loggedTakeHome)
- *   + the other restaurants' take-home logged in their current pay periods (as logged, never scaled up)
+ *   + the other restaurants' take-home logged in their current pay periods (as logged, never scaled up; a longer pay
+ *     period's is shared over these days, logged x periodDays / its days, so it is not counted again at every paycheck)
  *   + regular other income over the same days
  *   - bills over the same days (monthly bills x 12 x days / 365) - spending categories (their per-day allowance x the days)
  *   - what the other active goals already take over the same days (each from its own restaurant's paychecks, scaled the same way).
@@ -909,7 +912,7 @@ export const roundUpStep = (v, step = ASIDE_STEP) =>
  * (The cap uses take-home + other income, not the paycheck alone: cash tips you keep are money you can put aside.)
  * Returns {known (false when TipNet can't tell what this restaurant brings home yet), possible, check (the take-home logged
  *  this pay period: check + cash kept), checkFrom ('logged'|null), paycheck (its check part, or null), cash (its cash part, or null),
- *  otherChecks, otherChecksList:[{id,name,amount,known}], other, bills, spending, goals, periodDays, funderId, funderName,
+ *  otherChecks, otherChecksList:[{id,name,amount,known,logged (as logged, or null),days (its pay period's),shared (amount is logged x periodDays / days)}], other, bills, spending, goals, periodDays, funderId, funderName,
  *  goalList:[{id,name,amount}]}. When not known, possible is 0 and the pieces are still worked out.
  */
 export function possibleAside(budget, profile, nights, today = todayISO(), opts = {}) {
@@ -925,8 +928,21 @@ export function possibleAside(budget, profile, nights, today = todayISO(), opts 
     .filter((s) => s !== f && hasSchedule(s.profile))
     .map((s) => {
       const t = loggedTakeHome(s.profile, s.nights, today, s.index);
-      const c = t.amount == null ? 0 : toCents(t.amount);
-      return { id: s.id, name: s.name, amountC: c, known: t.amount != null };
+      // A longer pay period's logged money is shared over this restaurant's days (14 days logged, 7-day paycheck: half), so
+      // the same money is not counted again at each of this restaurant's paychecks. Never scaled up: that would add money
+      // for days nobody logged.
+      const sLen = lenNow(s.profile, today);
+      const shared = t.amount != null && sLen > len;
+      const c = t.amount == null ? 0 : shared ? scaleC(toCents(t.amount), sLen, len) : toCents(t.amount);
+      return {
+        id: s.id,
+        name: s.name,
+        amountC: c,
+        known: t.amount != null,
+        logged: t.amount,
+        days: sLen,
+        shared,
+      };
     });
   const othersC = sumC(others, (o) => o.amountC);
   const otherC = toCents(otherIncomePerPaycheck(budget, f.profile, today));
@@ -962,6 +978,9 @@ export function possibleAside(budget, profile, nights, today = todayISO(), opts 
       name: o.name,
       amount: fromCents(o.amountC),
       known: o.known,
+      logged: o.logged,
+      days: o.days,
+      shared: o.shared,
     })),
     other: fromCents(otherC),
     bills: fromCents(billsC),

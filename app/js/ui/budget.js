@@ -1743,7 +1743,23 @@ function asideBreakdown(pa, many = false) {
   if (many) {
     rows.push(row('Your other establishments, logged this pay period', '+' + money(pa.otherChecks)));
     pa.otherChecksList.forEach((o) =>
-      rows.push(row('   ' + o.name, o.known ? '+' + money(o.amount) : 'Nothing logged', 'hint')),
+      rows.push(
+        row(
+          '   ' +
+            o.name +
+            (o.shared
+              ? ' (' +
+                money(o.logged) +
+                ' logged over ' +
+                o.days +
+                ' days, shared over these ' +
+                pa.periodDays +
+                ')'
+              : ''),
+          o.known ? '+' + money(o.amount) : 'Nothing logged',
+          'hint',
+        ),
+      ),
     );
   }
   if (pa.other > 0) rows.push(row('Other regular income per paycheck', '+' + money(pa.other)));
