@@ -209,7 +209,8 @@ export function parseLemonSqueezy(body, productIds = [], allowTestMode = false) 
 /**
  * Turns a Polar customer-portal activate/validate JSON body into the same {ok, status, expiresAt?, instanceId?, error?}
  * shape as parseLemonSqueezy. Polar answers 200 only for a granted key (a revoked or disabled key is a 404 or 403, see
- * polarProvider), but a body that says revoked, disabled or expired is refused here too. A granted key is reported as
+ * polarProvider), but a body that says revoked or disabled is refused here too. A granted key is trusted as is, even
+ * past its expires_at by this device's clock (Polar's own reply is the judge). A granted key is reported as
  * 'active'. benefitId and organizationId reject keys from another benefit or organization (the app always passes them).
  * An activate body has the key under license_key and the activation id in id; a validate body is the key itself, with
  * the activation under activation.
@@ -231,12 +232,8 @@ export function parsePolar(body, benefitId = '', organizationId = '') {
       error: 'This key is real, but it is for a different product, not TipNet Budget.',
     };
   }
-  const end = lk.expires_at ? toMs(lk.expires_at) : null;
-  if (lk.status === 'granted' && end !== null && end <= Date.now()) {
-    out.status = 'expired';
-    out.error = 'This subscription has ended. Renew it to unlock again.';
-    return out;
-  }
+  // Polar checks expiry itself (an expired key is a 404 or 403), so expires_at is never compared with this device's
+  // clock: a phone set to the wrong date must not lock a payer.
   if (lk.status === 'granted') {
     out.ok = true;
     out.status = 'active';

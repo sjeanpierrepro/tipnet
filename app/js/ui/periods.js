@@ -32,7 +32,7 @@ import {
 import { businessDate, cutoffFromSettings, moneyTypo, readMoney } from '../inputs.js';
 import { autoGoal } from '../budget.js';
 import { BILLING, isUnlocked } from '../billing.js';
-import { openPreview } from './budget.js';
+import { openPreview, upgradeBtn } from './budget.js';
 import {
   isSetUp,
   isWorkplaceSetUp,
@@ -1456,6 +1456,11 @@ function goalCard(S, today, lines) {
         null,
         'TipNet Budget shows what your bills and savings need before payday, and how close this pay period gets you.',
       ),
+      el(
+        'p',
+        null,
+        el('strong', null, BILLING.prices.monthly + ' a month or ' + BILLING.prices.yearly + ' a year'),
+      ),
       BILLING.provider
         ? null
         : el(
@@ -1464,15 +1469,21 @@ function goalCard(S, today, lines) {
             el('strong', null, 'Coming soon. '),
             'You’ll be able to unlock it here soon.',
           ),
+      // On Pay periods this card takes the place of the "TipNet Budget" card (app.js), so it has the same two buttons.
       el(
-        'button',
-        {
-          type: 'button',
-          class: 'btn btn-secondary btn-block',
-          id: 'goal-card-see',
-          onclick: () => openPreview(null),
-        },
-        'See what’s inside',
+        'div',
+        { class: 'stack-sm' },
+        el(
+          'button',
+          {
+            type: 'button',
+            class: 'btn btn-secondary btn-block',
+            id: 'goal-card-see',
+            onclick: () => openPreview(null),
+          },
+          'See what’s inside',
+        ),
+        upgradeBtn('goal-card-upgrade'),
       ),
     );
   }

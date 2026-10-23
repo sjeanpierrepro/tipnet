@@ -255,7 +255,7 @@ export function openPreview(id) {
 }
 /** The "Unlock Budget" card's heading: where every Upgrade button goes (the plans, or "Coming soon" while payments are off). */
 const UPGRADE_H = 'budget-upgrade-h';
-const upgradeBtn = (id) =>
+export const upgradeBtn = (id) =>
   el(
     'button',
     { type: 'button', class: 'btn btn-block', id, onclick: () => openPreview(UPGRADE_H) },

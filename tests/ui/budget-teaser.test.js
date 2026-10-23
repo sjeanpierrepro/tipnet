@@ -8,10 +8,10 @@ const teaser = (page) => page.$('#budget-teaser');
 const isLast = (page) => page.app.lastElementChild === teaser(page);
 const selected = (page) => page.$('#tabs [aria-selected="true"]').dataset.tab;
 
-test('Budget card: at the very bottom of Tonight, Pay periods and Setup; Coming soon while payments are off', async () => {
+test('Budget card: at the very bottom of Tonight and Setup; Coming soon while payments are off', async () => {
   const page = await boot({ seed: setUp() });
   try {
-    for (const t of ['tonight', 'periods', 'setup']) {
+    for (const t of ['tonight', 'setup']) {
       page.tab(t);
       assert.ok(teaser(page), t + ': card shown');
       assert.ok(isLast(page), t + ': card is last');
@@ -33,6 +33,24 @@ test('Budget card: at the very bottom of Tonight, Pay periods and Setup; Coming 
         t,
       );
     }
+    // Pay periods: one locked card only, the Budget goal card, with the price line and the same two buttons
+    page.tab('periods');
+    assert.equal(teaser(page), null, 'periods: no second locked card');
+    const goal = page.must(page.$('#goal-card'), 'locked goal card');
+    assert.equal(page.$$('.upsell', page.app).length, 1, 'periods: one locked card');
+    assert.match(
+      page.text(goal),
+      new RegExp('\\' + BILLING.prices.monthly + ' a month or \\' + BILLING.prices.yearly),
+    );
+    assert.match(page.text(goal), /Coming soon/);
+    assert.deepEqual(
+      page.$$('button', goal).map((b) => b.textContent.trim()),
+      ['See what’s inside', 'Upgrade'],
+    );
+    page.click(page.button('Upgrade', goal));
+    assert.equal(selected(page), 'budget');
+    assert.equal(page.doc.activeElement, page.$('#budget-upgrade-h'));
+    page.tab('tonight');
     assert.equal(page.tabHidden('budget'), true);
     // "See what's inside" opens the preview although the tab stays hidden
     page.click(page.button('See what’s inside', teaser(page)));
@@ -67,7 +85,7 @@ test('Budget card: payments on, "Upgrade" goes straight to the plans and the key
     BILLING.checkout.monthly = 'https://example.test/m';
     BILLING.checkout.yearly = 'https://example.test/y';
     BILLING.productIds = [123]; // a live store has its product ids filled in
-    page.tab('periods');
+    page.tab('tonight');
     const box = teaser(page);
     assert.ok(box && isLast(page));
     assert.doesNotMatch(page.text(box), /Coming soon/);
@@ -95,7 +113,9 @@ test('"Update available" sits at the bottom of the page, right above the TipNet 
     const bar = page.must(page.doc.getElementById('update-bar'), 'bar');
     assert.equal(bar.hidden, true);
     bar.hidden = false; // as the service worker code does when an update is waiting
-    for (const t of ['tonight', 'periods', 'setup']) {
+    page.tab('periods');
+    assert.equal(page.app.lastElementChild, bar, 'periods (no TipNet Budget card there): last on the page');
+    for (const t of ['tonight', 'setup']) {
       page.tab(t);
       assert.equal(bar.parentElement, page.app, t + ': inside the page');
       assert.equal(bar.nextElementSibling, teaser(page), t + ': right above the Budget card');

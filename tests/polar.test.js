@@ -58,14 +58,17 @@ test('parsePolar: granted activate and validate bodies are ok and say active', (
   assert.equal(parsePolar(validated({ benefit_id: BEN.toUpperCase() }), BEN, ORG).ok, true);
 });
 
-test('parsePolar: revoked, disabled, expired, unknown status and junk all refuse', () => {
+test('parsePolar: revoked, disabled, unknown status and junk all refuse', () => {
   const r = parsePolar(validated({ status: 'revoked' }), BEN, ORG);
   assert.equal(r.ok, false);
   assert.equal(r.status, 'revoked');
   assert.match(parsePolar(validated({ status: 'disabled' }), BEN, ORG).error, /turned off/);
-  const past = parsePolar(validated({ expires_at: '2026-01-01T00:00:00Z' }), BEN, ORG);
-  assert.equal(past.ok, false);
-  assert.equal(past.status, 'expired');
+  // Polar's reply is the judge: a granted key stays unlocked even when this device's clock is past expires_at
+  // (Polar answers 404/403 for a key that really expired).
+  const past = parsePolar(validated({ expires_at: '2000-01-01T00:00:00Z' }), BEN, ORG);
+  assert.equal(past.ok, true);
+  assert.equal(past.status, 'active');
+  assert.equal(past.expiresAt, '2000-01-01T00:00:00Z');
   assert.equal(parsePolar(validated({ status: 'mystery' }), BEN, ORG).ok, false);
   for (const junk of [null, undefined, 'x', 5, {}, []]) assert.equal(parsePolar(junk, BEN, ORG).ok, false);
   const future = parsePolar(validated({ expires_at: '2099-01-01T00:00:00Z' }), BEN, ORG);

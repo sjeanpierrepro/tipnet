@@ -70,6 +70,7 @@ Polar (polar.sh) is a second payment provider, built and tested but switched off
 5. Test first on your own computer with a real purchase of your own, or a 100% discount code made in the Polar dashboard: buy, paste the emailed key into Budget, tap "Unlock with key", then "Remove from this device".
 Notes:
 - Polar's account review must be finished before the first payout. Do it early in the Polar dashboard (Finance > Account), or sales will be held.
+- Keep the license-key benefit's device limit ("Limit activations") at 3. Never turn it off or leave it blank: TipNet unlocks a phone by activating the key on it, and Polar only allows activation on keys that have a device limit, so without one nobody could unlock Budget. The limit is also what stops one key being shared on many phones.
 - Polar is the merchant of record, like Lemon Squeezy. Customers find their key in the receipt email or in the portal above.
 - To go back to Lemon Squeezy, put the old `BILLING` block back. Keys from one provider never unlock under the other.
 - If a subscription is cancelled or refunded, Polar revokes the key and Budget locks at the next daily check (or after the 14-day offline grace if the phone is offline).

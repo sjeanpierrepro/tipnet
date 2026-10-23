@@ -175,7 +175,12 @@ function render() {
         if (nudge) root.prepend(nudge);
       }
       // The "TipNet Budget" card, last on the page (not during guided setup), while Budget isn't unlocked here.
-      if (current !== 'budget' && !(current === 'setup' && setup.guidedOnScreen())) {
+      // On Pay periods the locked Budget goal card takes its place (one locked card per page, owner request).
+      if (
+        current !== 'budget' &&
+        !(current === 'setup' && setup.guidedOnScreen()) &&
+        !(current === 'periods' && root.querySelector('#goal-card.upsell'))
+      ) {
         const teaser = budget.upgradeTeaser();
         if (teaser) root.append(teaser);
       }
