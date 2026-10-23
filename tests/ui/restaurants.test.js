@@ -402,6 +402,13 @@ test('budget: safe to spend runs until the next money from either establishment 
     assert.match(how, /Next checks \(counted once they arrive, from logged nights\)/);
     assert.match(how, /Voodoo Bayou, [A-Z]/);
     assert.match(how, /Second Spot, [A-Z]/);
+    // the amount sits in the value column; what it is made from is its own line under it
+    page
+      .$$('dd', page.byText('details', 'How this is worked out'))
+      .forEach((dd) =>
+        assert.doesNotMatch(dd.textContent, /logged/, 'no check line in the value column: ' + dd.textContent),
+      );
+    assert.match(how, /(From \d+ nights? logged so far|No nights logged for this check yet\.)/);
     const after = page.text(page.byText('section', 'After payday ('));
     assert.match(
       after,
