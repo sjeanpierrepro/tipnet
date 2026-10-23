@@ -4,9 +4,9 @@ import assert from 'node:assert/strict';
 import * as M from '../app/js/math.js';
 import * as B from '../app/js/budget.js';
 
-const TODAY = '2026-10-10'; // biweekly 09-21..10-04 and 09-07..09-20 are finished
+const TODAY = '2026-10-04'; // last day of the biweekly pay period 09-21..10-04, with its 10 nights logged
 const P = () => M.exampleProfile('2026-09-28');
-/** Two finished pay periods of 10 nights each: $300 made, $220 of it cash. */
+/** Two pay periods of 10 nights each: $300 made, $220 of it cash. */
 const cashNights = (p = P(), cashOffPayroll) => {
   const out = [];
   [-1, 0].forEach((k) => {
@@ -32,9 +32,9 @@ const rentAndFood = () => ({
   categories: [{ id: 'g', name: 'Groceries', monthly: 300 }],
 });
 
-test('mostly-cash nights: the typical take-home is check + cash kept, not the small check', () => {
-  const th = B.typicalTakeHome(P(), cashNights(), TODAY);
-  assert.deepEqual(th, { amount: 2440.5, from: 'average', check: 240.5, cash: 2200 });
+test('mostly-cash nights: the logged take-home is check + cash kept, not the small check', () => {
+  const th = B.loggedTakeHome(P(), cashNights(), TODAY);
+  assert.deepEqual(th, { amount: 2440.5, from: 'logged', check: 240.5, cash: 2200 });
 });
 
 test('mostly-cash nights (review repro): there is real room to put aside', () => {
@@ -60,12 +60,12 @@ test('cash that skipped payroll: the taxes to set aside on it come off the take-
   const nights = cashNights(p, true);
   const done = M.periodTotals(p, nights, 0, TODAY);
   assert.ok(done.setAside > 0);
-  const th = B.typicalTakeHome(p, nights, TODAY);
+  const th = B.loggedTakeHome(p, nights, TODAY);
   assert.equal(th.amount, M.round2(done.net - done.setAside));
   assert.equal(B.possibleAside(B.emptyBudget(), p, nights, TODAY).possible, th.amount);
 });
 
-test('several establishments: a mostly-cash second job counts its cash too, scaled to the same days', () => {
+test('several establishments: a mostly-cash second job counts its cash too, as logged', () => {
   const A = { ...P(), id: 'A' };
   const second = { ...P(), freq: 'semimonthly', periodStart: '2026-09-01', periodEnd: '2026-09-15' };
   const sNights = [];
@@ -76,11 +76,10 @@ test('several establishments: a mostly-cash second job counts its cash too, scal
     { id: 'A', name: 'Main', profile: A, nights: cashNights() },
     { id: 'B', name: 'Second', profile: second, nights: sNights },
   ];
-  const tB = B.typicalTakeHome(second, sNights, TODAY);
+  const tB = B.loggedTakeHome(second, sNights, TODAY);
   assert.ok(tB.cash > tB.check, 'the second job is mostly cash');
   const pa = B.possibleAside(rentAndFood(), null, null, TODAY, { sources, funderId: 'A' });
-  const lenB = M.periodLength(second, M.periodIndex(second, TODAY));
-  assert.equal(pa.otherChecks, Math.round((M.toCents(tB.amount) * 14) / lenB) / 100);
+  assert.equal(pa.otherChecks, tB.amount); // as logged in its current pay period, not scaled to the other one's days
   // From the second job: its own take-home (check + cash) caps what one of its checks can put aside, not its small check.
   const pb = B.possibleAside(rentAndFood(), null, null, TODAY, { sources, funderId: 'B' });
   assert.equal(pb.check, tB.amount);
@@ -88,21 +87,19 @@ test('several establishments: a mostly-cash second job counts its cash too, scal
   assert.ok(pb.possible <= tB.amount + 0.001);
 });
 
-test('after payday: cash tips you will likely keep in that window are counted', () => {
+test('after payday: future cash tips are not counted, only the check from the logged nights', () => {
   const r = B.safeToSpend(rentAndFood(), P(), cashNights(), TODAY, { cashOnHand: 500 });
-  // Window 10-19..11-01 is 14 days, one full pay period: 2200 of cash.
-  assert.equal(r.after.periodStart, '2026-10-19');
-  assert.equal(r.after.cashExpectedTotal, 2200);
+  assert.equal(r.after.periodStart, '2026-10-05');
+  assert.equal(r.after.cashExpectedTotal, undefined);
+  assert.equal(r.after.checksTotal, M.periodTotals(P(), cashNights(), 0, TODAY).chk);
   assert.equal(
     r.after.left,
     M.round2(
-      r.after.projectedCheck +
-        2200 +
+      r.after.checksTotal +
         r.after.otherIncomeTotal -
         r.after.billsTotal -
         r.after.goalsTotal -
         r.after.categoriesTotal,
     ),
   );
-  assert.ok(r.after.left > 1000);
 });

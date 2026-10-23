@@ -83,41 +83,16 @@ function refPeriodTotals(p, nights, idx, today, shifts) {
 }
 
 const hasCash = (n) => n.cash !== '' && n.cash != null && Number.isFinite(parseFloat(n.cash));
-function refExpectedIncome(profile, nights, today) {
+function refLoggedIncome(profile, nights, today) {
   const idx = M.periodIndex(profile, today);
   const t = refPeriodTotals(profile, nights, idx, today);
-  const expected = refShiftsPerPeriod(profile, nights, today).n;
-  const done = [...new Set(nights.map((n) => M.periodIndex(profile, n.date)))].filter((i) =>
-    M.isFinal(profile, i, today),
-  );
-  const past = done.map((i) => refPeriodTotals(profile, nights, i, today));
-  const mean = (list, f) =>
-    list.length ? M.fromCents(Math.round(list.reduce((s, x) => s + M.toCents(f(x)), 0) / list.length)) : null;
-  const avg = mean(past, (x) => x.net);
-  const avgChk = mean(
-    past.filter((x) => x.allCash),
-    (x) => x.chk,
-  );
-  const withCash = t.ns.filter(hasCash).length;
-  let projected;
-  if (withCash > 0) projected = M.round2(t.chk * Math.max(1, Math.max(expected, t.ns.length) / withCash));
-  else projected = avgChk;
-  const projectedFrom = withCash > 0 ? 'nights' : avgChk == null ? null : 'average';
-  const kept = (x) => M.toCents(x.net) - M.toCents(x.setAside);
   return {
     cashSoFar: t.cash,
     setAsideSoFar: t.setAside,
     checkSoFar: t.chk,
-    projectedCheck: projected,
-    projectedFrom,
-    avgCheckPerPeriod: avgChk,
-    avgTakeHomePerPeriod: avg,
-    avgKeptPerPeriod: past.length
-      ? M.fromCents(Math.round(past.reduce((s, x) => s + kept(x), 0) / past.length))
-      : null,
-    projectedKept: t.ns.length
-      ? M.fromCents(Math.round(kept(t) * Math.max(1, expected / t.ns.length)))
-      : null,
+    keptSoFar: M.fromCents(M.toCents(t.net) - M.toCents(t.setAside)),
+    loggedNights: t.ns.length,
+    checkNights: t.ns.filter(hasCash).length,
   };
 }
 
@@ -176,11 +151,7 @@ test('fast period math gives the same answers as the original on random data', (
         );
       }
       [today, '2024-03-05', '2024-12-01'].forEach((t) => {
-        assert.deepEqual(
-          B.expectedIncome(p, nights, t),
-          refExpectedIncome(p, nights, t),
-          freq + ' income ' + t,
-        );
+        assert.deepEqual(B.loggedIncome(p, nights, t), refLoggedIncome(p, nights, t), freq + ' income ' + t);
       });
     }),
   );

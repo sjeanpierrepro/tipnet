@@ -399,11 +399,14 @@ test('budget: safe to spend runs until the next money from either establishment 
       /^Safe to spend until [A-Z][a-z]{2}, [A-Z][a-z]{2} \d+ — (Voodoo Bayou|Second Spot) check$/,
     );
     const how = page.text(page.byText('details', 'How this is worked out'));
-    assert.match(how, /Next checks \(counted once they arrive\)/);
+    assert.match(how, /Next checks \(counted once they arrive, from logged nights\)/);
     assert.match(how, /Voodoo Bayou, [A-Z]/);
     assert.match(how, /Second Spot, [A-Z]/);
     const after = page.text(page.byText('section', 'After payday ('));
-    assert.match(after, /(Voodoo Bayou|Second Spot) check, [A-Z][a-z]{2}, [A-Z][a-z]{2} \d+ \(estimated\)/);
+    assert.match(
+      after,
+      /(Voodoo Bayou|Second Spot) check, [A-Z][a-z]{2}, [A-Z][a-z]{2} \d+ \(from \d+ nights? logged so far\)/,
+    );
   } finally {
     await page.close();
   }

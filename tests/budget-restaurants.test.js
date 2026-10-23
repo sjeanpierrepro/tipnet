@@ -79,17 +79,22 @@ test('after payday: every check arriving in the window, per establishment, added
       ['Voodoo Bayou', '2026-10-05'],
     ],
   );
-  assert.equal(a.projectedCheck, sumC(a.checks.map((k) => k.amount)));
-  assert.equal(a.unknownChecks, 0);
+  assert.equal(a.checksTotal, sumC(a.checks.map((k) => k.amount)));
+  assert.ok(a.checks.every((k) => k.nights > 0));
+  assert.deepEqual(
+    a.checks.map((k) => k.state),
+    ['ended', 'running'],
+  );
   // the first check is the same estimate the single-restaurant math gives
   const alone = B.safeToSpend(B.emptyBudget(), Bp(), sources()[1].nights, TODAY, { cashOnHand: 500 });
-  assert.equal(a.checks[0].amount, alone.after.projectedCheck);
-  // a restaurant with no nights yet: its check is unknown, the others still count
+  assert.equal(a.checks[0].amount, alone.after.checksTotal);
+  // a restaurant with no nights yet: its check is $0 with no nights behind it, the others still count
   const s = sources();
   s[0].nights = [];
   const r2 = B.safeToSpendAll(B.emptyBudget(), s, TODAY, { cashOnHand: 500 });
-  assert.equal(r2.after.unknownChecks, 1);
-  assert.equal(r2.after.projectedCheck, r2.after.checks[0].amount);
+  assert.equal(r2.after.checks[1].amount, 0);
+  assert.equal(r2.after.checks[1].nights, 0);
+  assert.equal(r2.after.checksTotal, r2.after.checks[0].amount);
 });
 
 test('cash tips from every establishment count when no balance is entered; spending since the earliest period start comes off', () => {
@@ -145,23 +150,20 @@ test('default establishment for a goal: the one that pays most often; a tie goes
   assert.equal(B.funderOf({}, s, TODAY).id, 'A');
 });
 
-test('what is possible from one establishment: its check plus the others over the same days, minus everything, capped at what its check brings', () => {
+test('what is possible from one establishment: its logged take-home plus the other establishments as logged, minus everything, capped at what its check brings', () => {
   const budget = B.emptyBudget();
   budget.bills = [{ id: 'b1', name: 'Rent', amount: 1200, dueDay: 1 }];
   budget.goals = [{ id: 'g1', name: 'Fund', target: 5000, saved: 0, perPaycheck: 40, fundedBy: 'A' }];
   const s = sources();
+  s[1].nights.push(night(9, '2026-10-01', 210, 55)); // a night logged in Second Spot's current pay period
   const pb = B.possibleAside(budget, null, null, TODAY, { sources: s, funderId: 'B' });
   assert.equal(pb.funderId, 'B');
   assert.equal(pb.funderName, 'Second Spot');
   assert.equal(pb.periodDays, 15, 'Second Spot pay period Oct 1-15');
   assert.equal(pb.known, true);
   assert.equal(pb.otherChecksList.length, 1);
-  const tcA = B.typicalTakeHome(A(), s[0].nights, TODAY);
-  assert.equal(
-    pb.otherChecks,
-    Math.round((toCents(tcA.amount) * 15) / 14) / 100,
-    'Voodoo Bayou scaled to 15 days',
-  );
+  const tcA = B.loggedTakeHome(A(), s[0].nights, TODAY);
+  assert.equal(pb.otherChecks, tcA.amount, 'Voodoo Bayou as logged, not scaled to 15 days');
   assert.equal(pb.bills, Math.round((120000 * 12 * 15) / 365) / 100);
   assert.equal(
     pb.goals,

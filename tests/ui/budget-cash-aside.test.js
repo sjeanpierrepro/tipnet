@@ -6,14 +6,14 @@ import { exampleBudget, possibleAside, roundDownStep } from '../../app/js/budget
 import { addDays, todayISO, periodIndex, periodRange } from '../../app/js/math.js';
 
 const DEV = 'http://localhost/?unlock=dev';
-/** The review repro: two finished pay periods x 10 nights, $300 made / $220 cash; rent $1,200, groceries $300 a month. */
+/** The review repro: this and the last pay period x 10 nights, $300 made / $220 cash; rent $1,200, groceries $300 a month. */
 const seed = ({ rent = 1200 } = {}) =>
   realState((S) => {
     S.workplaces[0].setupDone = true;
     const p = S.workplaces[0].profile;
     const now = periodIndex(p, todayISO());
     S.nights = [];
-    [now - 2, now - 1].forEach((k) => {
+    [now - 1, now].forEach((k) => {
       const r = periodRange(p, k);
       for (let i = 0; i < 10; i++)
         S.nights.push({
@@ -47,7 +47,7 @@ test('mostly-cash nights: there is room to put aside, labelled as check + cash, 
     const max = roundDownStep(pa.possible);
     const t = page.text(goalForm(page));
     assert.match(t, /Up to \$1,7\d\d a paycheck is safe to put aside/);
-    assert.match(t, /Typical take-home per pay period \(check \+ cash you keep\)/);
+    assert.match(t, /Take-home logged this pay period \(check \+ cash you keep\)/);
     assert.match(t, /Cash you keep/);
     assert.equal(key(page, 'ef-goal-new-slider').disabled, false);
     assert.equal(Number(key(page, 'ef-goal-new-slider').max), max);
@@ -60,11 +60,15 @@ test('mostly-cash nights: there is room to put aside, labelled as check + cash, 
   }
 });
 
-test('after payday counts the cash tips you will likely keep', async () => {
+test('after payday counts only the check from the logged nights, no future cash', async () => {
   const page = await boot({ url: DEV, seed: seed() });
   try {
     page.tab('budget');
-    assert.match(page.text(), /Cash tips you’ll likely keep in that window \(estimated\)\+\$[\d,]+\.\d\d/);
+    const after = page.text(page.byText('section', 'After payday ('));
+    assert.match(after, /Check from your logged nights\$[\d,]+\.\d\d/);
+    assert.doesNotMatch(after, /likely|expect|typical|projected/i);
+    assert.doesNotMatch(after, /Cash tips/);
+    assert.match(after, /from \d+ nights? logged so far/);
   } finally {
     await page.close();
   }

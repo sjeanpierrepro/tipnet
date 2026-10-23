@@ -33,7 +33,8 @@ import {
   isPlan,
   purchasePlan,
   planShare,
-  typicalTakeHome,
+  loggedTakeHome,
+  loggedCheckLine,
   incomeDates,
   otherIncomeMonthly,
   otherIncomePerPaycheck,
@@ -433,7 +434,7 @@ function lockedView(S) {
       el(
         'p',
         null,
-        'It also shows what your next paycheck will likely cover. All numbers are estimates from what you enter. It is a planning aid, not financial advice.',
+        'It also shows the check from the nights you have logged. Every number comes from what you enter and log. It is a planning aid, not financial advice.',
       ),
       upgradeBtn('budget-preview-upgrade'),
     ),
@@ -840,11 +841,11 @@ function heroCard(S, r0, src) {
 /** The next check from each restaurant (not counted in Safe to spend until it arrives). */
 function nextChecksRows(r) {
   return [
-    row('Next checks (counted once they arrive)', ''),
+    row('Next checks (counted once they arrive, from logged nights)', ''),
     ...r.sources.map((s) =>
       row(
         '   ' + s.name + ', ' + fmtDate(s.payday),
-        s.check == null ? 'Not known yet' : money(s.check),
+        money(s.check) + ', ' + loggedCheckLine(s.checkNights, s.checkState).toLowerCase().replace(/\.$/, ''),
         'hint',
       ),
     ),
@@ -929,14 +930,8 @@ function breakdown(S, r, many = false) {
 }
 
 /* ---------- (b) next paycheck ---------- */
-const CHECK_HINT = {
-  current:
-    'The projected check comes from the nights you have logged this pay period with cash entered, scaled to the shifts you expect to work.',
-  finished:
-    'The projected check comes from the pay period that just ended. If some of its nights have no cash entered, TipNet scales up from the nights that do.',
-  average:
-    'No night in the pay period this check pays for has cash entered yet, so the projected check is your average check from past pay periods.',
-};
+const CHECK_HINT =
+  'Each check is worked out from the nights you logged for the pay period it pays for. Nothing is added for nights you have not worked yet.';
 /** True when any restaurant has a night with cash entered in its current pay period. */
 function cashLoggedNow(src, today = todayISO()) {
   return src.some((s) => {
@@ -954,20 +949,24 @@ function cashLoggedNow(src, today = todayISO()) {
 }
 function nextCheckCard(S, r0, src) {
   const a = r0.after;
-  const known = a.projectedCheck != null;
   const many = src.length > 1;
   // Several restaurants: every check that arrives in the window, one row each, then their total.
   const checkRows = many
     ? [
         ...a.checks.map((k) =>
           row(
-            k.name + ' check, ' + fmtDate(k.date) + ' (estimated)',
-            k.amount == null ? 'Not known yet' : money(k.amount),
+            k.name +
+              ' check, ' +
+              fmtDate(k.date) +
+              ' (' +
+              loggedCheckLine(k.nights, k.state).replace(/\.$/, '') +
+              ')',
+            money(k.amount),
           ),
         ),
-        a.checks.length > 1 ? row('Checks in that window', known ? money(a.projectedCheck) : '–') : null,
+        a.checks.length > 1 ? row('Checks in that window', money(a.checksTotal)) : null,
       ].filter(Boolean)
-    : [row('Projected check (estimated)', known ? money(a.projectedCheck) : 'Not known yet')];
+    : [row('Check from your logged nights', money(a.checksTotal))];
   return el(
     'section',
     { class: 'card stack-sm' },
@@ -980,16 +979,13 @@ function nextCheckCard(S, r0, src) {
       'dl',
       { class: 'breakdown' },
       ...checkRows,
-      ...(a.cashExpectedTotal > 0
-        ? [row('Cash tips you’ll likely keep in that window (estimated)', '+' + money(a.cashExpectedTotal))]
-        : []),
       ...(a.otherIncome.length
         ? [row('Other income in that window (' + a.otherIncome.length + ')', '+' + money(a.otherIncomeTotal))]
         : []),
       row('Bills due in that window (' + a.bills.length + ')', '−' + money(a.billsTotal)),
       row('Savings goals', '−' + money(a.goalsTotal)),
       row('Set aside for spending', '−' + money(a.categoriesTotal)),
-      row('What is left', known ? money(a.left) : '–', 'total'),
+      row('What is left', money(a.left), 'total'),
     ),
     el(
       'p',
@@ -999,18 +995,11 @@ function nextCheckCard(S, r0, src) {
             theName(r0.paydaySource.name) +
             ' payday to the day before its next one. Checks from your other establishments that arrive in between are counted too. '
         : 'These dates are the days you will be spending this check, from payday to the next payday. They are not the pay period the check is for. ',
-      known
-        ? many
-          ? (a.unknownChecks
-              ? 'A check marked “Not known yet” is left out until TipNet can estimate it. '
-              : '') + 'Each check is worked out from that establishment’s own nights.'
-          : CHECK_HINT[a.checkFrom] || CHECK_HINT.current
-        : cashLoggedNow(src)
-          ? 'This check pays for a pay period with no nights with cash entered, so TipNet can’t estimate it yet. The check is what is left after the cash you already took home.'
-          : 'Log a night with its cash in hand and TipNet can estimate your check. The check is what is left after the cash you already took home.',
-      known && a.cashExpectedTotal > 0
-        ? ' Cash tips are what you typically keep in a pay period, spread over these days.'
-        : '',
+      CHECK_HINT + ' ',
+      many ? '' : loggedCheckLine(a.checkNights, a.checkState) + (a.checkNights > 0 ? '.' : ''),
+      a.checkNights > 0 || cashLoggedNow(src)
+        ? ''
+        : ' Log a night with its cash in hand and TipNet works out your check from it.',
     ),
   );
 }
@@ -1359,19 +1348,19 @@ function trackerLines(g, p, tc) {
   const share = () => {
     const sh = planShare(p.perPaycheck, tc.base);
     if (!sh) {
-      lines.push(["We'll compare it to your paychecks once you have a finished pay period.", true]);
+      lines.push(['Log a night this pay period and TipNet will compare it to your logged take-home.', true]);
       return;
     }
     lines.push([
       "That's about " +
         sh.pct +
-        '% of what you typically take home a pay period' +
+        '% of the take-home you have logged this pay period' +
         (tc.other > 0 ? ' plus your regular other income.' : '.'),
       true,
     ]);
     if (sh.pct > 50) {
       lines.push([
-        'That is more than half of what you typically take home a pay period, which may be hard to keep up. A later date lowers it.',
+        'That is more than half of the take-home you have logged this pay period, which may be hard to keep up. A later date lowers it.',
         true,
       ]);
       move = true;
@@ -1685,17 +1674,17 @@ function goalRemoveBtn(B, g, noun) {
 }
 
 /**
- * What one restaurant typically brings home per pay period, for comparing a plan to it: the same take-home (check + cash
- * you keep) that "Room to put aside" uses (typicalTakeHome), plus regular other income over one of its pay periods.
+ * What one restaurant's logged nights bring home this pay period, for comparing a plan to it: the same take-home (check + cash
+ * you keep) that "Room to put aside" uses (loggedTakeHome), plus regular other income over one of its pay periods.
  */
-function typicalCheckOf(S, s) {
-  const check = typicalTakeHome(s.profile, s.nights, todayISO()).amount;
+function loggedBaseOf(S, s) {
+  const check = loggedTakeHome(s.profile, s.nights, todayISO()).amount;
   if (check == null) return { base: null, other: 0 };
   const other = otherIncomePerPaycheck(S.budget, s.profile, todayISO()); // regular other income, spread over one pay period
   return { base: check + other, other };
 }
 
-/** The plain-words lines that describe a plan: what to put aside, and how big that is next to a typical check. */
+/** The plain-words lines that describe a plan: what to put aside, and how big that is next to the take-home you logged. */
 function planLines(p, tc) {
   const lines = [];
   if (p.ready) lines.push('You already have enough saved for this.');
@@ -1715,12 +1704,12 @@ function planLines(p, tc) {
     );
   if (!p.ready && !p.noPaychecks && p.paychecksLeft != null) {
     const sh = planShare(p.perPaycheck, tc.base);
-    if (!sh) lines.push("We'll compare it to your paychecks once you have a finished pay period.");
+    if (!sh) lines.push('Log a night this pay period and TipNet will compare it to your logged take-home.');
     else {
       lines.push(
         "That's about " +
           sh.pct +
-          '% of what you typically take home a pay period' +
+          '% of the take-home you have logged this pay period' +
           (tc.other > 0 ? ' plus your regular other income.' : '.'),
       );
       if (sh.big) lines.push("That's a big share of each check; a later date lowers it.");
@@ -1736,10 +1725,7 @@ const moneyShort = (n) => (Math.round(n * 100) % 100 === 0 ? money0(n) : money(n
 function asideBreakdown(pa, many = false) {
   const rows = [
     row(
-      (pa.checkFrom === 'average'
-        ? 'Typical take-home per pay period (check + cash you keep)'
-        : 'Projected take-home per pay period (check + cash you keep)') +
-        (many ? ' from ' + pa.funderName : ''),
+      'Take-home logged this pay period (check + cash you keep)' + (many ? ' from ' + pa.funderName : ''),
       money(pa.check),
     ),
   ];
@@ -1748,11 +1734,9 @@ function asideBreakdown(pa, many = false) {
     rows.push(row('   Cash you keep', money(pa.cash), 'hint'));
   }
   if (many) {
-    rows.push(
-      row('Your other establishments over the same ' + pa.periodDays + ' days', '+' + money(pa.otherChecks)),
-    );
+    rows.push(row('Your other establishments, logged this pay period', '+' + money(pa.otherChecks)));
     pa.otherChecksList.forEach((o) =>
-      rows.push(row('   ' + o.name, o.known ? '+' + money(o.amount) : 'Not known yet', 'hint')),
+      rows.push(row('   ' + o.name, o.known ? '+' + money(o.amount) : 'Nothing logged', 'hint')),
     );
   }
   if (pa.other > 0) rows.push(row('Other regular income per paycheck', '+' + money(pa.other)));
@@ -1843,7 +1827,7 @@ function goalForm(item, kind = 'plan') {
       excludeId: item ? item.id : undefined,
     });
   let pa = paFor(funder);
-  let tc = typicalCheckOf(S, funder);
+  let tc = loggedBaseOf(S, funder);
   const hasOwn = !!(item && !item.targetDate && Number(item.perPaycheck) > 0);
   const perCheck = moneyInput({
     placeholder: '0.00',
@@ -1865,7 +1849,7 @@ function goalForm(item, kind = 'plan') {
     fSaved = field('Already saved', saved, { optional: true }),
     fFunder = funderSel
       ? field('Save from which paycheck?', funderSel, {
-          hint: 'The paydays and the typical take-home of that establishment set the plan.',
+          hint: 'The paydays and the logged take-home of that establishment set the plan.',
         })
       : null,
     fDate = field('Date you want it by', byDate),
@@ -1961,9 +1945,7 @@ function goalForm(item, kind = 'plan') {
     preview.hidden = mode !== 'date';
     if (toDate) toDate.hidden = mode !== 'fixed';
     if (toAmount) toAmount.hidden = mode !== 'date';
-    perLabel.textContent = rg.capped
-      ? 'Or type an amount a paycheck'
-      : 'Amount a paycheck (an estimate for now)';
+    perLabel.textContent = rg.capped ? 'Or type an amount a paycheck' : 'Amount a paycheck';
     clear(possibleBox);
     clear(extra);
     clear(preview);
@@ -2009,9 +1991,9 @@ function goalForm(item, kind = 'plan') {
         el(
           'p',
           { class: 'hint' },
-          'We’ll know what’s safe to put aside after your first pay period' +
+          'No nights are logged this pay period' +
             (many ? ' at ' + funder.name : '') +
-            '. Until then, type an amount; it’s an estimate, and TipNet checks it against your budget the next time you edit this ' +
+            ', so TipNet has nothing to suggest an amount from. Type the amount you want to put aside; TipNet checks it against your budget the next time you edit this ' +
             noun +
             '.',
         ),
@@ -2078,7 +2060,6 @@ function goalForm(item, kind = 'plan') {
       live.textContent =
         moneyShort(per) +
         ' a paycheck' +
-        (rg.capped ? '' : ' (estimate)') +
         ' → about ' +
         plural(p.paychecksLeft, 'paycheck') +
         (p.readyBy ? ' → ready by about ' + fmtDate(p.readyBy) : '');
@@ -2089,10 +2070,10 @@ function goalForm(item, kind = 'plan') {
           'p',
           { class: 'hint' },
           !sh
-            ? "We'll compare it to your paychecks once you have a finished pay period."
+            ? 'Log a night this pay period and TipNet will compare it to your logged take-home.'
             : "That's about " +
                 sh.pct +
-                '% of what you typically take home a pay period' +
+                '% of the take-home you have logged this pay period' +
                 (many ? ' at ' + funder.name : '') +
                 (tc.other > 0 ? ' plus your regular other income.' : '.'),
         ),
@@ -2149,7 +2130,7 @@ function goalForm(item, kind = 'plan') {
     funderSel.addEventListener('change', () => {
       funder = src.find((s) => s.id === funderSel.value) || funder;
       pa = paFor(funder);
-      tc = typicalCheckOf(S, funder);
+      tc = loggedBaseOf(S, funder);
       if (!hasOwn) touched = false; // a new goal starts again from what is safe from that restaurant
       refresh();
     });
@@ -2276,7 +2257,7 @@ function planRow(S, g, src) {
     return el('li', { class: 'list-row wrap' }, el('div', { class: 'main' }, goalForm(g, 'plan')));
   const f = funderFor(g, src);
   const many = src.length > 1;
-  const tc = typicalCheckOf(S, f);
+  const tc = loggedBaseOf(S, f);
   const p = purchasePlan(g, f.profile, todayISO());
   const head = [
     el('div', { class: 'spread' }, el('span', null, g.name), el('b', { class: 'num' }, p.pct + '%')),
@@ -2377,7 +2358,7 @@ function goalsCard(S) {
       if (isEditing('goal', g.id))
         return el('li', { class: 'list-row wrap' }, el('div', { class: 'main' }, goalForm(g, 'goal')));
       const f = funderFor(g, src);
-      const tc = typicalCheckOf(S, f);
+      const tc = loggedBaseOf(S, f);
       const p = purchasePlan(g, f.profile, todayISO());
       return el(
         'li',

@@ -191,19 +191,16 @@ test('Budget: cash this period, set-aside on off-payroll cash and checks follow 
   const today = '2026-10-10'; // period 2 (10-05..10-18) is current, period 1 (09-21..10-04) finished
   const late = night('2026-10-04', undefined, { cash: 150, cashOffPayroll: true });
   const now = night('2026-10-06', undefined, { cash: 100 });
-  const base = B.expectedIncome(p, [late, now], today);
+  const base = B.loggedIncome(p, [late, now], today);
   assert.equal(base.cashSoFar, 100);
   assert.equal(base.setAsideSoFar, 0);
   const moved = { ...late, periodStart: '2026-10-05' };
-  const inc = B.expectedIncome(p, [moved, now], today);
+  const inc = B.loggedIncome(p, [moved, now], today);
   assert.equal(inc.cashSoFar, 250, 'the moved night’s cash counts this period');
   assert.ok(inc.setAsideSoFar > 0, 'its off-payroll set-aside too');
   assert.equal(inc.checkSoFar, M.periodTotals(p, [moved, now], 2, today, 10).chk);
-  // the finished period it left has no nights now, so it no longer feeds the average check
-  assert.notEqual(base.avgCheckPerPeriod, null);
-  assert.equal(inc.avgCheckPerPeriod, null);
-  // typical take-home (room to put aside) uses the same assignment
-  assert.notEqual(B.typicalTakeHome(p, [moved, now], today), B.typicalTakeHome(p, [late, now], today));
+  // the logged take-home (room to put aside) uses the same assignment
+  assert.notEqual(B.loggedTakeHome(p, [moved, now], today), B.loggedTakeHome(p, [late, now], today));
 });
 
 test('non-taxable per-shift money and the exact amount follow the assigned period', () => {

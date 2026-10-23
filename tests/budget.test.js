@@ -38,47 +38,42 @@ test('next payday, including across DST changes', () => {
   assert.deepEqual(B.nextPayday(fall, '2026-11-01'), { date: '2026-11-09', daysAway: 8 });
 });
 
-test('expected income', () => {
-  const inc = B.expectedIncome(P(), M.exampleNights(TODAY), TODAY);
+test('logged income: only what the logged nights bring in, nothing scaled up', () => {
+  const inc = B.loggedIncome(P(), M.exampleNights(TODAY), TODAY);
   const t = M.periodTotals(P(), M.exampleNights(TODAY), 0, TODAY);
   assert.equal(inc.cashSoFar, t.cash);
   assert.equal(inc.checkSoFar, t.chk);
-  // 4 nights logged of 10 expected: the check estimate scales by 10/4
-  assert.equal(inc.projectedCheck, M.round2(t.chk * 2.5));
-  assert.equal(inc.projectedFrom, 'nights');
-  assert.equal(inc.avgTakeHomePerPeriod, null);
-  const none = B.expectedIncome(P(), [], TODAY);
+  assert.equal(inc.loggedNights, t.ns.length);
+  assert.equal(inc.keptSoFar, M.round2(t.net - t.setAside));
+  const none = B.loggedIncome(P(), [], TODAY);
   assert.deepEqual(none, {
     cashSoFar: 0,
     setAsideSoFar: 0,
     checkSoFar: 0,
-    projectedCheck: null,
-    projectedFrom: null,
-    avgCheckPerPeriod: null,
-    avgTakeHomePerPeriod: null,
-    avgKeptPerPeriod: null,
-    projectedKept: null,
+    keptSoFar: 0,
+    loggedNights: 0,
+    checkNights: 0,
   });
-  // a finished period gives an average take-home, and an average check when every night has cash entered
-  const later = B.expectedIncome(P(), M.exampleNights(TODAY), '2026-10-10');
-  const done = M.periodTotals(P(), M.exampleNights(TODAY), 0, '2026-10-10');
-  assert.equal(later.avgTakeHomePerPeriod, done.net);
-  assert.equal(later.avgCheckPerPeriod, done.allCash ? done.chk : null);
-  assert.equal(later.projectedCheck, later.avgCheckPerPeriod); // nothing logged in the new period yet
+  // a new pay period with nothing logged in it is zero, never an average of the finished one
+  const later = B.loggedIncome(P(), M.exampleNights(TODAY), '2026-10-10');
+  assert.equal(later.checkSoFar, 0);
+  assert.equal(later.loggedNights, 0);
 });
 
-test('expected income: the check projection uses only nights with cash entered', () => {
+test('logged income: the check uses only nights with cash entered', () => {
   const n = (date, cash) => ({ ...M.exampleNights(TODAY)[0], id: date, date, cash });
   const withCash = [n('2026-09-22', 150), n('2026-09-23', 150)];
   const mixed = [...withCash, n('2026-09-24', ''), n('2026-09-25', '')];
-  const a = B.expectedIncome(P(), withCash, TODAY),
-    b = B.expectedIncome(P(), mixed, TODAY);
-  // two nights of check money spread over the same expected shifts give the same projection
+  const a = B.loggedIncome(P(), withCash, TODAY),
+    b = B.loggedIncome(P(), mixed, TODAY);
   assert.equal(b.checkSoFar, a.checkSoFar);
-  assert.equal(b.projectedCheck, a.projectedCheck);
-  // no cash entered at all and no history: unknown, not zero
-  assert.equal(B.expectedIncome(P(), [n('2026-09-22', '')], TODAY).projectedCheck, null);
-  assert.equal(B.safeToSpend(B.emptyBudget(), P(), [], TODAY).after.left, null);
+  assert.equal(b.checkNights, 2);
+  assert.equal(b.loggedNights, 4);
+  // no cash entered at all: no check, $0, never a guess
+  const no = B.loggedIncome(P(), [n('2026-09-22', '')], TODAY);
+  assert.equal(no.checkNights, 0);
+  assert.equal(no.checkSoFar, 0);
+  assert.equal(B.safeToSpend(B.emptyBudget(), P(), [], TODAY).after.checksTotal, 0);
 });
 
 const budgetWithSpends = () => {
@@ -128,12 +123,10 @@ test('safe to spend: hand-computed example', () => {
   // After payday: next period 10-05..10-18 has phone (10-15) = 65.
   const t = M.periodTotals(P(), M.exampleNights(TODAY), 0, TODAY);
   assert.deepEqual(dates(r.after.bills), ['b2@2026-10-15']);
-  assert.equal(r.after.projectedCheck, M.round2(t.chk * 2.5));
-  // Cash tips likely kept in the 14-day window: the typical cash per 14-day pay period (take-home - check), x 14 / 14.
-  const th = B.typicalTakeHome(P(), M.exampleNights(TODAY), TODAY);
-  assert.ok(th.cash > 0);
-  assert.equal(r.after.cashExpectedTotal, th.cash);
-  assert.equal(r.after.left, M.round2(M.round2(t.chk * 2.5) + th.cash - 65 - 40 - 320.65));
+  assert.equal(r.after.checksTotal, t.chk); // the logged nights' check, not scaled up to 10 shifts
+  assert.equal(r.after.checkNights, t.ns.length);
+  assert.equal(r.after.checkState, 'running');
+  assert.equal(r.after.left, M.round2(t.chk - 65 - 40 - 320.65));
   assert.equal(r.after.categoriesTotal, 320.65); // 710 x 14 / 31 for 10-05..10-18
 });
 
@@ -267,10 +260,10 @@ test('payDelay 4: between period end and payday, next payday is for the previous
   assert.equal(r.after.periodStart, '2026-10-08');
   assert.equal(r.after.periodEnd, '2026-10-21'); // following payday is 10-22
   assert.deepEqual(dates(r.after.bills), ['d@2026-10-08', 'c@2026-10-10']);
-  // Projected check is the finished period's check estimate, not the current period's.
-  assert.equal(r.after.projectedCheck, M.periodTotals(p, nights, 0, today).chk);
-  assert.equal(r.after.left, M.round2(r.after.projectedCheck + r.after.cashExpectedTotal - 75));
-  assert.ok(r.after.cashExpectedTotal > 0, 'cash tips in the window count too');
+  // The check is the finished period's, worked out from its logged nights, not the current period's.
+  assert.equal(r.after.checksTotal, M.periodTotals(p, nights, 0, today).chk);
+  assert.equal(r.after.checkState, 'ended');
+  assert.equal(r.after.left, M.round2(r.after.checksTotal - 75));
 });
 
 test('payDelay 0: check arrives on the last day of the period', () => {
@@ -324,32 +317,25 @@ test('safeToSpend on semimonthly counts bills up to payday and in the following 
   );
 });
 
-test('between period end and payday: projected check scales from nights with cash, never uses a partial raw total', () => {
+test('between period end and payday: the check is the logged nights only, never scaled up or averaged', () => {
   const p = { ...P(), payDelay: 4 };
   const today = '2026-10-06'; // check for 09-21..10-04 arrives 10-08
   const all = M.exampleNights(TODAY);
   const full = B.safeToSpend(B.emptyBudget(), p, all, today).after;
-  assert.equal(full.checkFrom, 'finished');
-  assert.equal(full.projectedCheck, M.periodTotals(p, all, 0, today).chk);
-  // half the nights lose their cash: scale the rest up to all nights, then take off the fixed deductions once
+  assert.equal(full.checkState, 'ended');
+  assert.equal(full.checksTotal, M.periodTotals(p, all, 0, today).chk);
+  // half the nights lose their cash: only the nights with cash count, with no scaling up to all nights
   const half = all.map((n, i) => (i % 2 ? { ...n, cash: '' } : n));
-  const n = M.shiftsPerPeriod(p, half, today, 0).n;
-  const withCash = M.nightsInPeriod(p, half, 0)
-    .map((x) => M.computeNight(x, p, n))
-    .filter((c) => c.onCheck != null);
-  const N = M.nightsInPeriod(p, half, 0).length;
-  const sumC = withCash.reduce((s, c) => s + M.toCents(c.onCheck) + M.toCents(c.fixedPerShift), 0);
-  const want = M.fromCents(Math.round((sumC * N) / withCash.length) - M.toCents(M.fixedTotal(p)));
   const r = B.safeToSpend(B.emptyBudget(), p, half, today).after;
-  assert.equal(r.checkFrom, 'finished');
-  assert.equal(r.projectedCheck, want);
-  assert.ok(r.projectedCheck > M.periodTotals(p, half, 0, today).chk); // not the raw partial sum
-  // no cash on any night and no past average: unknown, never a negative made-up number
+  assert.equal(r.checkNights, half.filter((n) => n.cash !== '').length);
+  assert.equal(r.checksTotal, Math.max(0, M.periodTotals(p, half, 0, today).chk));
+  // no cash on any night: $0 and the plain line, never an average or a made-up number
   const none = all.map((x) => ({ ...x, cash: '' }));
   const u = B.safeToSpend(B.emptyBudget(), p, none, today).after;
-  assert.equal(u.projectedCheck, null);
-  assert.equal(u.checkFrom, null);
-  assert.equal(u.left, null);
+  assert.equal(u.checksTotal, 0);
+  assert.equal(u.checkNights, 0);
+  assert.equal(B.loggedCheckLine(u.checkNights, u.checkState), 'No nights logged for this check yet.');
+  assert.equal(u.left, 0);
 });
 
 test('paydayInfo: short periods with a long pay delay pick the earliest check still to come', () => {
@@ -368,7 +354,7 @@ test('paydayInfo: short periods with a long pay delay pick the earliest check st
   assert.equal(B.nextPayday(mon, '2026-10-21').date, '2026-11-21');
   const r = B.safeToSpend(B.emptyBudget(), semi, [], '2026-09-28');
   assert.equal(r.payday, '2026-10-06');
-  assert.equal(r.after.projectedCheck, null);
+  assert.equal(r.after.checksTotal, 0);
 });
 
 test('paydayInfo never hangs on a missing or broken start date; a restore leaves it blank for Setup', async () => {

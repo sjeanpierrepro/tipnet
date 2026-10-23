@@ -6,14 +6,14 @@ import * as B from '../app/js/budget.js';
 const TODAY = '2026-09-28';
 const P = () => M.exampleProfile(TODAY); // 14-day periods: 09-21..10-04, paydays 10-05, 10-19 ...
 const nights = () => M.exampleNights(TODAY);
-// No finished period yet, so this period's projected take-home (check + cash kept).
-const check = () => B.typicalTakeHome(P(), nights(), TODAY).amount;
+// This period's logged take-home (check + cash kept); nothing is scaled up.
+const check = () => B.loggedTakeHome(P(), nights(), TODAY).amount;
 const budget = (over = {}) => ({ ...B.emptyBudget(), ...over });
 
 test('possibleAside: a check with no bills, spending, goals or other income is all there is to put aside', () => {
   const pa = B.possibleAside(budget(), P(), nights(), TODAY);
   assert.equal(pa.known, true);
-  assert.equal(pa.checkFrom, 'projected');
+  assert.equal(pa.checkFrom, 'logged');
   assert.equal(pa.check, check());
   assert.equal(pa.possible, check());
   assert.deepEqual([pa.other, pa.bills, pa.spending, pa.goals], [0, 0, 0, 0]);
@@ -101,17 +101,22 @@ test('possibleAside: with no finished check or projection it says it does not kn
   assert.equal(pa.bills, 46.03); // pieces are still worked out
 });
 
-test('possibleAside: the average finished check is used before the projected one', () => {
-  const later = '2026-10-10'; // period 09-21..10-04 is finished
+test('possibleAside: a finished period is never averaged; with nothing logged in the new one nothing is known', () => {
+  const later = '2026-10-10'; // period 09-21..10-04 is finished, 10-05..10-18 has no nights
   const pa = B.possibleAside(budget(), P(), nights(), later);
-  const inc = B.expectedIncome(P(), nights(), later);
-  assert.equal(pa.checkFrom, 'average');
-  assert.equal(pa.check, inc.avgKeptPerPeriod);
-  assert.equal(
-    pa.check,
-    M.periodTotals(P(), nights(), 0, later).net,
-    'check + cash kept of the finished period',
-  );
+  assert.equal(pa.known, false);
+  assert.equal(pa.possible, 0);
+  assert.equal(pa.checkFrom, null);
+  assert.equal(pa.check, 0);
+  const th = B.loggedTakeHome(P(), nights(), later);
+  assert.deepEqual(th, { amount: null, from: null, check: null, cash: null });
+  // and with no slider range, so the amount is typed
+  assert.deepEqual(B.asideRange(pa.possible, 500, pa.known), {
+    capped: false,
+    max: null,
+    start: null,
+    disabled: false,
+  });
 });
 
 test('roundDownStep, roundUpStep and asideRange (the slider only goes as high as the budget leaves)', () => {

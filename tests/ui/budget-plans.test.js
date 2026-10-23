@@ -46,7 +46,7 @@ test('plans: create one by a date, with the numbers shown in plain words', async
     assert.match(preview, /About \$\d[\d,]*\.\d\d a paycheck for \d+ paychecks \(ready by /);
     assert.match(
       preview,
-      /compare it to your paychecks once you have a finished pay period|% of a typical check/,
+      /Log a night this pay period and TipNet will compare it|% of the take-home you have logged/,
     );
     submit(page);
     const g = page.state().budget.goals.find((x) => x.kind === 'purchase');
@@ -85,11 +85,9 @@ test('plans: create one with a set amount a paycheck, and a missing amount or pa
     assert.match(page.text(planForm(page)), /Pick a date after today/);
     toAmount(page);
     fill(page, 'ef-plan-new-per', '110');
-    // TipNet does not know the paycheck yet: the typed amount is an estimate (no cap until it does)
-    assert.match(
-      page.text(planForm(page)),
-      /\$110 a paycheck \(estimate\) → about 10 paychecks → ready by about /,
-    );
+    // Nothing is logged: TipNet suggests no amount and does not cap the typed one
+    assert.match(page.text(planForm(page)), /No nights are logged this pay period/);
+    assert.match(page.text(planForm(page)), /\$110 a paycheck → about 10 paychecks → ready by about /);
     submit(page);
     const g = page.state().budget.goals.find((x) => x.name === 'Laptop');
     assert.equal(g.perPaycheck, 110);
@@ -99,7 +97,7 @@ test('plans: create one with a set amount a paycheck, and a missing amount or pa
   }
 });
 
-test('plans: the realism line compares to a typical check, and a big share gets a gentle note', async () => {
+test('plans: the realism line compares to the logged take-home, and a big share gets a gentle note', async () => {
   const page = await boot({ url: DEV, seed: seed() });
   try {
     page.tab('budget');
@@ -107,12 +105,12 @@ test('plans: the realism line compares to a typical check, and a big share gets 
     fill(page, 'ef-plan-new-cost', '1000');
     fill(page, 'ef-plan-new-per', '10');
     const t = page.text(planForm(page));
-    const m = /about (\d+)% of a typical check/i.exec(t);
+    const m = /about (\d+)% of the take-home you have logged/i.exec(t);
     if (m) {
       assert.ok(Number(m[1]) < 35);
       fill(page, 'ef-plan-new-per', '5000');
       assert.match(page.text(planForm(page)), /That's a big share of each check; a later date lowers it\./);
-    } else assert.match(t, /compare it to your paychecks once you have a finished pay period/);
+    } else assert.match(t, /Log a night this pay period and TipNet will compare it/);
   } finally {
     await page.close();
   }
