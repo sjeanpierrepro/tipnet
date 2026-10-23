@@ -312,7 +312,7 @@ test('slider: editing a plan or a goal reopens the slider view at its amount', a
   }
 });
 
-test('slider: editing a goal saved above what is safe now holds it at the most (the cap applies on the next edit)', async () => {
+test('slider: editing a goal saved above what is safe now keeps its amount (typed, no slider) unless it is changed', async () => {
   const goals = [
     {
       id: 'g1',
@@ -332,8 +332,23 @@ test('slider: editing a goal saved above what is safe now holds it at the most (
     const max = roundDownStep(
       possibleAside(S.budget, S.workplaces[0].profile, S.nights, todayISO(), { excludeId: 'g1' }).possible,
     );
-    assert.equal(key(page, 'ef-goal-g1-per').value, String(max));
-    assert.match(page.text(page.$('form[aria-label="Edit goal Fund"]')), CAP);
+    assert.ok(max > 0 && max < 2000);
+    const form = page.must(page.$('form[aria-label="Edit goal Fund"]'), 'edit form');
+    assert.equal(key(page, 'ef-goal-g1-per').value, '2000', 'not clamped to today’s room');
+    assert.ok(key(page, 'ef-goal-g1-slider').closest('[hidden]'), 'no slider');
+    assert.doesNotMatch(page.text(form), CAP);
+    assert.match(
+      page.text(form),
+      /This goal is set to \$2,000 a paycheck, more than the \$[\d,]+ your logged pay leaves/,
+    );
+    // a rename saves the amount unchanged
+    const nm = key(page, 'ef-goal-g1-name');
+    nm.value = '';
+    fill(page, 'ef-goal-g1-name', 'Rainy fund');
+    page.click(page.button('Save', form));
+    const g = page.state().budget.goals.find((x) => x.id === 'g1');
+    assert.equal(g.name, 'Rainy fund');
+    assert.equal(g.perPaycheck, 2000);
   } finally {
     await page.close();
   }

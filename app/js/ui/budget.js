@@ -1926,7 +1926,12 @@ function goalForm(item, kind = 'plan') {
   /** The slider's range for what is still missing. */
   const rangeNow = () => {
     const d = draft();
-    return asideRange(pa.possible, Math.max(0, d.target - d.saved), pa.known);
+    const rg = asideRange(pa.possible, Math.max(0, d.target - d.saved), pa.known);
+    // Editing never changes a saved amount by itself: one above today's room is kept and typed (no slider, no cap).
+    // over: the room it is above.
+    if (hasOwn && rg.capped && Number(item.perPaycheck) > rg.max)
+      return { capped: false, max: null, start: null, short: false, over: rg.max };
+    return rg;
   };
   const CAP_TEXT =
     'That’s the most your budget leaves each paycheck. Lower spending or other goals to save more.';
@@ -2000,7 +2005,27 @@ function goalForm(item, kind = 'plan') {
       slider.value = String(Math.min(Number(slider.max), Math.max(0, moneyOf(perCheck.value))));
       return;
     }
-    if (rg.short) {
+    if (rg.over != null) {
+      // Editing a goal saved above what the logged pay leaves today: its amount is kept as it is (typed, no cap).
+      possibleBox.append(
+        el(
+          'p',
+          { class: 'hint' },
+          'This ' +
+            noun +
+            ' is set to ' +
+            moneyShort(item.perPaycheck) +
+            ' a paycheck, more than the ' +
+            moneyShort(rg.over) +
+            ' your logged pay' +
+            (many ? ' at ' + funder.name : '') +
+            ' leaves right now. It stays at ' +
+            moneyShort(item.perPaycheck) +
+            ' unless you change the amount.',
+        ),
+        howLink(),
+      );
+    } else if (rg.short) {
       // Logged, but not enough yet to cover the pay period: the same typed amount as with nothing logged (no slider, no cap).
       possibleBox.append(
         el(
