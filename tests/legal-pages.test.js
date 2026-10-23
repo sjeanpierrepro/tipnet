@@ -29,23 +29,26 @@ const POLAR_CFG = {
   benefitId: 'b74169ed-9c5f-4dab-96c9-d1a9dbacd974',
 };
 
-test('legal pages: markup defaults say Lemon Squeezy (also while payments are off) and carry the fill hooks', () => {
+test('legal pages: markup defaults say Polar (the shipped provider since tipnet-v43) and carry the fill hooks', () => {
   for (const name of pages) {
     const html = readFileSync(new URL(`../app/${name}.html`, import.meta.url), 'utf8');
-    assert.match(html, /<span data-provider-name>Lemon Squeezy<\/span>/);
-    assert.doesNotMatch(html, /Polar/);
+    assert.match(html, /<span data-provider-name>Polar<\/span>/);
+    // Lemon Squeezy only in the CSP (the commented alternative), never in the text people read
+    assert.doesNotMatch(html.replace(/https:\/\/api\.lemonsqueezy\.com/g, ''), /Lemon Squeezy|lemonsqueezy/i);
     assert.doesNotMatch(
       html
-        .replace(/<span data-provider-name>Lemon Squeezy<\/span>/g, '')
-        .replace(/<span data-provider-cancel>[^<]*<\/span>/g, ''),
-      /(?<!>)Lemon Squeezy(?!<)(?! \(?[a-z]*\))/,
-      'every Lemon Squeezy mention is fillable',
+        .replace(/<span data-provider-name>Polar<\/span>/g, '')
+        .replace(/<span data-provider-cancel>[^<]*<\/span>/g, '')
+        .replace(/https:\/\/(api\.)?polar\.sh[^"\s<]*/g, '')
+        .replace(/polar\.sh\/legal\/privacy/g, ''),
+      /Polar/,
+      'every Polar mention is fillable',
     );
   }
   const priv = readFileSync(new URL('../app/privacy.html', import.meta.url), 'utf8');
-  assert.match(priv, /href="https:\/\/www\.lemonsqueezy\.com\/privacy"[^>]*data-provider-privacy/);
+  assert.match(priv, /href="https:\/\/polar\.sh\/legal\/privacy"[^>]*data-provider-privacy/);
   const terms = readFileSync(new URL('../app/terms.html', import.meta.url), 'utf8');
-  assert.match(terms, /data-provider-cancel/);
+  assert.match(terms, /<span data-provider-cancel>the Polar customer portal<\/span>/);
 });
 
 test('legal pages: fillProvider names the provider in use, with its privacy link', async () => {

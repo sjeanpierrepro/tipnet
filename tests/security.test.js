@@ -232,8 +232,11 @@ test('wrong product vs mistyped key', () => {
 
 /* ---------- 6. config skew ---------- */
 test('billing config is read defensively', () => {
+  // getProvider/checkoutUrl with no argument use the shipped billing-config.js (Polar since tipnet-v43); readConfig
+  // with nothing to read stays off like any other bad input.
+  assert.equal(getProvider()?.id, 'polar');
+  assert.equal(readConfig(undefined).provider, null);
   for (const bad of [
-    undefined,
     null,
     5,
     'x',

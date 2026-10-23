@@ -272,12 +272,23 @@ test('CSP on the app, Privacy and Terms allows exactly the two payment APIs', ()
   }
 });
 
-test('the shipped billing-config.js keeps payments off and carries the commented Polar block', async () => {
+test('the shipped billing-config.js turns payments on through Polar with the TipNet ids and links', async () => {
   const mod = await import('../app/js/billing-config.js');
-  assert.equal(mod.BILLING.provider, null);
-  const src = readFileSync(new URL('../app/js/billing-config.js', import.meta.url), 'utf8');
-  assert.ok(src.includes(ORG));
-  assert.ok(src.includes(BEN));
-  assert.ok(src.includes('https://buy.polar.sh/polar_cl_aJdygUsBhyW7sa8I25xOkPxhVGuZD1fBaIFeR2CF3Bv'));
-  assert.ok(src.includes('https://buy.polar.sh/polar_cl_EDrUG3TiCtUWWfIiwPbPulFbwx3TPThNFH4de1TG1IF'));
+  const c = mod.BILLING;
+  assert.equal(c.provider, 'polar');
+  assert.equal(c.organizationId, ORG);
+  assert.equal(c.benefitId, BEN);
+  assert.equal(
+    c.checkout.monthly,
+    'https://buy.polar.sh/polar_cl_aJdygUsBhyW7sa8I25xOkPxhVGuZD1fBaIFeR2CF3Bv',
+  );
+  assert.equal(
+    c.checkout.yearly,
+    'https://buy.polar.sh/polar_cl_EDrUG3TiCtUWWfIiwPbPulFbwx3TPThNFH4de1TG1IF',
+  );
+  assert.equal(c.portalUrl, 'https://polar.sh/tipnet/portal');
+  assert.deepEqual(c.prices, { monthly: '$1.99', yearly: '$20' });
+  // readConfig accepts it as a working provider (not silently off)
+  assert.equal(readConfig(c).provider, 'polar');
+  assert.ok(getProvider(c));
 });
