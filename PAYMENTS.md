@@ -40,10 +40,10 @@ TipNet sends only the license key and a random device name to Polar, and only wh
 
 ## Changing the price later (planned: $3.99/month and $30/year from January 1, 2027)
 1. In Polar, change the product prices (decide first whether existing subscribers keep their launch price).
-2. In `app/js/billing-config.js`, update `prices` so the app shows the same numbers.
+2. In `app/js/billing-config.js`, update `prices` so the app shows the same numbers. Also change the written prices in README.md (Budget section), STAFF-GUIDE.md and the first paragraph of this file.
 3. Bump `VERSION` in `app/sw.js`, commit and push.
 
 ## Lemon Squeezy (the unused alternative)
-Lemon Squeezy was the first choice but never approved the store. The app still supports it: `app/js/billing-config.js` keeps a commented Lemon Squeezy block at the bottom. To switch back you would need an approved Lemon Squeezy store, a product with monthly and yearly variants that generate license keys (activation limit 3), its checkout links (containing `/checkout/buy/`, never `?cart=`) and its product id; then replace the `BILLING` block, set the Privacy and Terms "Last updated" dates, bump `VERSION`, and push.
+Lemon Squeezy was the first choice but never approved the store. The app still supports it: `app/js/billing-config.js` keeps a commented Lemon Squeezy block at the bottom. To switch back you would need an approved Lemon Squeezy store, a product with monthly and yearly variants that generate license keys (activation limit 3), its checkout links (containing `/checkout/buy/`, never `?cart=`) and its product id; then replace the `BILLING` block, put the Lemon Squeezy wording back in the page text of `app/privacy.html` and `app/terms.html` (the `data-provider-name`, `data-provider-cancel` and `data-provider-privacy` spots: legal.js only corrects them when JavaScript runs), set their "Last updated" dates, bump `VERSION`, and push.
 - Switching providers locks every payer of the other provider: their Budget locks at its next daily check (their key is checked with the new provider, which does not know it). Only switch when nobody pays through the old one yet, or tell those payers first.
 - Keys from one provider never unlock under the other.
