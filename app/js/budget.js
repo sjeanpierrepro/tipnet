@@ -904,7 +904,7 @@ export const roundUpStep = (v, step = ASIDE_STEP) =>
 /**
  * What there is room to put aside from each paycheck of one restaurant, from the budget. In dollars, over
  * that restaurant's pay period (periodDays):
- *   its take-home logged this pay period (check + cash you keep; see loggedTakeHome)
+ *   its take-home logged this pay period (check, cash you keep, nights with no cash entered, less taxes to set aside on cash; see loggedTakeHome)
  *   + the other restaurants' take-home logged in their current pay periods (as logged, never scaled up; a longer pay
  *     period's is shared over these days, logged x periodDays / its days, so it is not counted again at every paycheck)
  *   + regular other income over the same days

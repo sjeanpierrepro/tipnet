@@ -1721,10 +1721,7 @@ const moneyShort = (n) => (Math.round(n * 100) % 100 === 0 ? money0(n) : money(n
 /** The "How we worked this out" rows for the amount that is possible to put aside. many: name the restaurants. */
 function asideBreakdown(pa, many = false) {
   const rows = [
-    row(
-      'Take-home logged this pay period (check + cash you keep)' + (many ? ' from ' + pa.funderName : ''),
-      money(pa.check),
-    ),
+    row('Take-home logged this pay period' + (many ? ' from ' + pa.funderName : ''), money(pa.check)),
   ];
   // Its parts, the same as Pay periods shows them; they add up to the take-home above to the cent.
   if (pa.paycheck != null && (pa.cash > 0 || pa.noCash > 0 || pa.setAside > 0)) {

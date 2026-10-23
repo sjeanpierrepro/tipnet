@@ -80,7 +80,7 @@ test('slider: it only goes as high as the budget leaves, and says so', async () 
     assert.match(page.$('label[for="' + field.id + '"]').textContent, /type an amount a paycheck/);
     // The working-out lists every piece.
     const how = page.text(page.byText('details', 'How we worked this out'));
-    assert.match(how, /Take-home logged this pay period \(check \+ cash you keep\)/);
+    assert.match(how, /Take-home logged this pay period/);
     assert.match(how, /Bills per paycheck/);
     assert.match(how, /Spending categories per paycheck/);
     assert.match(how, /Your other goals per paycheck/);

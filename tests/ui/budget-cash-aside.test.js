@@ -47,7 +47,8 @@ test('mostly-cash nights: there is room to put aside, labelled as check + cash, 
     const max = roundDownStep(pa.possible);
     const t = page.text(goalForm(page));
     assert.match(t, /Up to \$1,7\d\d a paycheck is safe to put aside/);
-    assert.match(t, /Take-home logged this pay period \(check \+ cash you keep\)/);
+    assert.match(t, /Take-home logged this pay period/);
+    assert.doesNotMatch(t, /check \+ cash you keep/);
     assert.match(t, /Cash you keep/);
     assert.equal(key(page, 'ef-goal-new-slider').disabled, false);
     assert.equal(Number(key(page, 'ef-goal-new-slider').max), max);
