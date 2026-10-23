@@ -1,78 +1,49 @@
-# Turning on payments (TipNet Budget)
+# Payments (TipNet Budget)
 
-TipNet stays free. The budgeting add-on costs $1.99 a month or $20 a year. Customers pay through Lemon Squeezy, which gives them a license key. They paste the key into TipNet and the add-on unlocks. You run no server. Until you finish these steps the add-on stays hidden and the app never contacts any payment service.
+TipNet stays free. The budgeting add-on costs $1.99 a month or $20 a year. **Payments are ON through Polar** (polar.sh) since tipnet-v43 (October 23, 2026): customers pay on Polar's checkout page, Polar emails them a license key, they paste the key into TipNet and the add-on unlocks. You run no server.
 
-## What Lemon Squeezy does for you
-- It is the "merchant of record": it sells to your customers, collects and pays sales tax and VAT worldwide, and handles receipts and chargebacks. You do not register for sales tax.
-- Fees are about 5% + 50 cents per sale (check their pricing page, it can change). On a $1.99 month that is roughly $0.60, so you keep about $1.39. On $20 a year you keep about $18.50.
-- Payouts go to your bank account or PayPal. They pay out on a schedule once you pass a small minimum balance.
+## What Polar does for you
+- It is the "merchant of record": it sells to your customers, collects and pays sales tax and VAT, and handles receipts and chargebacks. You do not register for sales tax.
+- Fees: check Polar's pricing page (at setup it was about 4% + 40 cents per sale).
+- Payouts go to the bank account connected through Stripe in the Polar dashboard (Finance > Payouts). Polar's account review is done.
+
+## What is set up (Polar dashboard, organization "TipNet")
+- License-key benefit "TipNet Budget license key": prefix TIPNET, never expires, **3 devices** ("Limit activations" = 3), customers can manage their devices in the portal. Polar revokes the key when a subscription ends or is refunded.
+- Products: "TipNet Budget (monthly)" $1.99/month and "TipNet Budget (yearly)" $20/year, both granting that benefit.
+- Checkout links (Products > Checkout Links), return URL https://tipmynet.com/. They are in `app/js/billing-config.js` with the organization id and benefit id (all public, not secrets).
+- Customer portal: https://polar.sh/tipnet/portal ("Manage subscription" in the Budget tab opens it).
+
+Keep the license-key benefit's device limit at 3. Never turn it off or leave it blank: TipNet unlocks a phone by activating the key on it, and Polar only allows activation on keys that have a device limit, so without one nobody could unlock Budget. The limit is also what stops one key being shared on many phones.
 
 ## Important: don't edit the app on GitHub's website
-Edit files in the `tipnet` folder on your computer (any text editor, such as Notepad), then use GitHub Desktop to commit and push, as in DEPLOY.md. Editing on the GitHub website at the same time as the copy on your computer creates conflicts. If someone is helping you with the code, just send them the links and product ID and let them make the change.
+Edit files in the `tipnet` folder on your computer (any text editor, such as Notepad), then use GitHub Desktop to commit and push, as in DEPLOY.md. Editing on the GitHub website at the same time as the copy on your computer creates conflicts.
 
-## Phase 1: Account and store
-1. Go to lemonsqueezy.com and click Sign up. Confirm your email.
-2. Create your store. Pick a store name (customers see it on receipts) and United States / USD.
-3. A new store starts in **test mode**. That is what you want for now: test mode lets you try everything with a test card, and nobody is charged.
-
-## Phase 2: Create the product (in test mode)
-1. Click Products, then New product.
-2. Name it exactly: TipNet Budget. Add a one-line description, for example "Plan bills, spending and savings around your estimated take-home."
-3. Set Pricing to Subscription.
-4. The first price is your first variant: name it "Monthly", $1.99, billed every 1 month.
-5. Add a variant: name it "Yearly", $20, billed every 1 year.
-6. On each variant, turn on "Generate license keys" and set the activation limit to 3 (one key works on up to 3 devices). Subscriptions have no license length setting: the key stays active while the subscription is paid and expires when it ends.
-7. Save the product and make sure its status is Published.
-
-## Phase 3: Put the details into TipNet and test
-1. Get each checkout link: open TipNet Budget, click Share, pick the variant, copy the link. It must contain `/checkout/buy/`. Never copy the address of an open checkout page: links with `?cart=` in them only work once.
-2. Find the product ID: the number for TipNet Budget, usually shown in the web address when the product is open. (Stuck? A test license key also reveals it: the key check Lemon Squeezy offers returns the product ID.)
-3. In `app/js/billing-config.js`:
-   - Paste the Monthly link between the quote marks on `monthly: '',` and the Yearly link on `yearly: '',`.
-   - Put the product ID in the brackets: `productIds: [123456],`. Required: while the brackets are empty, payments stay off, so a key from someone else's store can never unlock Budget.
-   - Change `provider: null,` to `provider: 'lemonsqueezy',`.
-   - For testing only, change `allowTestMode: false,` to `allowTestMode: true,` (TipNet refuses test keys otherwise).
-4. Test on your own computer before publishing anything: run the app locally (README, "On your own computer"), open Budget, tap the Monthly button, and pay with the test card 4242 4242 4242 4242, any future expiry date and any 3-digit code. Lemon Squeezy emails you a test license key. Paste it into Budget and tap "Unlock with key". Also try "Remove from this device".
-
-## Phase 4: Activate your store
-1. In Lemon Squeezy, follow the steps to activate your store: a short questionnaire about your business and customers, and an identity check. Approval usually takes a few business days.
-2. When it asks for your website, use https://tipmynet.com/ . Make sure the current version of the app (with the Privacy and Terms pages) is published first.
-3. Set up payouts (bank or PayPal) when asked.
-
-## Phase 5: Go live
-1. Turn test mode off. Open TipNet Budget and use "Copy to Live Mode" (test products don't carry over by themselves).
-2. Get the live Monthly and Yearly links and the live product ID (they differ from the test ones) and put them into `app/js/billing-config.js` as in Phase 3.
-3. **Set `allowTestMode` back to `false`.** With it on, free test keys from anyone's test store would unlock Budget.
-4. Recommended: in `app/sw.js`, increase the number at the end of the `VERSION` line by one (for example `tipnet-v25` becomes `tipnet-v26`; always one higher than what is there now). It is optional when `billing-config.js` is the only file you changed: installed apps refresh that file in the background on their next open, and the publishing check lets it through. Bumping it anyway makes every installed copy pick the change up right away.
-5. Commit and push with GitHub Desktop. The site rebuilds in a minute or two; customers get the update the next time they open the app and tap Refresh.
-6. Before the first real sale: have the Privacy and Terms pages reviewed, and check that the support email on Lemon Squeezy's receipts is the one you want customers to write to.
+## Testing a purchase without paying
+1. In the Polar dashboard, Products > Discounts: make a 100% discount with a code, "Once", maximum 1 redemption.
+2. In TipNet: Budget > tap a price, enter the code on Polar's page, finish with your email (total $0).
+3. Paste the emailed key into Budget and tap "Unlock with key". Also try "Remove from this device".
+4. The code only covers the first period: cancel the test subscription in the portal afterwards unless you want to keep it.
 
 ## How customers get their key
-- Right after paying, Lemon Squeezy emails a receipt that includes the license key.
-- They can also log in any time at app.lemonsqueezy.com/my-orders with the same email to see their orders and key.
+- Right after paying, Polar emails a receipt that includes the license key.
+- They can also open https://polar.sh/tipnet/portal with the same email to see their orders, key and devices.
 - In TipNet they open Budget, paste the key, and tap "Unlock with key". This needs a connection once. After that it works offline, and the app quietly rechecks about once a day when online. If a phone is offline for more than 14 days the add-on locks until it is online again. The free app is never locked.
 
 ## Cancellations and refunds
-- TipNet's terms: customers can cancel any time; no refunds. Lemon Squeezy's own buyer terms, and any rights local law gives the customer, still apply.
-- Cancel: customers cancel from the link in their receipt email or on their My Orders page. They keep access until the end of the period they paid for; then the key expires and Budget locks on the next recheck. You can also cancel a subscription for them under Subscriptions.
-- If you ever do refund an order (Orders > open the order > Refund), also disable its license key under Licenses so Budget locks on the next recheck.
-- If a customer is stuck at the device limit, remove a device under Licenses > open the key > Instances, or they can tap "Remove from this device" (bottom of the Budget tab) on the old device.
+- TipNet's terms: customers can cancel any time; no refunds. Polar's own buyer terms, and any rights local law gives the customer, still apply.
+- Cancel: customers cancel in the customer portal (the link is in their receipt email). They keep access until the end of the period they paid for; then Polar revokes the key and Budget locks on the next recheck. You can also cancel a subscription for them in the Polar dashboard.
+- If you ever refund an order in the Polar dashboard, Polar revokes its key and Budget locks on the next recheck (or after the 14-day offline grace if the phone is offline).
+- If a customer is stuck at the device limit, they can remove a device in the portal, tap "Remove from this device" (bottom of the Budget tab) on the old device, or you can remove the activation in the Polar dashboard (Benefits > the license key > its grant).
 
 ## Privacy note
-TipNet sends only the license key and a random device name to Lemon Squeezy, and only when someone activates or once a day to recheck. No budget, pay or night data ever leaves the phone. The Privacy page already says this.
+TipNet sends only the license key and a random device name to Polar, and only when someone activates or once a day to recheck. No budget, pay or night data ever leaves the phone. The Privacy page says this and names Polar.
 
-## Switch to Polar (only if Lemon Squeezy does not approve the store)
-Polar (polar.sh) is a second payment provider, built and tested but switched off. Your Polar organization (TipNet), the license-key benefit (prefix TIPNET, 3 devices, ends with the subscription) and the two checkout links already exist. Switching is a one-file change:
-1. Open `app/js/billing-config.js`. At the bottom is a commented block "SWITCH TO POLAR".
-2. Replace the whole `export const BILLING = { ... };` block at the top with that block, removing the `// ` or ` * ` comment marks. Keep the ids and the two `https://buy.polar.sh/...` links exactly as written.
-3. Save, then in `app/sw.js` add 1 to the number at the end of the `VERSION` line (optional but makes every installed copy update right away).
-4. Commit and push with GitHub Desktop. The Privacy and Terms pages and the Budget screen then say "Polar" on their own, and "Manage subscription" opens https://polar.sh/tipnet/portal.
-5. Test first on your own computer with a real purchase of your own, or a 100% discount code made in the Polar dashboard: buy, paste the emailed key into Budget, tap "Unlock with key", then "Remove from this device".
-Notes:
-- Polar's account review must be finished before the first payout. Do it early in the Polar dashboard (Finance > Account), or sales will be held.
-- Keep the license-key benefit's device limit ("Limit activations") at 3. Never turn it off or leave it blank: TipNet unlocks a phone by activating the key on it, and Polar only allows activation on keys that have a device limit, so without one nobody could unlock Budget. The limit is also what stops one key being shared on many phones.
-- Polar is the merchant of record, like Lemon Squeezy. Customers find their key in the receipt email or in the portal above.
-- To go back to Lemon Squeezy, put the old `BILLING` block back. Keys from one provider never unlock under the other.
+## Changing the price later (planned: $3.99/month and $30/year from January 1, 2027)
+1. In Polar, change the product prices (decide first whether existing subscribers keep their launch price).
+2. In `app/js/billing-config.js`, update `prices` so the app shows the same numbers.
+3. Bump `VERSION` in `app/sw.js`, commit and push.
+
+## Lemon Squeezy (the unused alternative)
+Lemon Squeezy was the first choice but never approved the store. The app still supports it: `app/js/billing-config.js` keeps a commented Lemon Squeezy block at the bottom. To switch back you would need an approved Lemon Squeezy store, a product with monthly and yearly variants that generate license keys (activation limit 3), its checkout links (containing `/checkout/buy/`, never `?cart=`) and its product id; then replace the `BILLING` block, set the Privacy and Terms "Last updated" dates, bump `VERSION`, and push.
 - Switching providers locks every payer of the other provider: their Budget locks at its next daily check (their key is checked with the new provider, which does not know it). Only switch when nobody pays through the old one yet, or tell those payers first.
-- When you switch, also change the "Last updated" date at the top of `app/privacy.html` and `app/terms.html` to the day you switch, since their provider wording changes.
-- If a subscription is cancelled or refunded, Polar revokes the key and Budget locks at the next daily check (or after the 14-day offline grace if the phone is offline).
+- Keys from one provider never unlock under the other.
