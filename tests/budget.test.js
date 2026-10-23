@@ -328,7 +328,7 @@ test('between period end and payday: the check is the logged nights only, never 
   const half = all.map((n, i) => (i % 2 ? { ...n, cash: '' } : n));
   const r = B.safeToSpend(B.emptyBudget(), p, half, today).after;
   assert.equal(r.checkNights, half.filter((n) => n.cash !== '').length);
-  assert.equal(r.checksTotal, Math.max(0, M.periodTotals(p, half, 0, today).chk));
+  assert.equal(r.checksTotal, M.periodTotals(p, half, 0, today).chk); // the same as Pay periods, never clamped
   // no cash on any night: $0 and the plain line, never an average or a made-up number
   const none = all.map((x) => ({ ...x, cash: '' }));
   const u = B.safeToSpend(B.emptyBudget(), p, none, today).after;

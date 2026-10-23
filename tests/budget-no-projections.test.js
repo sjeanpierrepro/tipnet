@@ -168,3 +168,36 @@ test('old saves load unchanged: no stored budget field is added, dropped or rein
   assert.deepEqual(once.balance, old.balance);
   assert.equal(JSON.stringify(once).match(/projected|average|typical|expected/i), null);
 });
+
+test('a check below $0 (taxes on cash in hand) is shown as Pay periods shows it, never clamped to $0', () => {
+  const p = P();
+  const nights = [night('n', '2026-09-22', 100, 100)]; // all cash: the taxes on it come out of the check
+  const want = M.periodTotals(p, nights, 0, TODAY).chk;
+  assert.ok(want < 0);
+  const r = B.safeToSpend(empty(), p, nights, TODAY, { cashOnHand: 100 });
+  assert.equal(r.sources[0].check, want);
+  assert.equal(r.after.checksTotal, want);
+  // ended but not paid yet: the same amount as the period's nights add up to on Pay periods
+  const q = { ...p, payDelay: 4 };
+  const e = B.safeToSpend(empty(), q, nights, '2026-10-06', { cashOnHand: 100 });
+  assert.equal(e.after.checkState, 'ended');
+  assert.equal(e.after.checksTotal, M.periodTotals(q, nights, 0, '2026-10-06').chk);
+});
+
+test('nights with no cash entered are named, so the line never reads as fewer nights than were logged', () => {
+  const p = P();
+  const nights = [...three(), night('d', '2026-09-27', 300, '')];
+  const r = B.safeToSpend(empty(), p, nights, TODAY, { cashOnHand: 100 });
+  assert.equal(r.after.checkNights, 3);
+  assert.equal(r.after.checkLogged, 4);
+  assert.equal(
+    B.loggedCheckLine(r.after.checkNights, r.after.checkState, r.after.checkLogged),
+    'from 3 nights logged so far (1 more with no cash in hand entered)',
+  );
+  const only = B.safeToSpend(empty(), p, [night('d', '2026-09-27', 300, '')], TODAY, { cashOnHand: 100 });
+  assert.equal(only.after.checksTotal, 0);
+  assert.equal(
+    B.loggedCheckLine(only.after.checkNights, only.after.checkState, only.after.checkLogged),
+    'No cash in hand entered for this check’s nights yet.',
+  );
+});

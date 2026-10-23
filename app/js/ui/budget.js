@@ -805,7 +805,7 @@ function heroCard(S, r0, src) {
           ? el(
               'p',
               { class: 'note' },
-              'What you have now is less than what is coming out before payday. That is common between checks. Your next paycheck is not counted here, so this usually evens out on payday. If you want it to be positive sooner, you could pay a bill after payday, or lower a spending amount.',
+              'What you have now is less than what is coming out before payday. That is common between checks. Your next paycheck is not counted here until it arrives. If you want it to be positive sooner, you could pay a bill after payday, or lower a spending amount.',
             )
           : null,
         breakdown(S, r, many),
@@ -839,6 +839,8 @@ function heroCard(S, r0, src) {
   return el('div', { class: 'stack' }, box, host); // the input comes first so the number below always reflects it
 }
 
+/** loggedCheckLine inside a row: lower-case first letter, no closing full stop. */
+const lowerFirst = (s) => s.charAt(0).toLowerCase() + s.slice(1).replace(/\.$/, '');
 /** The next check from each restaurant (not counted in Safe to spend until it arrives). */
 function nextChecksRows(r) {
   return [
@@ -846,7 +848,7 @@ function nextChecksRows(r) {
     ...r.sources.map((s) =>
       row(
         '   ' + s.name + ', ' + fmtDate(s.payday),
-        money(s.check) + ', ' + loggedCheckLine(s.checkNights, s.checkState).toLowerCase().replace(/\.$/, ''),
+        money(s.check) + ', ' + lowerFirst(loggedCheckLine(s.checkNights, s.checkState, s.checkLogged)),
         'hint',
       ),
     ),
@@ -960,7 +962,7 @@ function nextCheckCard(S, r0, src) {
               ' check, ' +
               fmtDate(k.date) +
               ' (' +
-              loggedCheckLine(k.nights, k.state).replace(/\.$/, '') +
+              loggedCheckLine(k.nights, k.state, k.logged).replace(/\.$/, '') +
               ')',
             money(k.amount),
           ),
@@ -997,8 +999,12 @@ function nextCheckCard(S, r0, src) {
             ' payday to the day before its next one. Checks from your other establishments that arrive in between are counted too. '
         : 'These dates are the days you will be spending this check, from payday to the next payday. They are not the pay period the check is for. ',
       CHECK_HINT + ' ',
-      many ? '' : loggedCheckLine(a.checkNights, a.checkState) + (a.checkNights > 0 ? '.' : ''),
-      a.checkNights > 0 || cashLoggedNow(src)
+      many
+        ? ''
+        : a.checkNights > 0
+          ? 'This check is ' + loggedCheckLine(a.checkNights, a.checkState, a.checkLogged) + '.'
+          : loggedCheckLine(a.checkNights, a.checkState, a.checkLogged),
+      a.checkNights > 0 || a.checkLogged > 0 || cashLoggedNow(src)
         ? ''
         : ' Log a night with its cash in hand and TipNet works out your check from it.',
     ),
@@ -2016,7 +2022,7 @@ function goalForm(item, kind = 'plan') {
           { class: 'note' },
           'Your budget doesn’t leave anything to put aside from each ' +
             (many ? funder.name + ' ' : '') +
-            'paycheck right now: bills, spending and your other goals use it all. Lower a spending category or another goal to make room.',
+            'paycheck right now: bills, spending and your other goals use all the take-home you have logged this pay period. Logging more nights, or lowering a spending category or another goal, makes room.',
         ),
         el(
           'p',

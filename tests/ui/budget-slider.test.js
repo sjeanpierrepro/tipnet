@@ -179,7 +179,7 @@ test('slider: when the budget leaves nothing, the slider and field are off and i
     assert.equal(possibleOf(page).possible, 0);
     const t = page.text(planForm(page));
     assert.match(t, /Your budget doesn’t leave anything to put aside from each paycheck right now/);
-    assert.match(t, /Lower a spending category or another goal to make room\./);
+    assert.match(t, /Logging more nights, or lowering a spending category or another goal, makes room\./);
     assert.ok(page.byText('button', 'Edit spending', planForm(page)));
     assert.ok(page.byText('button', 'Edit your other goals', planForm(page)));
     assert.equal(key(page, 'ef-plan-new-slider').disabled, true);

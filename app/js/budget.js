@@ -36,7 +36,6 @@ import {
   periodIndex,
   periodRange,
   periodTotals,
-  shiftsPerPeriod,
   todayISO,
   indexNights,
   periodLength,
@@ -447,9 +446,8 @@ const hasCash = (n) => n.cash !== '' && n.cash != null && Number.isFinite(parseF
  */
 export function loggedIncome(profile, nights, today = todayISO(), index = indexNights(profile, nights)) {
   const idx = periodIndex(profile, today);
-  // Worked out once: with a history or an entered count it is the same for every period, and with neither there are no past periods.
-  const expected = shiftsPerPeriod(profile, nights, today, undefined, index).n;
-  const t = periodTotals(profile, nights, idx, today, expected, index);
+  // periodTotals' own shift count for this period: the one Pay periods uses, so both show the same numbers
+  const t = periodTotals(profile, nights, idx, today, undefined, index);
   return {
     cashSoFar: t.cash,
     setAsideSoFar: t.setAside,
@@ -463,31 +461,41 @@ export function loggedIncome(profile, nights, today = todayISO(), index = indexN
 /**
  * The plain line that says what a check is made from: "from 3 nights logged so far" while the pay period runs,
  * "from the nights you logged" once it is over, and "No nights logged for this check yet." with none.
+ * logged: every night logged for that pay period (nights counts only the ones with cash in hand entered, which a check
+ * is worked out from). When some have no cash entered the line says so, so it never reads as fewer nights than Pay periods lists.
  */
-export function loggedCheckLine(nights, state) {
-  if (!(nights > 0)) return 'No nights logged for this check yet.';
-  if (state === 'ended') return 'from the nights you logged';
-  return (
-    'from ' +
-    nights +
-    (nights === 1 ? ' night' : ' nights') +
-    ' logged' +
-    (state === 'running' ? ' so far' : '')
-  );
+export function loggedCheckLine(nights, state, logged = nights) {
+  const noCash = Math.max(0, (logged || 0) - (nights || 0));
+  if (!(nights > 0))
+    return noCash > 0
+      ? 'No cash in hand entered for this check’s nights yet.'
+      : 'No nights logged for this check yet.';
+  const base =
+    state === 'ended'
+      ? 'from the nights you logged'
+      : 'from ' +
+        nights +
+        (nights === 1 ? ' night' : ' nights') +
+        ' logged' +
+        (state === 'running' ? ' so far' : '');
+  return noCash > 0 ? base + ' (' + noCash + ' more with no cash in hand entered)' : base;
 }
 
 /**
  * The check for one pay period, worked out from the nights logged for it (nothing scaled up, no average of other periods):
  * {c (cents, 0 when nothing is logged), nights (logged nights with cash entered, which the check is made from),
- *  state ('running' | 'ended' | 'later': the period runs now, is over, or has not started)}.
+ *  logged (every night logged for it), state ('running' | 'ended' | 'later': the period runs now, is over, or has not started)}.
+ * Not clamped at $0: it is periodTotals' check, the amount Pay periods shows ("On your check so far", and the nights'
+ * "on check" lines plus the exact-amounts line), even when cash in hand makes it negative.
  */
 function loggedCheckC(profile, nights, k, today, index) {
   const idx = periodIndex(profile, today);
   const t = periodTotals(profile, nights, k, today, undefined, index);
   const withCash = t.ns.filter(hasCash).length;
   return {
-    c: withCash ? Math.max(0, toCents(t.chk)) : 0,
+    c: withCash ? toCents(t.chk) : 0,
     nights: withCash,
+    logged: t.ns.length,
     state: k === idx ? 'running' : k < idx ? 'ended' : 'later',
   };
 }
@@ -1108,14 +1116,14 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
  * Goals with an amount recorded for their restaurant's current check (isGoalDone) are not subtracted from the money you have now; the next paycheck still counts them.
  * Paid bills are looked up by paidKey(bill id, due date).
  * Returns {payday (the next money arriving), daysAway, paydaySource:{id,name} (the restaurant whose check that is),
- *  sources:[{id, name, payday, daysAway, check (from the nights logged for it; 0 when none), checkNights, checkState}] (each restaurant's next check, soonest first),
+ *  sources:[{id, name, payday, daysAway, check (from the nights logged for it; 0 when none; can be below 0 like Pay periods), checkNights, checkLogged, checkState}] (each restaurant's next check, soonest first),
  *  income:{source:'entered'|'balance'|'cash', amount, cash, spent (logged since the balance / this period; 0 for 'entered')}, bills:[...], billsTotal,
  *  goals:[{id,name,amount (0 once done),due (full amount),done,funderId}], goalsTotal (goals not done only), categories:[{id,name,remaining,reserved}], categoriesTotal,
  *  taxAside:[{id,name,amount}] + taxAsideTotal (this pay period's estimated taxes to set aside on cash that skipped payroll, subtracted),
  *  safe (can be negative), perDay,
  *  (bills counted are unpaid ones due from the earliest restaurant's last payday up to the day before payday)
- *  after:{checks:[{id,name,date,amount (from the nights logged for it; 0 when none),nights,state}] (every check arriving from payday until the day before that restaurant's following payday),
- *   checksTotal (the checks added up), checkNights + checkState (the first check's),
+ *  after:{checks:[{id,name,date,amount (from the nights logged for it; 0 when none),nights,logged,state}] (every check arriving from payday until the day before that restaurant's following payday),
+ *   checksTotal (the checks added up), checkNights + checkLogged + checkState (the first check's),
  *   bills, billsTotal, goalsTotal (goals saved from a check in the window),
  *   left, periodStart, periodEnd}}
  */
@@ -1136,7 +1144,7 @@ export function safeToSpendAll(budget, sources, today = todayISO(), options = {}
       inc: loggedIncome(s.profile, s.nights, today, index),
     };
   });
-  /** The check (cents) for the payday on date, worked out from the nights logged for its pay period: {c, nights, state}. */
+  /** The check (cents) for the payday on date, worked out from the nights logged for its pay period: {c, nights, logged, state}. */
   const checkAt = (x, date) => {
     const k = date === x.np.date ? x.np.periodIndex : paydayInfo(x.s.profile, addDays(date, -1)).periodIndex;
     return loggedCheckC(x.s.profile, x.s.nights, k, today, x.index);
@@ -1225,8 +1233,8 @@ export function safeToSpendAll(budget, sources, today = todayISO(), options = {}
   const checks = [];
   src.forEach((x) => {
     paydaysBetween(x.s.profile, addDays(afterStart, -1), afterEnd).forEach((date) => {
-      const { c, nights, state } = checkAt(x, date);
-      checks.push({ id: x.s.id, name: x.s.name, date, c, nights, state, order: x.order });
+      const { c, nights, logged, state } = checkAt(x, date);
+      checks.push({ id: x.s.id, name: x.s.name, date, c, nights, logged, state, order: x.order });
     });
   });
   checks.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.order - b.order));
@@ -1245,14 +1253,14 @@ export function safeToSpendAll(budget, sources, today = todayISO(), options = {}
     (g) => g.amountC,
   );
   const checksC = sumC(checks, (k) => k.c);
-  const first = checks[0] || { nights: 0, state: null };
+  const first = checks[0] || { nights: 0, logged: 0, state: null };
 
   return {
     payday,
     daysAway,
     paydaySource: { id: next.s.id, name: next.s.name },
     sources: bySoonest.map((x) => {
-      const { c, nights, state } = checkAt(x, x.np.date);
+      const { c, nights, logged, state } = checkAt(x, x.np.date);
       return {
         id: x.s.id,
         name: x.s.name,
@@ -1260,6 +1268,7 @@ export function safeToSpendAll(budget, sources, today = todayISO(), options = {}
         daysAway: x.np.daysAway,
         check: fromCents(c),
         checkNights: nights,
+        checkLogged: logged,
         checkState: state,
       };
     }),
@@ -1300,10 +1309,12 @@ export function safeToSpendAll(budget, sources, today = todayISO(), options = {}
         date: k.date,
         amount: fromCents(k.c),
         nights: k.nights,
+        logged: k.logged,
         state: k.state,
       })),
       checksTotal: fromCents(checksC),
       checkNights: first.nights,
+      checkLogged: first.logged,
       checkState: first.state,
       bills: nextBills,
       billsTotal: fromCents(nextBillsC),
