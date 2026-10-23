@@ -906,6 +906,11 @@ h1 {
   .grid-2 > .field > :not(:first-child) {
     margin-top: 6px;
   }
+  /* Explanations shown: the wrapper is display:contents, so the hint itself is the grid item and takes the 6px */
+  html:not([data-explanations='hide']) .grid-2 > .field > .explain-host > [data-explain] {
+    align-self: start;
+    margin-top: 6px;
+  }
   /* space between rows of fields (was the grid row gap) */
   .grid-2 > .field:nth-child(n + 3) {
     margin-top: var(--s-3);
