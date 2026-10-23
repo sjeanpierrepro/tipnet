@@ -124,7 +124,7 @@ test('other income: edit changes it, and delete takes two taps and has Undo', as
   }
 });
 
-test('other income: a plan compares against the typical check plus regular other income when there is some', async () => {
+test('other income: a plan compares against the logged take-home plus regular other income when there is some', async () => {
   const page = await boot({ url: DEV, seed: seed([gig({ amount: 1000 })]) });
   try {
     page.tab('budget');
@@ -133,9 +133,9 @@ test('other income: a plan compares against the typical check plus regular other
     page.type(key(page, 'ef-plan-new-cost'), '1000');
     page.type(key(page, 'ef-plan-new-per'), '100');
     const t = page.text(f);
-    if (/% of a typical check/.test(t))
-      assert.match(t, /of a typical check plus your regular other income\./);
-    else assert.match(t, /once you have a finished pay period/);
+    if (/% of the take-home you have logged/.test(t))
+      assert.match(t, /of the take-home you have logged this pay period plus your regular other income\./);
+    else assert.match(t, /Log a night this pay period/);
   } finally {
     await page.close();
   }

@@ -35,16 +35,12 @@ import {
   dayDiff,
   periodIndex,
   periodRange,
-  isFinal,
   periodTotals,
-  periodNontax,
   shiftsPerPeriod,
   todayISO,
   indexNights,
   periodLength,
   calendarMode,
-  computeNight,
-  periodFixed,
   weekdayMon0,
 } from './math.js';
 
@@ -443,83 +439,57 @@ export function billsDue(budget, fromDate, toDate) {
 /* ---------- income ---------- */
 const hasCash = (n) => n.cash !== '' && n.cash != null && Number.isFinite(parseFloat(n.cash));
 /**
- * What TipNet expects you to bring in for the current pay period. All estimates.
- * {cashSoFar: cash in hand this period, checkSoFar: on-check estimate so far (nights with cash entered),
- *  projectedCheck: estimated check if you work your expected shifts, or null when TipNet cannot tell yet,
- *  avgCheckPerPeriod: average check from finished periods where every night has cash entered, or null,
- *  projectedFrom: 'nights' (this period's nights with cash) | 'average' | null,
- *  avgTakeHomePerPeriod: from finished periods or null,
- *  avgKeptPerPeriod: average (take-home - taxes to set aside on cash that skipped payroll) of finished periods, or null,
- *  projectedKept: the same for this period, scaled up to the expected nights (never down), or null with no nights}
- * The check can only be worked out for nights with cash entered (check = take-home - cash in hand), so the
- * projection scales from those nights only. With none this period it falls back to the average past check.
+ * What the nights you logged bring in for the current pay period. Estimates from logged nights only; nothing is scaled up.
+ * {cashSoFar: cash in hand this period, checkSoFar: on-check estimate from the nights with cash entered,
+ *  keptSoFar: take-home of the logged nights less the taxes to set aside on cash that skipped payroll,
+ *  setAsideSoFar, loggedNights: nights logged this period, checkNights: how many of them have cash entered}
+ * The check can only be worked out for nights with cash entered (check = take-home - cash in hand).
  */
-export function expectedIncome(profile, nights, today = todayISO(), index = indexNights(profile, nights)) {
+export function loggedIncome(profile, nights, today = todayISO(), index = indexNights(profile, nights)) {
   const idx = periodIndex(profile, today);
   // Worked out once: with a history or an entered count it is the same for every period, and with neither there are no past periods.
   const expected = shiftsPerPeriod(profile, nights, today, undefined, index).n;
   const t = periodTotals(profile, nights, idx, today, expected, index);
-  const done = [...index.keys()].filter((i) => isFinal(profile, i, today));
-  const past = done.map((i) => periodTotals(profile, nights, i, today, expected, index));
-  const mean = (list, f) =>
-    list.length ? fromCents(Math.round(list.reduce((s, x) => s + toCents(f(x)), 0) / list.length)) : null;
-  const avg = mean(past, (x) => x.net);
-  const avgChk = mean(
-    past.filter((x) => x.allCash),
-    (x) => x.chk,
-  );
-  const withCash = t.ns.filter(hasCash).length;
-  let projected;
-  // never scale down what is already earned
-  if (withCash > 0) projected = round2(t.chk * Math.max(1, Math.max(expected, t.ns.length) / withCash));
-  else projected = avgChk;
-  const projectedFrom = withCash > 0 ? 'nights' : avgChk == null ? null : 'average';
-  // Take-home kept per pay period: check + cash kept, less the taxes to set aside on cash that skipped payroll.
-  const keptOf = (x) => toCents(x.net) - toCents(x.setAside);
-  const avgKept = past.length
-    ? fromCents(Math.round(past.reduce((s, x) => s + keptOf(x), 0) / past.length))
-    : null;
-  const projectedKept = t.ns.length
-    ? fromCents(Math.round(keptOf(t) * Math.max(1, expected / t.ns.length)))
-    : null;
   return {
     cashSoFar: t.cash,
     setAsideSoFar: t.setAside,
     checkSoFar: t.chk,
-    projectedCheck: projected,
-    projectedFrom,
-    avgCheckPerPeriod: avgChk,
-    avgTakeHomePerPeriod: avg,
-    avgKeptPerPeriod: avgKept,
-    projectedKept,
+    keptSoFar: fromCents(toCents(t.net) - toCents(t.setAside)),
+    loggedNights: t.ns.length,
+    checkNights: t.ns.filter(hasCash).length,
   };
 }
 
 /**
- * Estimated check {c (cents or null), from} for a finished period whose check has not arrived yet (or null if unknown).
- * Every night has cash: the period's check as worked out. Some do: scale the nights with cash up to all N nights,
- * (sum of onCheck + fixed share) x N / withCash - fixed deductions. None do: the average past check, else null.
+ * The plain line that says what a check is made from: "from 3 nights logged so far" while the pay period runs,
+ * "from the nights you logged" once it is over, and "No nights logged for this check yet." with none.
  */
-function finishedCheckC(profile, nights, k, today, avgCheck, index) {
-  const n = shiftsPerPeriod(profile, nights, today, k, index).n;
-  const t = periodTotals(profile, nights, k, today, n, index);
-  if (t.allCash) return { c: toCents(t.chk), from: 'finished' };
-  const withCash = t.ns.map((night) => computeNight(night, profile, n)).filter((c) => c.onCheck != null);
-  if (withCash.length) {
-    // per-night shares of fixed deductions and recurring non-taxable money are swapped for the exact amounts
-    const sumC = withCash.reduce(
-      (s, c) => s + toCents(c.onCheck) + toCents(c.fixedPerShift) - toCents(c.nontaxPerShift),
-      0,
-    );
-    return {
-      c:
-        Math.round((sumC * t.ns.length) / withCash.length) -
-        toCents(periodFixed(profile, t.ns)) +
-        toCents(periodNontax(profile, t.ns)),
-      from: 'finished',
-    };
-  }
-  return { c: avgCheck == null ? null : toCents(avgCheck), from: avgCheck == null ? null : 'average' };
+export function loggedCheckLine(nights, state) {
+  if (!(nights > 0)) return 'No nights logged for this check yet.';
+  if (state === 'ended') return 'from the nights you logged';
+  return (
+    'from ' +
+    nights +
+    (nights === 1 ? ' night' : ' nights') +
+    ' logged' +
+    (state === 'running' ? ' so far' : '')
+  );
+}
+
+/**
+ * The check for one pay period, worked out from the nights logged for it (nothing scaled up, no average of other periods):
+ * {c (cents, 0 when nothing is logged), nights (logged nights with cash entered, which the check is made from),
+ *  state ('running' | 'ended' | 'later': the period runs now, is over, or has not started)}.
+ */
+function loggedCheckC(profile, nights, k, today, index) {
+  const idx = periodIndex(profile, today);
+  const t = periodTotals(profile, nights, k, today, undefined, index);
+  const withCash = t.ns.filter(hasCash).length;
+  return {
+    c: withCash ? Math.max(0, toCents(t.chk)) : 0,
+    nights: withCash,
+    state: k === idx ? 'running' : k < idx ? 'ended' : 'later',
+  };
 }
 
 /* ---------- categories and goals ---------- */
@@ -695,7 +665,7 @@ export function otherIncomePerPaycheck(budget, profile, today = todayISO()) {
 
 /* ---------- big-purchase plans (a goal with kind 'purchase') ---------- */
 export const isPlan = (g) => !!g && g.kind === 'purchase';
-/** Above about this share of a typical check, the plan gets a gentle note. */
+/** Above about this share of the take-home you logged this pay period, the plan gets a gentle note. */
 export const PLAN_BIG_SHARE = 35;
 
 /**
@@ -843,9 +813,9 @@ export function purchasePlan(goal, profile, today = todayISO()) {
   return out;
 }
 
-/** How big the per-paycheck amount is next to a typical check: {pct (whole number), big} or null when the check is not known. */
-export function planShare(perPaycheck, typicalCheck) {
-  const base = toCents(num(typicalCheck));
+/** How big the per-paycheck amount is next to the take-home logged this pay period: {pct (whole number), big} or null when the check is not known. */
+export function planShare(perPaycheck, loggedBase) {
+  const base = toCents(num(loggedBase));
   if (!(base > 0) || !(num(perPaycheck) > 0)) return null;
   const pct = Math.round((toCents(num(perPaycheck)) / base) * 100);
   return { pct, big: pct > PLAN_BIG_SHARE };
@@ -878,34 +848,24 @@ export function defaultFunder(sources, today = todayISO()) {
 /** The restaurant a goal is saved from: its fundedBy when that restaurant is listed, else the default (see defaultFunder). */
 export const funderOf = (goal, sources, today = todayISO()) =>
   (goal && (sources || []).find((s) => s.id === goal.fundedBy)) || defaultFunder(sources, today);
-/** A typical check from one restaurant: the average finished check, else the projected one. {check (null when unknown), from}. */
-export function typicalCheck(profile, nights, today = todayISO(), index) {
-  const inc = expectedIncome(profile, nights, today, index || indexNights(profile, nights));
-  const check = inc.avgCheckPerPeriod != null ? inc.avgCheckPerPeriod : inc.projectedCheck;
-  return {
-    check,
-    from: check == null ? null : inc.avgCheckPerPeriod != null ? 'average' : 'projected',
-  };
-}
 /**
- * What one restaurant typically brings home per pay period: the check plus the cash you keep (less the taxes to set aside
- * on cash that skipped payroll). Every "what can I put aside" number uses this one figure. From the average of finished
- * pay periods, else this period's nights scaled up to the expected count.
- * {amount (null when unknown), from ('average'|'projected'|null), check (the typical check, or null),
- *  cash (amount - check, never below 0; null when the check is not known)}.
+ * What the nights you logged this pay period bring home at one restaurant: the check plus the cash you keep (less the taxes
+ * to set aside on cash that skipped payroll). Nothing is scaled up and no past periods are averaged.
+ * {amount (null when no night is logged this pay period), from ('logged'|null), check (the check part, or null),
+ *  cash (amount - check, never below 0; null when nothing is logged)}.
  */
-export function typicalTakeHome(profile, nights, today = todayISO(), index) {
-  return takeHomeOf(expectedIncome(profile, nights, today, index || indexNights(profile, nights)));
+export function loggedTakeHome(profile, nights, today = todayISO(), index) {
+  return takeHomeOf(loggedIncome(profile, nights, today, index || indexNights(profile, nights)));
 }
-/** typicalTakeHome from an expectedIncome() result. */
+/** loggedTakeHome from a loggedIncome() result. */
 function takeHomeOf(inc) {
-  const amount = inc.avgKeptPerPeriod != null ? inc.avgKeptPerPeriod : inc.projectedKept;
-  const check = inc.avgCheckPerPeriod != null ? inc.avgCheckPerPeriod : inc.projectedCheck;
+  if (!inc.loggedNights) return { amount: null, from: null, check: null, cash: null };
+  const amount = inc.keptSoFar;
   return {
     amount,
-    from: amount == null ? null : inc.avgKeptPerPeriod != null ? 'average' : 'projected',
-    check: amount == null ? null : check,
-    cash: amount == null || check == null ? null : fromCents(Math.max(0, toCents(amount) - toCents(check))),
+    from: 'logged',
+    check: inc.checkSoFar,
+    cash: fromCents(Math.max(0, toCents(amount) - toCents(inc.checkSoFar))),
   };
 }
 const lenNow = (profile, today) => periodLength(profile, periodIndex(profile, today));
@@ -927,10 +887,10 @@ export const roundDownStep = (v, step = ASIDE_STEP) =>
 export const roundUpStep = (v, step = ASIDE_STEP) =>
   Math.ceil((Math.round(num(v) * 100) - 1e-6) / (step * 100)) * step;
 /**
- * What there is room to put aside from each paycheck of one restaurant, from the budget. All estimates, in dollars, over
+ * What there is room to put aside from each paycheck of one restaurant, from the budget. In dollars, over
  * that restaurant's pay period (periodDays):
- *   its typical take-home per pay period (check + cash you keep; see typicalTakeHome)
- *   + the other restaurants' typical take-home over the same days (each check x these days / its own pay period's days)
+ *   its take-home logged this pay period (check + cash you keep; see loggedTakeHome)
+ *   + the other restaurants' take-home logged in their current pay periods (as logged, never scaled up)
  *   + regular other income over the same days
  *   - bills over the same days (monthly bills x 12 x days / 365) - spending categories (their per-day allowance x the days)
  *   - what the other active goals already take over the same days (each from its own restaurant's paychecks, scaled the same way).
@@ -939,8 +899,8 @@ export const roundUpStep = (v, step = ASIDE_STEP) =>
  * Pass profile and nights for one restaurant; for several, opts.sources (see above) and opts.funderId (default: defaultFunder).
  * opts.excludeId leaves one goal out (the one being made or edited). opts.index: indexNights() of profile/nights.
  * (The cap uses take-home + other income, not the paycheck alone: cash tips you keep are money you can put aside.)
- * Returns {known (false when TipNet can't tell what this restaurant brings home yet), possible, check (the typical take-home
- *  per pay period: check + cash kept), checkFrom ('average'|'projected'|null), paycheck (its check part, or null), cash (its cash part, or null),
+ * Returns {known (false when TipNet can't tell what this restaurant brings home yet), possible, check (the take-home logged
+ *  this pay period: check + cash kept), checkFrom ('logged'|null), paycheck (its check part, or null), cash (its cash part, or null),
  *  otherChecks, otherChecksList:[{id,name,amount,known}], other, bills, spending, goals, periodDays, funderId, funderName,
  *  goalList:[{id,name,amount}]}. When not known, possible is 0 and the pieces are still worked out.
  */
@@ -951,13 +911,13 @@ export function possibleAside(budget, profile, nights, today = todayISO(), opts 
       : [{ id: opts.funderId || '', name: '', profile, nights, index: opts.index }];
   const f = sources.find((s) => s.id === opts.funderId) || defaultFunder(sources, today) || sources[0];
   const len = lenNow(f.profile, today);
-  const tc = typicalTakeHome(f.profile, f.nights, today, f.index);
+  const tc = loggedTakeHome(f.profile, f.nights, today, f.index);
   const checkC = tc.amount == null ? 0 : toCents(tc.amount);
   const others = sources
     .filter((s) => s !== f && hasSchedule(s.profile))
     .map((s) => {
-      const t = typicalTakeHome(s.profile, s.nights, today, s.index);
-      const c = t.amount == null ? 0 : scaleC(toCents(t.amount), lenNow(s.profile, today), len);
+      const t = loggedTakeHome(s.profile, s.nights, today, s.index);
+      const c = t.amount == null ? 0 : toCents(t.amount);
       return { id: s.id, name: s.name, amountC: c, known: t.amount != null };
     });
   const othersC = sumC(others, (o) => o.amountC);
@@ -1148,16 +1108,15 @@ export function safeToSpend(budget, profile, nights, today = todayISO(), options
  * Goals with an amount recorded for their restaurant's current check (isGoalDone) are not subtracted from the money you have now; the next paycheck still counts them.
  * Paid bills are looked up by paidKey(bill id, due date).
  * Returns {payday (the next money arriving), daysAway, paydaySource:{id,name} (the restaurant whose check that is),
- *  sources:[{id, name, payday, daysAway, check (null if unknown), checkFrom}] (each restaurant's next check, soonest first),
+ *  sources:[{id, name, payday, daysAway, check (from the nights logged for it; 0 when none), checkNights, checkState}] (each restaurant's next check, soonest first),
  *  income:{source:'entered'|'balance'|'cash', amount, cash, spent (logged since the balance / this period; 0 for 'entered')}, bills:[...], billsTotal,
  *  goals:[{id,name,amount (0 once done),due (full amount),done,funderId}], goalsTotal (goals not done only), categories:[{id,name,remaining,reserved}], categoriesTotal,
  *  taxAside:[{id,name,amount}] + taxAsideTotal (this pay period's estimated taxes to set aside on cash that skipped payroll, subtracted),
  *  safe (can be negative), perDay,
  *  (bills counted are unpaid ones due from the earliest restaurant's last payday up to the day before payday)
- *  after:{checks:[{id,name,date,amount (null if unknown),from}] (every check arriving from payday until the day before that restaurant's following payday),
- *   projectedCheck (the known checks added up; null if none is known), checkFrom ('current'|'finished'|'average'|null: the first check's), unknownChecks,
+ *  after:{checks:[{id,name,date,amount (from the nights logged for it; 0 when none),nights,state}] (every check arriving from payday until the day before that restaurant's following payday),
+ *   checksTotal (the checks added up), checkNights + checkState (the first check's),
  *   bills, billsTotal, goalsTotal (goals saved from a check in the window),
- *   cashExpected:[{id,name,amount}] + cashExpectedTotal (cash tips each restaurant typically keeps over the window's days, added),
  *   left, periodStart, periodEnd}}
  */
 export function safeToSpendAll(budget, sources, today = todayISO(), options = {}) {
@@ -1174,29 +1133,13 @@ export function safeToSpendAll(budget, sources, today = todayISO(), options = {}
       np,
       idx,
       range: periodRange(s.profile, idx),
-      inc: expectedIncome(s.profile, s.nights, today, index),
+      inc: loggedIncome(s.profile, s.nights, today, index),
     };
   });
-  /** The estimated check (cents or null) and where it comes from, for each payday k-th of source x in the window. */
+  /** The check (cents) for the payday on date, worked out from the nights logged for its pay period: {c, nights, state}. */
   const checkAt = (x, date) => {
-    if (date === x.np.date) {
-      if (x.np.periodIndex === x.idx)
-        return {
-          c: x.inc.projectedCheck == null ? null : toCents(x.inc.projectedCheck),
-          from: x.inc.projectedFrom === 'nights' ? 'current' : x.inc.projectedFrom,
-        };
-      return finishedCheckC(
-        x.s.profile,
-        x.s.nights,
-        x.np.periodIndex,
-        today,
-        x.inc.avgCheckPerPeriod,
-        x.index,
-      );
-    }
-    // a later check from the same restaurant: its pay period has hardly started, so a typical one
-    const t = x.inc.avgCheckPerPeriod != null ? x.inc.avgCheckPerPeriod : x.inc.projectedCheck;
-    return { c: t == null ? null : toCents(t), from: t == null ? null : 'average' };
+    const k = date === x.np.date ? x.np.periodIndex : paydayInfo(x.s.profile, addDays(date, -1)).periodIndex;
+    return loggedCheckC(x.s.profile, x.s.nights, k, today, x.index);
   };
   // The next money arriving: the soonest payday of any restaurant (a tie keeps the Setup order).
   const bySoonest = src
@@ -1282,8 +1225,8 @@ export function safeToSpendAll(budget, sources, today = todayISO(), options = {}
   const checks = [];
   src.forEach((x) => {
     paydaysBetween(x.s.profile, addDays(afterStart, -1), afterEnd).forEach((date) => {
-      const { c, from } = checkAt(x, date);
-      checks.push({ id: x.s.id, name: x.s.name, date, c, from, order: x.order });
+      const { c, nights, state } = checkAt(x, date);
+      checks.push({ id: x.s.id, name: x.s.name, date, c, nights, state, order: x.order });
     });
   });
   checks.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.order - b.order));
@@ -1301,34 +1244,23 @@ export function safeToSpendAll(budget, sources, today = todayISO(), options = {}
     goals.filter((g) => paidIn.has(g.funderId)),
     (g) => g.amountC,
   );
-  // Cash tips you'll likely keep in that window (each restaurant's typical cash per pay period, by the day): money you
-  // spend from as well, so a mostly-cash job doesn't look broke after payday. Unknown cash counts as none.
-  const cashAfter = src
-    .map((x) => {
-      const t = takeHomeOf(x.inc);
-      const len = periodLength(x.s.profile, x.idx);
-      const c = t.cash == null || !(len > 0) ? 0 : Math.round((toCents(t.cash) * afterDays) / len);
-      return { id: x.s.id, name: x.s.name, amountC: c };
-    })
-    .filter((x) => x.amountC > 0);
-  const cashAfterC = sumC(cashAfter, (x) => x.amountC);
-  const known = checks.filter((k) => k.c != null);
-  const projC = known.length ? sumC(known, (k) => k.c) : null;
-  const first = checks[0] || { c: null, from: null };
+  const checksC = sumC(checks, (k) => k.c);
+  const first = checks[0] || { nights: 0, state: null };
 
   return {
     payday,
     daysAway,
     paydaySource: { id: next.s.id, name: next.s.name },
     sources: bySoonest.map((x) => {
-      const { c, from } = checkAt(x, x.np.date);
+      const { c, nights, state } = checkAt(x, x.np.date);
       return {
         id: x.s.id,
         name: x.s.name,
         payday: x.np.date,
         daysAway: x.np.daysAway,
-        check: c == null ? null : fromCents(c),
-        checkFrom: from,
+        check: fromCents(c),
+        checkNights: nights,
+        checkState: state,
       };
     }),
     income: {
@@ -1366,24 +1298,20 @@ export function safeToSpendAll(budget, sources, today = todayISO(), options = {}
         id: k.id,
         name: k.name,
         date: k.date,
-        amount: k.c == null ? null : fromCents(k.c),
-        from: k.from,
+        amount: fromCents(k.c),
+        nights: k.nights,
+        state: k.state,
       })),
-      projectedCheck: projC == null ? null : fromCents(projC),
-      checkFrom: first.from,
-      unknownChecks: checks.length - known.length,
+      checksTotal: fromCents(checksC),
+      checkNights: first.nights,
+      checkState: first.state,
       bills: nextBills,
       billsTotal: fromCents(nextBillsC),
       goalsTotal: fromCents(goalsAllC),
       categoriesTotal: fromCents(afterCatsC),
       otherIncome: afterOther,
       otherIncomeTotal: fromCents(afterOtherC),
-      cashExpected: cashAfter.map((x) => ({ id: x.id, name: x.name, amount: fromCents(x.amountC) })),
-      cashExpectedTotal: fromCents(cashAfterC),
-      left:
-        projC == null
-          ? null
-          : fromCents(projC + cashAfterC + afterOtherC - nextBillsC - goalsAllC - afterCatsC),
+      left: fromCents(checksC + afterOtherC - nextBillsC - goalsAllC - afterCatsC),
       periodStart: afterStart,
       periodEnd: afterEnd,
     },

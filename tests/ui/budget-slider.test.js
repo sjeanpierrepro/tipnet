@@ -11,7 +11,7 @@ import {
 import { addDays, todayISO } from '../../app/js/math.js';
 
 const DEV = 'http://localhost/?unlock=dev';
-// Eight nights over the last 20 days, every one with its cash entered, so TipNet can tell what a typical check is.
+// Eight nights over the last 20 days, every one with its cash entered, so TipNet has take-home to work from.
 const nightsList = () =>
   [1, 3, 5, 7, 10, 13, 16, 19].map((ago, i) => ({
     id: i + 1,
@@ -52,7 +52,7 @@ test('slider: it only goes as high as the budget leaves, and says so', async () 
     fill(page, 'ef-plan-new-name', 'New phone');
     fill(page, 'ef-plan-new-cost', '5000');
     const pa = possibleOf(page);
-    assert.equal(pa.known, true, 'the seeded nights give a typical check');
+    assert.equal(pa.known, true, 'the seeded nights give a logged take-home');
     const max = roundDownStep(pa.possible);
     assert.ok(max > 300 && max < 5000, 'this seed leaves room, but less than the whole cost');
     const t = page.text(planForm(page));
@@ -80,7 +80,7 @@ test('slider: it only goes as high as the budget leaves, and says so', async () 
     assert.match(page.$('label[for="' + field.id + '"]').textContent, /type an amount a paycheck/);
     // The working-out lists every piece.
     const how = page.text(page.byText('details', 'How we worked this out'));
-    assert.match(how, /take-home per pay period \(check \+ cash you keep\)/);
+    assert.match(how, /Take-home logged this pay period \(check \+ cash you keep\)/);
     assert.match(how, /Bills per paycheck/);
     assert.match(how, /Spending categories per paycheck/);
     assert.match(how, /Your other goals per paycheck/);
@@ -198,25 +198,28 @@ test('slider: when the budget leaves nothing, the slider and field are off and i
   }
 });
 
-test('slider: with no known income there is no slider; a typed amount is saved as an estimate', async () => {
+test('slider: with no known income there is no slider; a typed amount is saved as typed', async () => {
   const page = await boot({ url: DEV, seed: seed({ nights: false }) });
   try {
     page.tab('budget');
     fill(page, 'ef-plan-new-name', 'New phone');
     fill(page, 'ef-plan-new-cost', '900');
     const t = page.text(planForm(page));
-    assert.match(t, /We’ll know what’s safe to put aside after your first pay period\./);
+    assert.match(
+      t,
+      /No nights are logged this pay period, so TipNet has nothing to suggest an amount from\./,
+    );
     assert.doesNotMatch(t, /\$0 to \$500/);
     assert.equal(key(page, 'ef-plan-new-slider').closest('.field').hidden, true, 'no made-up slider range');
     assert.match(
       page.$('label[for="' + key(page, 'ef-plan-new-per').id + '"]').textContent,
-      /an estimate for now/,
+      /^Amount a paycheck$/,
     );
     fill(page, 'ef-plan-new-per', '1000');
     assert.equal(key(page, 'ef-plan-new-per').value, '1000', 'no cap until income is known');
     assert.match(
       page.text(page.$('[role=status][aria-live]', planForm(page))),
-      /^\$1,?000 a paycheck \(estimate\) → about 1 paycheck/,
+      /^\$1,?000 a paycheck → about 1 paycheck/,
     );
     page.click(page.button('Make this plan', planForm(page)));
     assert.equal(page.state().budget.goals.find((x) => x.name === 'New phone').perPaycheck, 1000);

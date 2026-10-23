@@ -174,11 +174,11 @@ test('tracker: an unrealistic plan is said calmly and offers Move the date', asy
   try {
     page.tab('budget');
     const t = page.text(row(page));
-    if (/% of a typical check/.test(t)) {
-      assert.match(t, /more than half of a typical check/);
+    if (/% of the take-home you have logged/.test(t)) {
+      assert.match(t, /more than half of the take-home you have logged/);
       page.click(page.byLabel('Move the date for Car down payment'));
       assert.ok(page.$('form[aria-label="Edit plan Car down payment"]'), 'opens the plan to edit');
-    } else assert.match(t, /compare it to your paychecks|Pick a later date/);
+    } else assert.match(t, /Log a night this pay period and TipNet will compare it|Pick a later date/);
   } finally {
     await page.close();
   }
