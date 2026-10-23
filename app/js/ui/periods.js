@@ -48,6 +48,7 @@ import {
 import {
   el,
   field,
+  explain,
   moneyInput,
   select,
   money,
@@ -1255,10 +1256,12 @@ function calibCard(S, today) {
     'section',
     { class: 'card stack' },
     el('h2', null, 'Check my accuracy'),
-    el(
-      'p',
-      { class: 'note' },
-      'When a paycheck lands, enter its amount. TipNet compares it with what it predicted for that pay period and suggests a tax rate adjustment so the next estimate is closer. Nothing changes until you apply it. Every night in the period needs a cash amount, and every shift you worked should be logged.',
+    explain(
+      el(
+        'p',
+        { class: 'note' },
+        'When a paycheck lands, enter its amount. TipNet compares it with what it predicted for that pay period and suggests a tax rate adjustment so the next estimate is closer. Nothing changes until you apply it. Every night in the period needs a cash amount, and every shift you worked should be logged.',
+      ),
     ),
     wsel ? field('Establishment', wsel) : null,
     field('Pay period', sel),
@@ -1446,10 +1449,12 @@ function soFarCard(lines, named) {
           'No nights logged yet in this pay period. Your totals show up here once you log one.',
         )
       : lines.map(block),
-    el(
-      'p',
-      { class: 'hint' },
-      'Estimated, from the nights you logged. The same numbers as the pay period above.',
+    explain(
+      el(
+        'p',
+        { class: 'hint' },
+        'Estimated, from the nights you logged. The same numbers as the pay period above.',
+      ),
     ),
   );
 }
@@ -1729,10 +1734,12 @@ function goalCard(S, today, shown, all) {
     host,
     f,
     remove,
-    el(
-      'p',
-      { class: 'hint' },
-      'Estimated. What your budget needs is your bills plus the savings planned for your goals, each turned into a monthly amount, then spread evenly over the year.',
+    explain(
+      el(
+        'p',
+        { class: 'hint' },
+        'Estimated. What your budget needs is your bills plus the savings planned for your goals, each turned into a monthly amount, then spread evenly over the year.',
+      ),
     ),
   );
 }

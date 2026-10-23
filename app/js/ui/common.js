@@ -63,7 +63,7 @@ let uidN = 0;
 export const uid = (p = 'f') => p + ++uidN;
 
 /** Labelled field. input: an element. Returns the .field div with .setError(msg). */
-export function field(label, input, { hint, optional } = {}) {
+export function field(label, input, { hint, optional, keepHint } = {}) {
   if (!input.id) input.id = uid();
   const err = el('p', { class: 'field-error', id: input.id + '-err', hidden: true });
   const lab = el(
@@ -76,7 +76,9 @@ export function field(label, input, { hint, optional } = {}) {
   // The hint is read with the field (aria-describedby), after the error while there is one.
   const base = (input.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
   if (hint) {
-    kids.push(el('p', { class: 'hint', id: input.id + '-hint' }, hint));
+    // keepHint: the line is a value (a rate), not an explanation, so it never hides
+    const p = el('p', { class: 'hint', id: input.id + '-hint' }, hint);
+    kids.push(keepHint ? p : explain(p));
     base.push(input.id + '-hint');
   }
   const describe = (ids) => {
@@ -573,6 +575,76 @@ export function save() {
     requestPersist();
   }
   return done;
+}
+
+/* ---------- explanations (Setup > Explanations: Show / Hide) ---------- */
+/**
+ * Marks a how-it-works paragraph as an explanation. Returns the node to put in its place: a wrapper holding the
+ * paragraph (data-explain) and a small "ⓘ" button. While explanations are shown the button is not displayed and the wrapper
+ * does not exist as a box (display: contents), so nothing moves; css/components.css hides the paragraph when
+ * <html data-explanations="hide">. The button opens that one paragraph until the screen is redrawn or it is tapped again.
+ * Never use it for an error, a warning, a note that asks for action, a money label or value, or a live result.
+ */
+export function explain(node) {
+  node.setAttribute('data-explain', '');
+  const btn = el(
+    'button',
+    { type: 'button', class: 'explain-btn', 'aria-label': 'Show explanation', 'aria-expanded': 'false' },
+    'ⓘ',
+  );
+  const host = el('div', { class: 'explain-host' }, btn, node);
+  btn.addEventListener('click', () => {
+    const open = !host.hasAttribute('data-open');
+    if (open) host.setAttribute('data-open', '');
+    else host.removeAttribute('data-open');
+    btn.setAttribute('aria-expanded', String(open));
+  });
+  return host;
+}
+/** Sets <html data-explanations="hide"> from settings.explanations ('hide'; anything else shows). */
+export function applyExplanations(value) {
+  const root = document.documentElement;
+  if (value === 'hide') root.setAttribute('data-explanations', 'hide');
+  else root.removeAttribute('data-explanations');
+}
+/** Nights saved (real ones) before Tonight offers to hide the explanations. */
+export const NIGHTS_FOR_EXPLAIN_PROMPT = 10;
+/** Pure. True with 10+ real nights saved and no answer yet (the Hide / Not now card on Tonight). */
+export function explainPromptDue(S) {
+  if (!S || S.nightsExample || !S.settings || !Array.isArray(S.nights)) return false;
+  if (S.settings.explainPromptSeen === true || S.settings.explanations === 'hide') return false;
+  return S.nights.length >= NIGHTS_FOR_EXPLAIN_PROMPT;
+}
+/** The one-time card on Tonight, or null. Either answer is kept so it never comes back. */
+export function explainPromptCard() {
+  const S = getState();
+  if (!explainPromptDue(S)) return null;
+  const answer = (hide) => {
+    const st = getState().settings;
+    st.explainPromptSeen = true;
+    if (hide) st.explanations = 'hide';
+    applyExplanations(st.explanations);
+    save();
+    bus.rerender();
+  };
+  const hideBtn = el(
+    'button',
+    { type: 'button', class: 'btn btn-secondary btn-small', id: 'explain-prompt-hide' },
+    'Hide explanations',
+  );
+  hideBtn.addEventListener('click', () => answer(true));
+  const later = el('button', { type: 'button', class: 'btn-link', id: 'explain-prompt-later' }, 'Not now');
+  later.addEventListener('click', () => answer(false));
+  return el(
+    'div',
+    { class: 'banner', id: 'explain-prompt', role: 'region', 'aria-label': 'Explanations' },
+    el(
+      'p',
+      null,
+      'Getting the hang of it? Hide the explanations to keep screens short. You can turn them back on in Setup.',
+    ),
+    el('div', { class: 'cluster' }, hideBtn, later),
+  );
 }
 
 /* ---------- theme ---------- */

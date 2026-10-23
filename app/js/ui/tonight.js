@@ -55,6 +55,7 @@ import {
   el,
   clear,
   field,
+  explain,
   moneyInput,
   money,
   money0,
@@ -725,7 +726,7 @@ export function nightFields(
       { class: 'field' },
       el('label', { for: input.id }, label),
       big ? el('div', { class: 'money' }, el('span', { 'aria-hidden': 'true' }, '$'), input) : input,
-      el('p', { class: 'hint', id: hintId }, hint),
+      explain(el('p', { class: 'hint', id: hintId }, hint)),
       err,
     );
     const setError = (m, alert = false) => {
@@ -828,10 +829,12 @@ export function nightFields(
       offCb,
       el('span', null, 'Cash tips weren’t run through payroll tonight'),
     ),
-    el(
-      'p',
-      { class: 'hint', id: offCb.id + '-hint' },
-      'Tick this if no tax was taken out of tonight’s cash, so your check is bigger. The IRS still counts all tips as income, so TipNet shows what to set aside.',
+    explain(
+      el(
+        'p',
+        { class: 'hint', id: offCb.id + '-hint' },
+        'Tick this if no tax was taken out of tonight’s cash, so your check is bigger. The IRS still counts all tips as income, so TipNet shows what to set aside.',
+      ),
     ),
   );
   offField.hidden = true; // only once a cash amount is typed
@@ -839,10 +842,12 @@ export function nightFields(
     'div',
     { class: 'stack-sm' },
     el('div', { class: 'grid-2' }, ccBox.node, cashBox.node),
-    el(
-      'p',
-      { class: 'hint', id: sharedId },
-      'Tips only: TipNet adds the pay for the jobs below. Type 0 in a box if you had none.',
+    explain(
+      el(
+        'p',
+        { class: 'hint', id: sharedId },
+        'Tips only: TipNet adds the pay for the jobs below. Type 0 in a box if you had none.',
+      ),
     ),
     // a night saved without a cash amount: its tips are all in CC tips until its cash is typed
     unknownNote,
@@ -1058,10 +1063,12 @@ export function nightFields(
           'div',
           null,
           btn,
-          el(
-            'p',
-            { class: 'hint', id: key + '-other-hint' },
-            'Overtime, holiday hours, a bonus and the like, only when you have them.',
+          explain(
+            el(
+              'p',
+              { class: 'hint', id: key + '-other-hint' },
+              'Overtime, holiday hours, a bonus and the like, only when you have them.',
+            ),
           ),
         ),
       );
@@ -1083,6 +1090,7 @@ export function nightFields(
       const r = rateOf(t);
       return field(label, inp, {
         optional: true,
+        keepHint: true,
         hint: t.unit !== 'amt' && r ? money(r) + (t.unit === 'hr' ? '/h' : '/shift') : undefined,
       });
     });
@@ -1297,10 +1305,12 @@ export function resultCard(c, w, note, hoursMissing = false, nothing = !c.total)
     } else if (!c.cashOffPayroll) {
       // Not said when tonight's cash wasn't run through payroll: then no tax on it comes out of the check.
       kids.push(
-        el(
-          'p',
-          { class: 'hint' },
-          'Taxes on cash tips usually come out of the paycheck, which is why a check can look small.',
+        explain(
+          el(
+            'p',
+            { class: 'hint' },
+            'Taxes on cash tips usually come out of the paycheck, which is why a check can look small.',
+          ),
         ),
       );
     }
@@ -1323,10 +1333,12 @@ export function resultCard(c, w, note, hoursMissing = false, nothing = !c.total)
     );
   kids.push(el('p', { class: 'note' }, tip));
   kids.push(
-    el(
-      'p',
-      { class: 'hint', id: 'result-one-rate' },
-      'Estimates use one tax rate from your paystub; very big or small weeks can be withheld differently. “Check my accuracy” after payday keeps it close.',
+    explain(
+      el(
+        'p',
+        { class: 'hint', id: 'result-one-rate' },
+        'Estimates use one tax rate from your paystub; very big or small weeks can be withheld differently. “Check my accuracy” after payday keeps it close.',
+      ),
     ),
   );
   if (note) kids.push(note);

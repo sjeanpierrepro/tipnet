@@ -4,6 +4,8 @@ import {
   bus,
   clear,
   applyTheme,
+  applyExplanations,
+  explainPromptCard,
   setInstallPrompt,
   el,
   arm,
@@ -158,6 +160,7 @@ function render() {
   storage.lockFinished(); // a pay period that ended while the app was open locks before anything is drawn from Setup
   const root = document.getElementById('app');
   const y = window.scrollY;
+  applyExplanations((storage.getState().settings || {}).explanations); // also after a restore, an erase or another window's save
   if (syncTabs() === false && current === 'budget' && !preview) {
     go('tonight');
     return;
@@ -173,6 +176,11 @@ function render() {
         // Otherwise "Last backup: never. Save a backup file" once there are 5+ real nights (Tonight and Setup).
         const nudge = (current === 'tonight' && nightsBackupCard()) || backupReminder();
         if (nudge) root.prepend(nudge);
+        // The one-time "hide the explanations?" card waits while a backup card shows (the backup card wins).
+        else if (current === 'tonight' && !setup.guidedOnScreen()) {
+          const ask = explainPromptCard();
+          if (ask) root.prepend(ask);
+        }
       }
       // The "TipNet Budget" card, last on the page (not during guided setup), while Budget isn't unlocked here.
       // On Pay periods the locked Budget goal card takes its place (one locked card per page, owner request).
@@ -325,6 +333,7 @@ function setupServiceWorker() {
 async function boot() {
   const state = await storage.load();
   applyTheme(state.settings.theme);
+  applyExplanations(state.settings.explanations);
   bus.go = go;
   bus.rerender = render;
   // After Erase everything / Restore. Not set up (erased, or a code with nothing in it): back to Setup, as on a first

@@ -257,6 +257,42 @@ textarea {
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
+/* Explanations (Setup > Explanations). Shown: the wrapper is not a box and the ⓘ button is not displayed, so nothing moves.
+   Hidden (<html data-explanations="hide">): each how-it-works paragraph (data-explain) gives way to a small ⓘ button that
+   opens that one paragraph. Errors, warnings, money and results are never inside data-explain. */
+.explain-host {
+  display: contents;
+}
+.explain-btn {
+  display: none;
+}
+html[data-explanations='hide'] .explain-host {
+  display: block;
+}
+html[data-explanations='hide'] .explain-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
+  margin: -8px 0; /* a 32px tap target that takes up one line of height */
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+html[data-explanations='hide'] .explain-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: var(--r-sm);
+}
+html[data-explanations='hide'] .explain-host:not([data-open]) > [data-explain] {
+  display: none;
+}
 .note {
   font-size: 14px;
   padding: var(--s-2) var(--s-3);

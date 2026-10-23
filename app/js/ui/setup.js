@@ -41,6 +41,7 @@ import {
   el,
   clear,
   field,
+  explain,
   moneyInput,
   watchTypo,
   flagTypo,
@@ -53,6 +54,7 @@ import {
   bus,
   getState,
   applyTheme,
+  applyExplanations,
   restoreRequest,
   arm,
   workplaceSwitcher,
@@ -670,17 +672,21 @@ function periodCard(ctx, { title = 'Pay period and gross pay' } = {}) {
     'section',
     { class: 'card stack' },
     el('h2', null, title),
-    el(
-      'p',
-      { class: 'note' },
-      'Use one recent paystub. Enter the numbers for that pay period, not year-to-date. Your numbers stay on this device.',
+    explain(
+      el(
+        'p',
+        { class: 'note' },
+        'Use one recent paystub. Enter the numbers for that pay period, not year-to-date. Your numbers stay on this device.',
+      ),
     ),
     el('div', { class: 'grid-2' }, fStart, fEnd),
     el('div', { class: 'grid-2' }, fShifts, fFreq),
-    el(
-      'p',
-      { class: 'hint' },
-      'The end date keeps each night on the right paycheck; leave it blank to use how often you get paid. Picking how often you get paid moves the end date to match.',
+    explain(
+      el(
+        'p',
+        { class: 'hint' },
+        'The end date keeps each night on the right paycheck; leave it blank to use how often you get paid. Picking how often you get paid moves the end date to match.',
+      ),
     ),
     fDelay,
     fGross,
@@ -969,10 +975,12 @@ function dedCard(ctx) {
     'section',
     { class: 'card stack' },
     el('h2', null, 'Deductions'),
-    el(
-      'p',
-      { class: 'note' },
-      'Add a row for each line in the deductions part of your stub, using the dollar amount for that pay period. Pick whether it changes with your pay, like taxes, or stays the same every check, like health insurance.',
+    explain(
+      el(
+        'p',
+        { class: 'note' },
+        'Add a row for each line in the deductions part of your stub, using the dollar amount for that pay period. Pick whether it changes with your pay, like taxes, or stays the same every check, like health insurance.',
+      ),
     ),
     rowsHost,
     el('div', { class: 'cluster' }, add, fica),
@@ -1117,10 +1125,12 @@ function nontaxSection(ctx, redrawSummary) {
     'div',
     { class: 'stack-sm', id: 'nontax-section' },
     el('h3', null, 'Non-taxable earnings on this paystub'),
-    el(
-      'p',
-      { class: 'hint' },
-      'Money your stub lists as non-taxable, like reimbursements. TipNet adds it to your check without tax and leaves it out of your tax rate. Optional.',
+    explain(
+      el(
+        'p',
+        { class: 'hint' },
+        'Money your stub lists as non-taxable, like reimbursements. TipNet adds it to your check without tax and leaves it out of your tax rate. Optional.',
+      ),
     ),
     host,
     el('div', null, add),
@@ -1354,19 +1364,23 @@ function payCard(ctx) {
     'section',
     { class: 'card stack' },
     el('h2', null, 'Your jobs and pay'),
-    el(
-      'p',
-      { class: 'note' },
-      'Add every job you do where you work and what it pays. On Tonight you type your CC tips, cash tips and hours; TipNet adds the pay.',
+    explain(
+      el(
+        'p',
+        { class: 'note' },
+        'Add every job you do where you work and what it pays. On Tonight you type your CC tips, cash tips and hours; TipNet adds the pay.',
+      ),
     ),
     el('h3', null, 'Jobs'),
     jobsHost,
     el('div', null, addJob),
     el('h3', null, 'Other pay'),
-    el(
-      'p',
-      { class: 'hint' },
-      'Extra pay on top of a job, like overtime, holiday pay or a bonus. On Tonight it stays out of the way until you tap “+ Add other pay”.',
+    explain(
+      el(
+        'p',
+        { class: 'hint' },
+        'Extra pay on top of a job, like overtime, holiday pay or a bonus. On Tonight it stays out of the way until you tap “+ Add other pay”.',
+      ),
     ),
     otherHost,
     el('div', null, addOther),
@@ -1572,19 +1586,23 @@ function tipoutCard(ctx) {
   const fields = el(
     'div',
     { class: 'stack' },
-    el(
-      'p',
-      { class: 'hint', id: 'to-how-note' },
-      'On Tonight you enter your tips before tipping out, and TipNet takes the tip-outs below out.',
+    explain(
+      el(
+        'p',
+        { class: 'hint', id: 'to-how-note' },
+        'On Tonight you enter your tips before tipping out, and TipNet takes the tip-outs below out.',
+      ),
     ),
     rowsHost,
     el('div', null, add),
     toLimit,
     listErr,
-    el(
-      'p',
-      { class: 'hint' },
-      'A % of tips comes out of your tips only, never your hourly pay. Decimals are fine, like 1.25%. On Tonight you tick who you tipped out that night.',
+    explain(
+      el(
+        'p',
+        { class: 'hint' },
+        'A % of tips comes out of your tips only, never your hourly pay. Decimals are fine, like 1.25%. On Tonight you tick who you tipped out that night.',
+      ),
     ),
   );
   const offCb = el('input', {
@@ -1780,6 +1798,42 @@ function reminderCard(ctx) {
       { class: 'hint' },
       "Your phone's calendar will remind you at this time to log tonight in TipNet. To change it later, add a new one here and delete the old reminder in your calendar.",
     ),
+  );
+}
+
+/* ============ explanations ============ */
+function explainCard(ctx) {
+  const S = ctx.S;
+  const cur = S.settings.explanations === 'hide' ? 'hide' : 'show';
+  const btns = [
+    ['show', 'Show'],
+    ['hide', 'Hide'],
+  ].map(([v, label]) => {
+    const b = el(
+      'button',
+      { type: 'button', class: 'btn btn-secondary btn-small', 'aria-pressed': String(cur === v) },
+      label,
+    );
+    b.addEventListener('click', () => {
+      if (v === 'hide') S.settings.explanations = 'hide';
+      else delete S.settings.explanations;
+      S.settings.explainPromptSeen = true; // chosen here: Tonight need not ask
+      applyExplanations(S.settings.explanations);
+      save();
+      btns.forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    });
+    return b;
+  });
+  return el(
+    'section',
+    { class: 'card stack' },
+    el('h2', null, 'Explanations'),
+    el(
+      'p',
+      { class: 'hint' },
+      'Hide the how-it-works text once you know your way around. A small ⓘ stays where each one was; tap it to read that one. Warnings, errors and your numbers always show.',
+    ),
+    el('div', { class: 'cluster', role: 'group', 'aria-label': 'Explanations' }, btns),
   );
 }
 
@@ -2205,7 +2259,7 @@ function afterSetupStep(root, S) {
       { class: 'stack' },
       el('h1', { tabindex: '-1' }, 'Set up TipNet'),
       el('p', { class: 'note' }, 'Your setup is saved.'),
-      el('p', { class: 'hint' }, 'Four short steps. You can change any of it later.'),
+      explain(el('p', { class: 'hint' }, 'Four short steps. You can change any of it later.')),
       el(
         'ol',
         { class: 'steps', 'aria-label': 'Setup progress' },
@@ -2482,22 +2536,26 @@ function guided(root, ctx) {
       { class: 'stack' },
       switcher,
       el('h1', { tabindex: '-1' }, first && !many ? 'Set up TipNet' : 'Set up ' + w.name),
-      el(
-        'p',
-        { class: 'note', id: 'setup-welcome' },
-        first && !many
-          ? 'Set up with one recent paystub (about 3 minutes) so TipNet can estimate your real take-home.'
-          : 'Use one recent paystub from ' +
-              w.name +
-              ' (about 3 minutes). Its pay schedule, jobs and tip-out are kept apart from your other establishment' +
-              (S.workplaces.length > 2 ? 's' : '') +
-              '.',
+      explain(
+        el(
+          'p',
+          { class: 'note', id: 'setup-welcome' },
+          first && !many
+            ? 'Set up with one recent paystub (about 3 minutes) so TipNet can estimate your real take-home.'
+            : 'Use one recent paystub from ' +
+                w.name +
+                ' (about 3 minutes). Its pay schedule, jobs and tip-out are kept apart from your other establishment' +
+                (S.workplaces.length > 2 ? 's' : '') +
+                '.',
+        ),
       ),
       restoreLink,
-      el(
-        'p',
-        { class: 'hint' },
-        (names.length === 4 ? 'Four' : 'Three') + ' short steps. You can change any of it later.',
+      explain(
+        el(
+          'p',
+          { class: 'hint' },
+          (names.length === 4 ? 'Four' : 'Three') + ' short steps. You can change any of it later.',
+        ),
       ),
       steps,
       body,
@@ -2993,7 +3051,9 @@ function restaurantRow(S, w) {
     body = el(
       'div',
       { class: 'stack fold-body', id: 'wp-body-' + w.id },
-      el('p', { class: 'hint' }, 'Change anything below, then tap Save. Nothing changes until you save.'),
+      explain(
+        el('p', { class: 'hint' }, 'Change anything below, then tap Save. Nothing changes until you save.'),
+      ),
       isWorkplaceSetUp(S, w) ? null : notReadyNote(ctx),
       ctx.rateNote,
       workplaceCard(ctx),
@@ -3090,6 +3150,7 @@ function fullPage(root, S, active) {
       ? 'Before ' + h + ' a.m. counts as the night before'
       : 'Off: nights are dated the day you enter them';
   };
+  const explainText = () => (getState().settings.explanations === 'hide' ? 'Hidden' : 'Shown');
   const themeText = () =>
     ({ auto: 'Same as your phone', light: 'Light', dark: 'Dark' })[getState().settings.theme || 'auto'] ||
     'Same as your phone';
@@ -3099,11 +3160,13 @@ function fullPage(root, S, active) {
       { class: 'stack' },
       exampleBanner(),
       el('h1', { id: 'setup-h1' }, 'Setup'),
-      el(
-        'p',
-        { class: 'hint', id: 'setup-wp-hint' },
-        (many ? 'Open an establishment' : 'Open your establishment') +
-          ' to change its paystub, pay schedule, jobs or tip-out, then tap Save.',
+      explain(
+        el(
+          'p',
+          { class: 'hint', id: 'setup-wp-hint' },
+          (many ? 'Open an establishment' : 'Open your establishment') +
+            ' to change its paystub, pay schedule, jobs or tip-out, then tap Save.',
+        ),
       ),
       S.workplaces.map((w) => restaurantRow(S, w)),
       addWorkplaceCard(S),
@@ -3116,6 +3179,7 @@ function fullPage(root, S, active) {
       ),
       foldRow('cutoff', 'Late nights', cutoffText, inner(cutoffCard(ctx))),
       foldRow('theme', 'Appearance', themeText, inner(themeCard(ctx))),
+      foldRow('explain', 'Explanations', explainText, inner(explainCard(ctx))),
       foldRow(
         'reminder',
         'Nightly reminder',

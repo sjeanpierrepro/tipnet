@@ -56,6 +56,7 @@ import {
   el,
   clear,
   field,
+  explain,
   exampleBanner,
   setupFirstCard,
   moneyInput,
@@ -1114,10 +1115,12 @@ function billsCard(S, r0, src) {
             : 'No bills yet. Add the ones that repeat every month.',
         ),
     rows.length
-      ? el(
-          'p',
-          { class: 'hint' },
-          'Tick a bill when you have paid it. It stops counting against safe to spend.',
+      ? explain(
+          el(
+            'p',
+            { class: 'hint' },
+            'Tick a bill when you have paid it. It stops counting against safe to spend.',
+          ),
         )
       : null,
     manage.length
@@ -1945,7 +1948,7 @@ function goalForm(item, kind = 'plan') {
       null,
       el('summary', { class: 'btn-link' }, 'How we worked this out'),
       el('dl', { class: 'breakdown', style: 'padding-top:var(--s-2)' }, ...asideBreakdown(pa, many)),
-      el('p', { class: 'hint' }, 'All figures are estimates.'),
+      explain(el('p', { class: 'hint' }, 'All figures are estimates.')),
     );
   const refresh = () => {
     const d = draft();
@@ -2631,10 +2634,12 @@ function otherIncomeCard(S) {
     'section',
     { class: 'card stack' },
     el('h2', null, 'Other income'),
-    el(
-      'p',
-      { class: 'hint' },
-      'Money that does not go through TipNet, like a second job you do not track here, gig work, child support or benefits. Enter it once and TipNet works out every date.',
+    explain(
+      el(
+        'p',
+        { class: 'hint' },
+        'Money that does not go through TipNet, like a second job you do not track here, gig work, child support or benefits. Enter it once and TipNet works out every date.',
+      ),
     ),
     rows.length ? el('ul', { class: 'list' }, rows) : el('p', { class: 'hint' }, 'Nothing added yet.'),
     monthly > 0
