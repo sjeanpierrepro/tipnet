@@ -26,7 +26,6 @@ import {
   editContribution,
   removeContribution,
   restoreContribution,
-  PLAN_BIG_SHARE,
   convertPaidKeys,
   hasOldPaidKeys,
   balanceIsStale,
@@ -1347,7 +1346,7 @@ function statusText(g, p) {
 
 /**
  * The plain-words lines that say what to put aside and how that changed, for a goal or plan that is not done yet.
- * Returns {lines: [[text, isHint]], move: true when changing the date would help}.
+ * Returns {lines: [[text, isHint]], move: true when no paycheck arrives before the date, so only a later date helps}.
  */
 function trackerLines(g, p, tc) {
   const lines = [];
@@ -1365,14 +1364,6 @@ function trackerLines(g, p, tc) {
         (tc.other > 0 ? ' plus your regular other income.' : '.'),
       true,
     ]);
-    if (sh.pct > 50) {
-      lines.push([
-        'That is more than half of the take-home you have logged this pay period, which may be hard to keep up. A later date lowers it.',
-        true,
-      ]);
-      move = true;
-    } else if (sh.pct > PLAN_BIG_SHARE)
-      lines.push(["That's a big share of each check; a later date lowers it.", true]);
   };
   if (p.mode === 'date') {
     if (p.noPaychecks) {
@@ -1719,7 +1710,6 @@ function planLines(p, tc) {
           '% of the take-home you have logged this pay period' +
           (tc.other > 0 ? ' plus your regular other income.' : '.'),
       );
-      if (sh.big) lines.push("That's a big share of each check; a later date lowers it.");
     }
   }
   return lines;

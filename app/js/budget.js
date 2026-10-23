@@ -675,8 +675,6 @@ export function otherIncomePerPaycheck(budget, profile, today = todayISO()) {
 
 /* ---------- big-purchase plans (a goal with kind 'purchase') ---------- */
 export const isPlan = (g) => !!g && g.kind === 'purchase';
-/** Above about this share of the take-home you logged this pay period, the plan gets a gentle note. */
-export const PLAN_BIG_SHARE = 35;
 
 /**
  * Paydays after fromExclusive, up to and including throughISO (or just the first `max` of them), oldest first.
@@ -823,12 +821,12 @@ export function purchasePlan(goal, profile, today = todayISO()) {
   return out;
 }
 
-/** How big the per-paycheck amount is next to the take-home logged this pay period: {pct (whole number), big} or null when the check is not known. */
+/** The per-paycheck amount as a share of the take-home logged this pay period: {pct (whole number)} or null when nothing is logged. Just the fact, no judgement (owner decision). */
 export function planShare(perPaycheck, loggedBase) {
   const base = toCents(num(loggedBase));
   if (!(base > 0) || !(num(perPaycheck) > 0)) return null;
   const pct = Math.round((toCents(num(perPaycheck)) / base) * 100);
-  return { pct, big: pct > PLAN_BIG_SHARE };
+  return { pct };
 }
 
 /* ---------- several restaurants (pay sources) ---------- */

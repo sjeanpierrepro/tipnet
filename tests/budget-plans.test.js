@@ -134,10 +134,10 @@ test('saved at or above the cost is ready to buy', () => {
   assert.equal(B.purchasePlan(plan({ saved: 500, targetDate: '2026-10-23' }), weekly, TODAY).ready, true);
 });
 
-test('planShare compares to a typical check and flags only a big share', () => {
-  assert.deepEqual(B.planShare(110, 800), { pct: 14, big: false });
-  assert.deepEqual(B.planShare(300, 800), { pct: 38, big: true });
-  assert.deepEqual(B.planShare(280, 800), { pct: 35, big: false });
+test('planShare is just the share of the logged take-home, with no judgement attached', () => {
+  assert.deepEqual(B.planShare(110, 800), { pct: 14 });
+  assert.deepEqual(B.planShare(300, 800), { pct: 38 });
+  assert.deepEqual(B.planShare(600, 800), { pct: 75 });
   assert.equal(B.planShare(110, null), null);
   assert.equal(B.planShare(110, 0), null);
 });

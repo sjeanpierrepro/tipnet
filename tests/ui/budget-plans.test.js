@@ -97,7 +97,7 @@ test('plans: create one with a set amount a paycheck, and a missing amount or pa
   }
 });
 
-test('plans: the realism line compares to the logged take-home, and a big share gets a gentle note', async () => {
+test('plans: the line states the share of the logged take-home, and a big share gets no judgement', async () => {
   const page = await boot({ url: DEV, seed: seed() });
   try {
     page.tab('budget');
@@ -109,7 +109,9 @@ test('plans: the realism line compares to the logged take-home, and a big share 
     if (m) {
       assert.ok(Number(m[1]) < 35);
       fill(page, 'ef-plan-new-per', '5000');
-      assert.match(page.text(planForm(page)), /That's a big share of each check; a later date lowers it\./);
+      const big = page.text(planForm(page));
+      assert.match(big, /That's about \d+% of the take-home you have logged this pay period/);
+      assert.doesNotMatch(big, /big share|more than half|hard to keep up/);
     } else assert.match(t, /Log a night this pay period and TipNet will compare it/);
   } finally {
     await page.close();

@@ -166,7 +166,7 @@ test('tracker: a fixed plan shows the ready-by date moving; a plain goal shows i
   }
 });
 
-test('tracker: an unrealistic plan is said calmly and offers Move the date', async () => {
+test('tracker: a big plan states its share of the logged take-home only: no judgement, no Move the date', async () => {
   const page = await boot({
     url: DEV,
     seed: seed([plan({ target: 900000, targetDate: addDays(todayISO(), 20) })]),
@@ -174,11 +174,15 @@ test('tracker: an unrealistic plan is said calmly and offers Move the date', asy
   try {
     page.tab('budget');
     const t = page.text(row(page));
+    assert.doesNotMatch(t, /more than half|hard to keep up|big share/);
     if (/% of the take-home you have logged/.test(t)) {
-      assert.match(t, /more than half of the take-home you have logged/);
+      assert.match(t, /That's about \d+% of the take-home you have logged this pay period/);
+      assert.equal(page.$('[data-focus-key^="plan-move-"]'), null, 'no Move the date for a share');
+    } else if (/Pick a later date/.test(t)) {
+      // no paycheck before the date: only then is Move the date offered
       page.click(page.byLabel('Move the date for Car down payment'));
       assert.ok(page.$('form[aria-label="Edit plan Car down payment"]'), 'opens the plan to edit');
-    } else assert.match(t, /Log a night this pay period and TipNet will compare it|Pick a later date/);
+    } else assert.match(t, /Log a night this pay period and TipNet will compare it/);
   } finally {
     await page.close();
   }
