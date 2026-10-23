@@ -2709,7 +2709,7 @@ export function subscriptionCard() {
     el('h2', null, 'Subscription'),
     el(
       'dl',
-      { class: 'breakdown' },
+      { class: 'breakdown text-values' },
       row('Plan', plan),
       row('Status', status),
       d.key ? row('License key', d.key) : null,

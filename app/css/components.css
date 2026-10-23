@@ -713,6 +713,12 @@ select {
   margin: 0;
   font-variant-numeric: tabular-nums;
   text-align: right;
+  white-space: nowrap; /* a money value never splits its sign from the amount ("−$13.32") */
+}
+/* a breakdown whose values are words (Subscription: plan name, license key) may wrap */
+.breakdown.text-values dd {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 /* a line under a row that says what it is made from: indented by padding, so a wrapped second line keeps the indent */
 .breakdown .sub-line dt {
